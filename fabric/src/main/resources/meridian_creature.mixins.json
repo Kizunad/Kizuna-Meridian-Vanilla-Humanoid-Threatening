@@ -1,7 +1,0 @@
-{
-  "required": true,
-  "package": "dev.kizuna.meridian.creature.fabric.mixin",
-  "compatibilityLevel": "JAVA_17",
-  "mixins": ["LivingEntityCreatureMixin", "EntityCreatureLifecycleMixin", "MobCreatureConversionMixin"],
-  "injectors": {"defaultRequire": 1}
-}

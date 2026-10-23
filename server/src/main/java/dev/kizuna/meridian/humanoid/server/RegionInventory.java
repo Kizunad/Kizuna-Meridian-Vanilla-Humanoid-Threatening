@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import dev.kizuna.meridian.core.DefinitionId;
 import dev.kizuna.meridian.protocol.QiDensity;
@@ -13,17 +13,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-/** Human 区域服务投影到生物生成器的只读库存和浓度。 */
+/** Human 区域服务投影到类人实体生成器的只读库存和浓度。 */
 public record RegionInventory(List<Entry> entries, double concentration, boolean regionPresent) {
     public RegionInventory {
         // 生成器只读取快照；复制列表后拒绝负库存和非法密度。
         entries = List.copyOf(entries);
         if (!Double.isFinite(concentration) || concentration < 0) {
-            throw CreatureErrors.invalid(CreatureErrors.REGION + ": 浓度必须为有限非负数");
+            throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 浓度必须为有限非负数");
         }
         for (Entry entry : entries) {
             if (entry == null) {
-                throw CreatureErrors.invalid(CreatureErrors.REGION + ": 库存明细不能为空");
+                throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 库存明细不能为空");
             }
         }
     }
@@ -41,7 +41,7 @@ public record RegionInventory(List<Entry> entries, double concentration, boolean
     public static RegionInventory fromShares(double concentration, Map<String, Double> shares) {
         // 测试和纯 Java 宿主可以直接提供属性数量；密度字段使用游离态作为相态占位。
         if (shares == null) {
-            throw CreatureErrors.invalid(CreatureErrors.REGION + ": shares 不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": shares 不能为空");
         }
         var entries = new ArrayList<Entry>();
         shares.forEach((attribute, amount) -> entries.add(new Entry(attribute, QiDensity.FREE, amount)));
@@ -51,7 +51,7 @@ public record RegionInventory(List<Entry> entries, double concentration, boolean
     public Map<String, Double> eligibleShares(QiVariantRegistry registry) {
         // 先按属性合并所有相态数量，再丢弃无属性和未登记属性，交给注册表做阶数筛选。
         if (registry == null) {
-            throw CreatureErrors.invalid(CreatureErrors.REGION + ": 变体注册表不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 变体注册表不能为空");
         }
         Set<String> allowed = new HashSet<>(FiveElements.IDS);
         registry.catalog().getAttributesList().forEach(attribute -> allowed.add(attribute.getId()));
@@ -73,7 +73,7 @@ public record RegionInventory(List<Entry> entries, double concentration, boolean
             new DefinitionId(attribute);
             QiDensity.phase(density);
             if (!Double.isFinite(amount) || amount < 0) {
-                throw CreatureErrors.invalid(CreatureErrors.REGION + ": 数量必须为有限非负数");
+                throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 数量必须为有限非负数");
             }
         }
     }

@@ -6,10 +6,10 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'kizuna-meridian-vanilla-creature-threatening'
+rootProject.name = 'kizuna-meridian-vanilla-humanoid-threatening'
 include 'server', 'fabric'
 
-// 生物内容只通过相邻仓库的公开 API 接入，不复制 Framework、Human 或 Qi-Variants 源码。
+// 类人实体内容只通过相邻仓库的公开 API 接入，不复制 Framework、Human 或 Qi-Variants 源码。
 includeBuild(providers.gradleProperty('meridianFrameworkDir')
         .getOrElse('../Kizuna-Meridian-Mod-Framework')) {
     dependencySubstitution {

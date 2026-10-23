@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.human.server.HumanOpening;
@@ -22,9 +22,9 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertThrows;
 
 /** 阶段 1 变体边界、容量和可复现性回归。 */
-public class CreatureBodyGeneratorTest {
-    private CreatureBodyGenerator generator;
-    private CreatureConfig config;
+public class HumanoidBodyGeneratorTest {
+    private HumanoidBodyGenerator generator;
+    private HumanoidConfig config;
 
     @Before
     public void setUp() {
@@ -45,8 +45,8 @@ public class CreatureBodyGeneratorTest {
                 .addBundles(HumanContent.bundle()).addBundles(QiVariantsContent.bundle()).build();
         AddonRegistry installed = AddonRegistry.load(registration);
         QiVariantRegistry variants = QiVariantRegistry.load(installed, QiVariantsContent.catalog());
-        config = CreatureConfigLoader.defaults();
-        generator = new CreatureBodyGenerator(variants, config);
+        config = HumanoidConfigLoader.defaults();
+        generator = new HumanoidBodyGenerator(variants, config);
     }
 
     @Test
@@ -55,8 +55,8 @@ public class CreatureBodyGeneratorTest {
         RegionInventory region = RegionInventory.fromShares(1.0,
                 Map.of("meridian:metal", 2.0, "meridian:wood", 1.0,
                         "qi_variants:withering", 1.0));
-        for (CreatureSpecies species : CreatureSpecies.values()) {
-            for (CreatureVariant variant : CreatureVariant.values()) {
+        for (HumanoidSpecies species : HumanoidSpecies.values()) {
+            for (HumanoidVariant variant : HumanoidVariant.values()) {
                 for (int seed = 0; seed < 24; seed++) {
                     UUID id = UUID.nameUUIDFromBytes((species.entityId() + variant + seed).getBytes());
                     BodyMessages.BodySnapshot body = generator.generate(species, variant, id, region,
@@ -80,9 +80,9 @@ public class CreatureBodyGeneratorTest {
         UUID id = UUID.fromString("11111111-2222-3333-4444-555555555555");
         RegionInventory region = RegionInventory.fromShares(1.2,
                 Map.of("meridian:fire", 4.0, "meridian:earth", 2.0));
-        byte[] first = generator.generate(CreatureSpecies.EVOKER, CreatureVariant.TRUE_QI, id, region,
+        byte[] first = generator.generate(HumanoidSpecies.EVOKER, HumanoidVariant.TRUE_QI, id, region,
                 987654321L, null).toByteArray();
-        byte[] second = generator.generate(CreatureSpecies.EVOKER, CreatureVariant.TRUE_QI, id, region,
+        byte[] second = generator.generate(HumanoidSpecies.EVOKER, HumanoidVariant.TRUE_QI, id, region,
                 987654321L, null).toByteArray();
         assertArrayEquals(first, second);
     }
@@ -104,18 +104,18 @@ public class CreatureBodyGeneratorTest {
         RegionInventory empty = RegionInventory.present(0, List.of());
         RegionInventory normal = RegionInventory.present(.5, List.of());
         RegionInventory high = RegionInventory.present(2, List.of());
-        assertEquals(0.0, generator.trueQiProbability(CreatureSpecies.VILLAGER, empty), 0.000001);
-        assertEquals(.125, generator.trueQiProbability(CreatureSpecies.VILLAGER, normal), 0.000001);
-        assertEquals(.25, generator.trueQiProbability(CreatureSpecies.VILLAGER, high), 0.000001);
+        assertEquals(0.0, generator.trueQiProbability(HumanoidSpecies.VILLAGER, empty), 0.000001);
+        assertEquals(.125, generator.trueQiProbability(HumanoidSpecies.VILLAGER, normal), 0.000001);
+        assertEquals(.25, generator.trueQiProbability(HumanoidSpecies.VILLAGER, high), 0.000001);
         assertEquals(.25 * config.trueQiNoRegionFactor(),
-                generator.trueQiProbability(CreatureSpecies.VILLAGER, RegionInventory.absent()), 0.000001);
+                generator.trueQiProbability(HumanoidSpecies.VILLAGER, RegionInventory.absent()), 0.000001);
     }
 
     @Test
     public void malformedConfigurationIsRejected() {
         // 缺失章节不是“使用默认值”，防止运营方误以为配置已生效。
         assertThrows(IllegalArgumentException.class,
-                () -> CreatureConfigLoader.parse("config_version = 1\n"));
+                () -> HumanoidConfigLoader.parse("config_version = 1\n"));
     }
 
     private QiVariantRegistry generatorRegistry() {
@@ -127,7 +127,7 @@ public class CreatureBodyGeneratorTest {
         return QiVariantRegistry.load(installed, QiVariantsContent.catalog());
     }
 
-    private void verifyMeridians(BodyMessages.BodySnapshot body, CreatureVariant variant) {
+    private void verifyMeridians(BodyMessages.BodySnapshot body, HumanoidVariant variant) {
         // 每条状态按当前结构容量校验，真炁层级还必须满足游炁前置全开规则。
         for (int index = 0; index < body.getStructure().getMeridiansCount(); index++) {
             BodyMessages.MeridianDefinition definition = body.getStructure().getMeridians(index);
@@ -135,7 +135,7 @@ public class CreatureBodyGeneratorTest {
             assertTrue(QiDensity.volume(state.getLumenQi()) <= definition.getLumenVolume() + 1e-7);
             assertTrue(QiDensity.volume(state.getWallQi()) <= definition.getWallVolume() + 1e-7);
             BodyMessages.Realm minimum = HumanOpening.minimumRealm(definition.getId());
-            if (variant == CreatureVariant.WANDERING_QI) {
+            if (variant == HumanoidVariant.WANDERING_QI) {
                 assertFalse(minimum == BodyMessages.Realm.TRUE_QI
                         && state.getOpening().getStage() == BodyMessages.MeridianOpeningStage.OPENED);
             } else if (minimum == BodyMessages.Realm.WANDERING_QI) {

@@ -1,6 +1,6 @@
-package dev.kizuna.meridian.creature.fabric.mixin;
+package dev.kizuna.meridian.humanoid.fabric.mixin;
 
-import dev.kizuna.meridian.creature.fabric.CreatureFabric;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidFabric;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
@@ -11,13 +11,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** 村民被雷击转换成女巫时迁移同一具身体，不把转换误判为死亡释放。 */
 @Mixin(MobEntity.class)
-public abstract class MobCreatureConversionMixin {
+public abstract class MobHumanoidConversionMixin {
     @Inject(method = "convertTo", at = @At("HEAD"))
     private void meridian$beginMigration(EntityType<? extends MobEntity> type, boolean keepEquipment,
                                           CallbackInfoReturnable<MobEntity> callback) {
         if (type == EntityType.WITCH && ((MobEntity) (Object) this).getType() == EntityType.VILLAGER
                 && (Object) this instanceof LivingEntity oldEntity) {
-            CreatureFabric.markConversion(oldEntity, true);
+            HumanoidFabric.markConversion(oldEntity, true);
         }
     }
 
@@ -28,9 +28,9 @@ public abstract class MobCreatureConversionMixin {
                 && (Object) this instanceof LivingEntity oldEntity) {
             LivingEntity newEntity = callback.getReturnValue();
             if (newEntity == null) {
-                CreatureFabric.markConversion(oldEntity, false);
+                HumanoidFabric.markConversion(oldEntity, false);
             } else {
-                CreatureFabric.migrateBody(oldEntity, newEntity);
+                HumanoidFabric.migrateBody(oldEntity, newEntity);
             }
         }
     }

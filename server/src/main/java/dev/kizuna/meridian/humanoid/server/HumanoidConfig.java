@@ -1,11 +1,11 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 
 /** 阶段 1 的不可变出生参数；所有数值都可由 TOML 覆盖。 */
-public record CreatureConfig(
+public record HumanoidConfig(
         int configVersion,
         double lifespanYears,
         double minimumAgeYears,
@@ -19,12 +19,12 @@ public record CreatureConfig(
         double trueQiNoRegionFactor,
         FillRange wanderingFill,
         FillRange trueQiFill,
-        Map<CreatureSpecies, SpeciesProfile> speciesProfiles,
+        Map<HumanoidSpecies, SpeciesProfile> speciesProfiles,
         boolean particleEnabled,
         int particleIntervalTicks,
         Map<String, Integer> particleColors) {
 
-    public CreatureConfig {
+    public HumanoidConfig {
         // 先校验全局范围，防止生成过程中才发现寿命或体积无法表示。
         if (configVersion <= 0 || !finitePositive(lifespanYears)
                 || !finiteRange(minimumAgeYears, maximumAgeYears)
@@ -33,47 +33,47 @@ public record CreatureConfig(
                 || !fraction(mainAttributeShareMaximum) || mainAttributeShareMinimum > mainAttributeShareMaximum
                 || !finitePositive(trueQiReferenceConcentration) || !fraction(trueQiConcentrationCap)
                 || !fraction(trueQiNoRegionFactor) || particleIntervalTicks <= 0) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 全局范围无效");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 全局范围无效");
         }
         if (wanderingFill == null || trueQiFill == null) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 装填范围不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 装填范围不能为空");
         }
         if (particleColors == null) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 粒子颜色不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 粒子颜色不能为空");
         }
         var copiedColors = new HashMap<String, Integer>();
         for (var entry : particleColors.entrySet()) {
             if (entry.getKey() == null || entry.getKey().isBlank()
                     || entry.getValue() == null || entry.getValue() < 0 || entry.getValue() > 0xFFFFFF) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 粒子颜色无效");
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 粒子颜色无效");
             }
             copiedColors.put(entry.getKey(), entry.getValue());
         }
         for (String required : java.util.List.of("meridian:none", "meridian:fire", "meridian:water",
                 "meridian:wood", "meridian:metal", "meridian:earth")) {
             if (!copiedColors.containsKey(required)) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 缺少粒子颜色 " + required);
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少粒子颜色 " + required);
             }
         }
         particleColors = Map.copyOf(copiedColors);
-        var copiedProfiles = new EnumMap<CreatureSpecies, SpeciesProfile>(CreatureSpecies.class);
-        if (speciesProfiles == null || speciesProfiles.size() != CreatureSpecies.values().length) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 必须为七种生物提供配置");
+        var copiedProfiles = new EnumMap<HumanoidSpecies, SpeciesProfile>(HumanoidSpecies.class);
+        if (speciesProfiles == null || speciesProfiles.size() != HumanoidSpecies.values().length) {
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 必须为七种类人实体提供配置");
         }
-        for (CreatureSpecies species : CreatureSpecies.values()) {
+        for (HumanoidSpecies species : HumanoidSpecies.values()) {
             SpeciesProfile profile = speciesProfiles.get(species);
             if (profile == null) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 缺少 " + species.entityId());
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少 " + species.entityId());
             }
             copiedProfiles.put(species, profile);
         }
         speciesProfiles = Map.copyOf(copiedProfiles);
     }
 
-    public SpeciesProfile profile(CreatureSpecies species) {
+    public SpeciesProfile profile(HumanoidSpecies species) {
         // 物种配置只按枚举读取，未知实体在宿主认领层提前拒绝。
         if (species == null) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 物种不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种不能为空");
         }
         return speciesProfiles.get(species);
     }
@@ -104,7 +104,7 @@ public record CreatureConfig(
                     || !Double.isFinite(densityMinimum) || !Double.isFinite(densityMaximum)
                     || densityMinimum < .01 || densityMinimum >= densityMaximum
                     || !fraction(freeResidualProbability) || !fraction(freeResidualVolumeMaximum)) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 装填或密度范围无效");
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 装填或密度范围无效");
             }
         }
 
@@ -126,7 +126,7 @@ public record CreatureConfig(
             if (!fraction(trueQiBaseProbability) || !positive(openingCountMultiplier)
                     || !positive(fillMultiplier) || !positive(wallFillMultiplier)
                     || !nonNegative(armOpeningWeight) || !nonNegative(footOpeningWeight)) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 物种偏向范围无效");
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种偏向范围无效");
             }
         }
 

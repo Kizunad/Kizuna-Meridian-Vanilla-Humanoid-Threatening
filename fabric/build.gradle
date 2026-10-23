@@ -35,7 +35,7 @@ processResources {
 
 loom {
     mods {
-        meridian_creature_host { sourceSet sourceSets.main }
+        meridian_humanoid_host { sourceSet sourceSets.main }
     }
     runs {
         server { runDir 'build/server' }

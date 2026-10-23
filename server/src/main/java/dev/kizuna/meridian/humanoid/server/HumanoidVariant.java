@@ -1,16 +1,16 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import dev.kizuna.meridian.core.Realm;
 
 /** 生人的两档经脉变体；变体决定境界、开拓层级和密度区间。 */
-public enum CreatureVariant {
+public enum HumanoidVariant {
     WANDERING_QI(Realm.WANDERING_QI, 1),
     TRUE_QI(Realm.TRUE_QI, 2);
 
     private final Realm realm;
     private final int maximumAttributeTier;
 
-    CreatureVariant(Realm realm, int maximumAttributeTier) {
+    HumanoidVariant(Realm realm, int maximumAttributeTier) {
         // 属性阶数上限与境界绑定，避免调用方单独传入互相矛盾的组合。
         this.realm = realm;
         this.maximumAttributeTier = maximumAttributeTier;

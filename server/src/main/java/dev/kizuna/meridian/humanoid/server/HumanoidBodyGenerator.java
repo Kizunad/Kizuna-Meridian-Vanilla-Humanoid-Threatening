@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.human.server.HumanBirth;
@@ -19,21 +19,21 @@ import java.util.UUID;
 import java.util.random.RandomGenerator;
 
 /** 生成本批次两档生人的完整人体快照，并在返回前交给 Framework 校验。 */
-public final class CreatureBodyGenerator {
+public final class HumanoidBodyGenerator {
     private static final String NONE_ATTRIBUTE = "meridian:none";
-    private static final String DEFAULT_TIME_DOMAIN = "meridian_creature:world";
+    private static final String DEFAULT_TIME_DOMAIN = "meridian_humanoid:world";
     private static final String DEFAULT_TIME_EPOCH = "initial";
 
     private final QiVariantRegistry variants;
-    private final CreatureConfig config;
+    private final HumanoidConfig config;
 
-    public CreatureBodyGenerator(QiVariantRegistry variants, CreatureConfig config) {
+    public HumanoidBodyGenerator(QiVariantRegistry variants, HumanoidConfig config) {
         // 注册表和配置在实例创建时固定，单次生成不会改变外部目录。
         this.variants = Objects.requireNonNull(variants, "variants");
         this.config = Objects.requireNonNull(config, "config");
     }
 
-    public BodyMessages.BodySnapshot generate(CreatureSpecies species, CreatureVariant variant,
+    public BodyMessages.BodySnapshot generate(HumanoidSpecies species, HumanoidVariant variant,
                                                UUID entityId, RegionInventory region,
                                                long worldSeed, BodyMessages.TimeCursor settledAt) {
         // 世界种子和实体 UUID 共同决定随机流，读档或重启不会重新抽到另一具身体。
@@ -41,7 +41,7 @@ public final class CreatureBodyGenerator {
         return generate(species, variant, entityId, region, randomFor(worldSeed, entityId), settledAt);
     }
 
-    public BodyMessages.BodySnapshot generate(CreatureSpecies species, CreatureVariant variant,
+    public BodyMessages.BodySnapshot generate(HumanoidSpecies species, HumanoidVariant variant,
                                                UUID entityId, RegionInventory region,
                                                RandomGenerator random, BodyMessages.TimeCursor settledAt) {
         // 显式变体入口供阶段 1 测试和阶段 2 宿主使用；随机变体通过 rollVariant 单独决定。
@@ -55,7 +55,7 @@ public final class CreatureBodyGenerator {
         return buildSnapshot(species, variant, entityId, template, region, random, time);
     }
 
-    public BodyMessages.BodySnapshot generateFromTemplate(CreatureSpecies species, CreatureVariant variant,
+    public BodyMessages.BodySnapshot generateFromTemplate(HumanoidSpecies species, HumanoidVariant variant,
                                                             UUID entityId, BodyMessages.BodyTemplate template,
                                                             RegionInventory region, RandomGenerator random,
                                                             BodyMessages.TimeCursor settledAt) {
@@ -70,17 +70,17 @@ public final class CreatureBodyGenerator {
         return buildSnapshot(species, variant, entityId, template, region, random, time);
     }
 
-    public CreatureVariant rollVariant(CreatureSpecies species, RegionInventory region, RandomGenerator random) {
+    public HumanoidVariant rollVariant(HumanoidSpecies species, RegionInventory region, RandomGenerator random) {
         // 先把区域浓度映射成有上限的因子，再乘物种基础概率，保持浓度单调。
         Objects.requireNonNull(species, "species");
         Objects.requireNonNull(region, "region");
         Objects.requireNonNull(random, "random");
         double factor = concentrationFactor(region);
         double probability = config.profile(species).trueQiBaseProbability() * factor;
-        return random.nextDouble() < probability ? CreatureVariant.TRUE_QI : CreatureVariant.WANDERING_QI;
+        return random.nextDouble() < probability ? HumanoidVariant.TRUE_QI : HumanoidVariant.WANDERING_QI;
     }
 
-    public double trueQiProbability(CreatureSpecies species, RegionInventory region) {
+    public double trueQiProbability(HumanoidSpecies species, RegionInventory region) {
         // 对外提供确定性的概率值，便于区域规则测试验证上限和单调性。
         Objects.requireNonNull(species, "species");
         Objects.requireNonNull(region, "region");
@@ -95,7 +95,7 @@ public final class CreatureBodyGenerator {
         return new java.util.Random(seed);
     }
 
-    private BodyMessages.BodySnapshot buildSnapshot(CreatureSpecies species, CreatureVariant variant,
+    private BodyMessages.BodySnapshot buildSnapshot(HumanoidSpecies species, HumanoidVariant variant,
                                                      UUID entityId, BodyMessages.BodyTemplate template,
                                                      RegionInventory region, RandomGenerator random,
                                                      BodyMessages.TimeCursor time) {
@@ -104,10 +104,10 @@ public final class CreatureBodyGenerator {
         if (!template.getReference().getId().equals(HumanContent.TEMPLATE_ID)
                 || template.getReference().getVersion() != HumanContent.CONTENT_VERSION
                 || template.getStructure().getMeridiansCount() != 36) {
-            throw CreatureErrors.invalid(CreatureErrors.TEMPLATE);
+            throw HumanoidErrors.invalid(HumanoidErrors.TEMPLATE);
         }
 
-        CreatureConfig.SpeciesProfile profile = config.profile(species);
+        HumanoidConfig.SpeciesProfile profile = config.profile(species);
         Set<String> opened = selectOpenedMeridians(template.getStructure(), variant, profile, random);
         String mainAttribute = variants.sample(region.eligibleShares(variants), variant.maximumAttributeTier(), random)
                 .orElse(NONE_ATTRIBUTE);
@@ -115,7 +115,7 @@ public final class CreatureBodyGenerator {
                 ? 1.0 : between(config.mainAttributeShareMinimum(), config.mainAttributeShareMaximum(), random);
         BodyMessages.BodyStructure structure = expandedStructure(template.getStructure(), opened);
         var snapshot = BodyMessages.BodySnapshot.newBuilder().setSchemaVersion(3)
-                .setId("meridian_creature:entity/" + entityId)
+                .setId("meridian_humanoid:entity/" + entityId)
                 .setTemplate(template.getReference()).setStructure(structure)
                 .setRealm(BodyMessages.Realm.valueOf(variant.realm().name())).setRevision(0)
                 .setSettledAt(time)
@@ -163,8 +163,8 @@ public final class CreatureBodyGenerator {
         return result;
     }
 
-    private Set<String> selectOpenedMeridians(BodyMessages.BodyStructure structure, CreatureVariant variant,
-                                               CreatureConfig.SpeciesProfile profile, RandomGenerator random) {
+    private Set<String> selectOpenedMeridians(BodyMessages.BodyStructure structure, HumanoidVariant variant,
+                                               HumanoidConfig.SpeciesProfile profile, RandomGenerator random) {
         // 复用 Human 的最低境界表，将 8 条游炁层和 8 条真炁层按内容定义分组。
         List<String> wandering = new ArrayList<>();
         List<String> trueQi = new ArrayList<>();
@@ -176,10 +176,10 @@ public final class CreatureBodyGenerator {
             }
         }
         if (wandering.size() != 8 || trueQi.size() != 8) {
-            throw CreatureErrors.invalid(CreatureErrors.TEMPLATE + ": 开脉分层不是 8+8");
+            throw HumanoidErrors.invalid(HumanoidErrors.TEMPLATE + ": 开脉分层不是 8+8");
         }
         var result = new HashSet<String>();
-        if (variant == CreatureVariant.TRUE_QI) {
+        if (variant == HumanoidVariant.TRUE_QI) {
             // 真炁变体必须把完整游炁层作为前置，再随机开启 0–8 条真炁层。
             result.addAll(wandering);
             result.addAll(weightedSelection(trueQi, random.nextInt(0, 9), profile, random));
@@ -192,7 +192,7 @@ public final class CreatureBodyGenerator {
     }
 
     private List<String> weightedSelection(List<String> candidates, int count,
-                                            CreatureConfig.SpeciesProfile profile, RandomGenerator random) {
+                                            HumanoidConfig.SpeciesProfile profile, RandomGenerator random) {
         // 不放回抽样保留物种对手经/足经的偏向，同时保证每条经脉最多开启一次。
         var remaining = new ArrayList<>(candidates);
         var selected = new ArrayList<String>();
@@ -213,7 +213,7 @@ public final class CreatureBodyGenerator {
         return selected;
     }
 
-    private double openingWeight(String id, CreatureConfig.SpeciesProfile profile) {
+    private double openingWeight(String id, HumanoidConfig.SpeciesProfile profile) {
         // 肺/大肠属于手经，胃/脾属于足经；其余候选只在对应层出现。
         if (id.contains("lung") || id.contains("large_intestine")) {
             return profile.armOpeningWeight();
@@ -237,19 +237,19 @@ public final class CreatureBodyGenerator {
         return structure.build();
     }
 
-    private BodyMessages.QiInventory inventory(double stableVolume, CreatureVariant variant, boolean opened,
+    private BodyMessages.QiInventory inventory(double stableVolume, HumanoidVariant variant, boolean opened,
                                                 String mainAttribute, double mainShare,
                                                 RandomGenerator random, boolean allowResidual) {
         // 先确定占用体积，再按密度反推元数，保证每条经脉的容量校验使用实际体积。
         if (stableVolume <= 0) {
             return BodyMessages.QiInventory.getDefaultInstance();
         }
-        CreatureConfig.FillRange fill = configFill(variant);
+        HumanoidConfig.FillRange fill = configFill(variant);
         double densityMaximum = opened ? fill.densityMaximum()
                 : Math.min(fill.densityMaximum(), Math.max(fill.densityMinimum() * 2, Math.nextUp(fill.densityMinimum())));
         double mainDensity = density(fill.densityMinimum(), densityMaximum, random);
         double residualShare = 0;
-        boolean useResidual = allowResidual && variant == CreatureVariant.TRUE_QI && opened
+        boolean useResidual = allowResidual && variant == HumanoidVariant.TRUE_QI && opened
                 && !mainAttribute.equals(NONE_ATTRIBUTE)
                 && random.nextDouble() < fill.freeResidualProbability();
         if (useResidual) {
@@ -280,9 +280,9 @@ public final class CreatureBodyGenerator {
         return result.build();
     }
 
-    private CreatureConfig.FillRange configFill(CreatureVariant variant) {
+    private HumanoidConfig.FillRange configFill(HumanoidVariant variant) {
         // 变体到配置区间的映射集中在一个方法，避免内腔和外壁使用不同档位。
-        return variant == CreatureVariant.TRUE_QI ? config.trueQiFill() : config.wanderingFill();
+        return variant == HumanoidVariant.TRUE_QI ? config.trueQiFill() : config.wanderingFill();
     }
 
     private double concentrationFactor(RegionInventory region) {
@@ -299,7 +299,7 @@ public final class CreatureBodyGenerator {
         return HumanContent.bundle().getTemplatesList().stream()
                 .filter(template -> template.getReference().getId().equals(HumanContent.TEMPLATE_ID)
                         && template.getReference().getVersion() == HumanContent.CONTENT_VERSION)
-                .findFirst().orElseThrow(() -> CreatureErrors.invalid(CreatureErrors.TEMPLATE));
+                .findFirst().orElseThrow(() -> HumanoidErrors.invalid(HumanoidErrors.TEMPLATE));
     }
 
     private static BodyMessages.TimeCursor defaultTime() {

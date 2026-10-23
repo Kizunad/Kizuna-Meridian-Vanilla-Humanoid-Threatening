@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dev.kizuna.meridian.humanoid.fabric.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": ["LivingEntityHumanoidMixin", "EntityHumanoidLifecycleMixin", "MobHumanoidConversionMixin"],
+  "injectors": {"defaultRequire": 1}
+}

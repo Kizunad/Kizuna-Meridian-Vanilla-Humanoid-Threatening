@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.server;
+package dev.kizuna.meridian.humanoid.server;
 
 import org.tomlj.Toml;
 import org.tomlj.TomlTable;
@@ -14,30 +14,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 生物出生参数的 TOML 读取器；解析结果交给不可变配置构造器统一校验。 */
-public final class CreatureConfigLoader {
-    public static final String DEFAULT_RESOURCE = "/meridian-creature.toml";
+/** 类人实体出生参数的 TOML 读取器；解析结果交给不可变配置构造器统一校验。 */
+public final class HumanoidConfigLoader {
+    public static final String DEFAULT_RESOURCE = "/meridian-humanoid.toml";
 
-    private CreatureConfigLoader() {
+    private HumanoidConfigLoader() {
         // 配置加载器不持有服务器实例或可变配置。
     }
 
-    public static CreatureConfig defaults() {
+    public static HumanoidConfig defaults() {
         // JAR 资源是默认值唯一来源，宿主可以把它复制到 config 目录后修改。
-        try (InputStream input = CreatureConfigLoader.class.getResourceAsStream(DEFAULT_RESOURCE)) {
+        try (InputStream input = HumanoidConfigLoader.class.getResourceAsStream(DEFAULT_RESOURCE)) {
             if (input == null) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 缺少默认资源");
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少默认资源");
             }
             return parse(new String(input.readAllBytes(), StandardCharsets.UTF_8));
         } catch (IOException failure) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 无法读取默认资源");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 无法读取默认资源");
         }
     }
 
-    public static CreatureConfig load(Path path) {
+    public static HumanoidConfig load(Path path) {
         // 首次加载导出默认文件；已有文件只读取，不覆盖运营方调整。
         if (path == null) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 配置路径不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 配置路径不能为空");
         }
         try {
             if (!Files.exists(path)) {
@@ -45,27 +45,27 @@ public final class CreatureConfigLoader {
                 if (parent != null) {
                     Files.createDirectories(parent);
                 }
-                try (InputStream input = CreatureConfigLoader.class.getResourceAsStream(DEFAULT_RESOURCE)) {
+                try (InputStream input = HumanoidConfigLoader.class.getResourceAsStream(DEFAULT_RESOURCE)) {
                     if (input == null) {
-                        throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 缺少默认资源");
+                        throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少默认资源");
                     }
                     Files.copy(input, path);
                 }
             }
             return parse(Files.readString(path, StandardCharsets.UTF_8));
         } catch (IOException failure) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 无法读取配置文件");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 无法读取配置文件");
         }
     }
 
-    public static CreatureConfig parse(String text) {
+    public static HumanoidConfig parse(String text) {
         // TOML 解析和字段白名单在同一入口完成，拼错的参数不能静默使用默认值。
         if (text == null || text.isBlank()) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 配置文本不能为空");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 配置文本不能为空");
         }
         var parsed = Toml.parse(text);
         if (parsed.hasErrors()) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": TOML 解析失败");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": TOML 解析失败");
         }
         checkKeys(parsed, Set.of("config_version", "lifespan_years", "age_min_years", "age_max_years",
                 "opened_lumen_gain", "natural_fill_volume_ratio", "main_attribute_share_min",
@@ -74,21 +74,21 @@ public final class CreatureConfigLoader {
 
         TomlTable fill = table(parsed, "fill", "fill");
         checkKeys(fill, Set.of("wandering_qi", "true_qi"), "fill.");
-        CreatureConfig.FillRange wandering = fillRange(table(fill, "wandering_qi", "fill.wandering_qi"),
+        HumanoidConfig.FillRange wandering = fillRange(table(fill, "wandering_qi", "fill.wandering_qi"),
                 "fill.wandering_qi");
-        CreatureConfig.FillRange trueQi = fillRange(table(fill, "true_qi", "fill.true_qi"), "fill.true_qi");
+        HumanoidConfig.FillRange trueQi = fillRange(table(fill, "true_qi", "fill.true_qi"), "fill.true_qi");
 
         TomlTable species = table(parsed, "species", "species");
-        var profiles = new EnumMap<CreatureSpecies, CreatureConfig.SpeciesProfile>(CreatureSpecies.class);
+        var profiles = new EnumMap<HumanoidSpecies, HumanoidConfig.SpeciesProfile>(HumanoidSpecies.class);
         var knownKeys = new HashSet<String>();
         for (String key : species.keySet()) {
-            CreatureSpecies value = CreatureSpecies.fromEntityId(key)
-                    .orElseThrow(() -> CreatureErrors.invalid(CreatureErrors.CONFIG + ": 未知物种 " + key));
+            HumanoidSpecies value = HumanoidSpecies.fromEntityId(key)
+                    .orElseThrow(() -> HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 未知物种 " + key));
             knownKeys.add(key);
             profiles.put(value, speciesProfile(table(species, key, "species." + key), "species." + key));
         }
-        if (knownKeys.size() != CreatureSpecies.values().length) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 物种配置必须覆盖本批次全部七种生物");
+        if (knownKeys.size() != HumanoidSpecies.values().length) {
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种配置必须覆盖本批次全部七种类人实体");
         }
 
         TomlTable particle = table(parsed, "particle", "particle");
@@ -98,12 +98,12 @@ public final class CreatureConfigLoader {
         for (String key : colors.keySet()) {
             Object value = colors.get(List.of(key));
             if (!(value instanceof Long color) || color < 0 || color > 0xFFFFFF) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": particle.colors." + key
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": particle.colors." + key
                         + " 必须是 24 位 RGB 整数");
             }
             particleColors.put(key, color.intValue());
         }
-        return new CreatureConfig(
+        return new HumanoidConfig(
                 integer(parsed, "config_version", "config_version"),
                 number(parsed, "lifespan_years", "lifespan_years"),
                 number(parsed, "age_min_years", "age_min_years"),
@@ -119,11 +119,11 @@ public final class CreatureConfigLoader {
                 integer(particle, "interval_ticks", "particle.interval_ticks"), particleColors);
     }
 
-    private static CreatureConfig.FillRange fillRange(TomlTable table, String path) {
+    private static HumanoidConfig.FillRange fillRange(TomlTable table, String path) {
         // 每档的密度上限保持开区间语义，具体合法性由 FillRange 构造器确认。
         checkKeys(table, Set.of("lumen_min", "lumen_max", "wall_min", "wall_max", "density_min", "density_max",
                 "free_residual_probability", "free_residual_volume_max"), path + ".");
-        return new CreatureConfig.FillRange(number(table, "lumen_min", path + ".lumen_min"),
+        return new HumanoidConfig.FillRange(number(table, "lumen_min", path + ".lumen_min"),
                 number(table, "lumen_max", path + ".lumen_max"),
                 number(table, "wall_min", path + ".wall_min"),
                 number(table, "wall_max", path + ".wall_max"),
@@ -133,11 +133,11 @@ public final class CreatureConfigLoader {
                 number(table, "free_residual_volume_max", path + ".free_residual_volume_max"));
     }
 
-    private static CreatureConfig.SpeciesProfile speciesProfile(TomlTable table, String path) {
+    private static HumanoidConfig.SpeciesProfile speciesProfile(TomlTable table, String path) {
         // 物种偏向只改变随机权重，实体 ID 与结构仍由生成器固定。
         checkKeys(table, Set.of("true_qi_base_probability", "opening_count_multiplier", "fill_multiplier",
                 "wall_fill_multiplier", "arm_opening_weight", "foot_opening_weight"), path + ".");
-        return new CreatureConfig.SpeciesProfile(
+        return new HumanoidConfig.SpeciesProfile(
                 number(table, "true_qi_base_probability", path + ".true_qi_base_probability"),
                 number(table, "opening_count_multiplier", path + ".opening_count_multiplier"),
                 number(table, "fill_multiplier", path + ".fill_multiplier"),
@@ -150,7 +150,7 @@ public final class CreatureConfigLoader {
         // 缺少章节和标量冒充章节都视为配置错误，避免产生半套规则。
         Object value = parent.get(List.of(key));
         if (!(value instanceof TomlTable result)) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 缺少或错误的表 " + path);
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少或错误的表 " + path);
         }
         return result;
     }
@@ -159,7 +159,7 @@ public final class CreatureConfigLoader {
         // 版本和 tick 间隔只接受完整正整数，不通过 double 截断。
         Object value = table.get(List.of(key));
         if (!(value instanceof Long integer) || integer <= 0 || integer > Integer.MAX_VALUE) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": " + path + " 必须是正整数");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是正整数");
         }
         return integer.intValue();
     }
@@ -168,7 +168,7 @@ public final class CreatureConfigLoader {
         // TOML 整数和小数统一为有限 double，范围由配置 record 继续校验。
         Object value = table.get(List.of(key));
         if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": " + path + " 必须是有限数值");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是有限数值");
         }
         return number.doubleValue();
     }
@@ -177,7 +177,7 @@ public final class CreatureConfigLoader {
         // 开关必须是真正的 TOML 布尔值，不接受字符串猜测。
         Object value = table.get(List.of(key));
         if (!(value instanceof Boolean result)) {
-            throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": " + path + " 必须是布尔值");
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是布尔值");
         }
         return result;
     }
@@ -186,7 +186,7 @@ public final class CreatureConfigLoader {
         // 每层独立检查，错误路径直接包含章节名，便于定位运维配置拼写错误。
         for (String key : table.keySet()) {
             if (!allowed.contains(key)) {
-                throw CreatureErrors.invalid(CreatureErrors.CONFIG + ": 未知字段 " + prefix + key);
+                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 未知字段 " + prefix + key);
             }
         }
     }

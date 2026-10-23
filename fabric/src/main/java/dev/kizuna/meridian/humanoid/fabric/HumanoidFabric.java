@@ -1,10 +1,10 @@
-package dev.kizuna.meridian.creature.fabric;
+package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.brigadier.context.CommandContext;
-import dev.kizuna.meridian.creature.server.CreatureBodyGenerator;
-import dev.kizuna.meridian.creature.server.CreatureConfig;
-import dev.kizuna.meridian.creature.server.CreatureConfigLoader;
-import dev.kizuna.meridian.creature.server.CreatureSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
+import dev.kizuna.meridian.humanoid.server.HumanoidConfig;
+import dev.kizuna.meridian.humanoid.server.HumanoidConfigLoader;
+import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.protocol.pb.AddonMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -39,31 +39,31 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** 生物 Fabric 适配器；只管理实体索引、区域服务和快照存档。 */
-public final class CreatureFabric implements ModInitializer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("meridian_creature_host");
-    private static final String STATE_ID = "meridian_creature";
+/** 类人实体 Fabric 适配器；只管理实体索引、区域服务和快照存档。 */
+public final class HumanoidFabric implements ModInitializer {
+    private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_host");
+    private static final String STATE_ID = "meridian_humanoid";
     private static MinecraftServer activeServer;
-    private static CreatureConfig config;
+    private static HumanoidConfig config;
     private static AddonRegistry content;
     private static QiVariantRegistry variants;
-    private static CreatureBodyGenerator generator;
-    private static CreatureEnvironmentClient environment;
-    private static CreatureWorldState worldState;
+    private static HumanoidBodyGenerator generator;
+    private static HumanoidEnvironmentClient environment;
+    private static HumanoidWorldState worldState;
     private static long tickCounter;
 
     @Override
     public void onInitialize() {
         // 内容目录在服务端启动时固定；缺少 Human 或 Qi-Variants 登记会直接阻止接线。
-        config = CreatureConfigLoader.load(FabricLoader.getInstance().getConfigDir()
-                .resolve("meridian-creature.toml"));
+        config = HumanoidConfigLoader.load(FabricLoader.getInstance().getConfigDir()
+                .resolve("meridian-humanoid.toml"));
         content = installContent();
         variants = QiVariantRegistry.load(content, QiVariantsContent.catalog());
-        generator = new CreatureBodyGenerator(variants, config);
-        environment = new CreatureEnvironmentClient();
-        ServerLifecycleEvents.SERVER_STARTED.register(CreatureFabric::startServer);
-        ServerTickEvents.END_SERVER_TICK.register(CreatureFabric::tick);
-        ServerLifecycleEvents.SERVER_STOPPED.register(CreatureFabric::stopServer);
+        generator = new HumanoidBodyGenerator(variants, config);
+        environment = new HumanoidEnvironmentClient();
+        ServerLifecycleEvents.SERVER_STARTED.register(HumanoidFabric::startServer);
+        ServerTickEvents.END_SERVER_TICK.register(HumanoidFabric::tick);
+        ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
         CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> registerCommands(dispatcher));
     }
 
@@ -74,17 +74,17 @@ public final class CreatureFabric implements ModInitializer {
             PersistentStateManager persistence = server.getOverworld().getPersistentStateManager();
             var file = server.getSavePath(WorldSavePath.ROOT).resolve("data/" + STATE_ID + ".dat");
             if (Files.exists(file)) {
-                worldState = persistence.get(CreatureWorldState::read, STATE_ID);
+                worldState = persistence.get(HumanoidWorldState::read, STATE_ID);
                 if (worldState == null) {
-                    throw new IllegalArgumentException("生物释放账本为空");
+                    throw new IllegalArgumentException("类人实体释放账本为空");
                 }
             } else {
-                worldState = new CreatureWorldState();
+                worldState = new HumanoidWorldState();
                 persistence.set(STATE_ID, worldState);
             }
         } catch (RuntimeException failure) {
             worldState = null;
-            LOGGER.error("无法加载生物释放账本，生物宿主保持未绑定", failure);
+            LOGGER.error("无法加载类人实体释放账本，类人实体宿主保持未绑定", failure);
         }
     }
 
@@ -116,7 +116,7 @@ public final class CreatureFabric implements ModInitializer {
         return activeServer;
     }
 
-    static CreatureBodyGenerator generator() {
+    static HumanoidBodyGenerator generator() {
         // 生成器只读固定目录，实体查询不会重建随机配置。
         return generator;
     }
@@ -126,7 +126,7 @@ public final class CreatureFabric implements ModInitializer {
         return content;
     }
 
-    static CreatureEnvironmentClient.RegionSnapshot region(LivingEntity entity) {
+    static HumanoidEnvironmentClient.RegionSnapshot region(LivingEntity entity) {
         // 区域库存和浓度必须来自 Human 服务；未绑定时不创建临时身体。
         return environment.query(entity);
     }
@@ -140,8 +140,8 @@ public final class CreatureFabric implements ModInitializer {
         // Human 返回成功或 duplicate 都表示这笔释放已受理；所有其他结果保留待重试。
         try {
             return environment.release(release);
-        } catch (CreatureEnvironmentClient.Unavailable failure) {
-            LOGGER.debug("生物释放暂不可用 releaseId={}: {}", release.getReleaseId(), failure.getMessage());
+        } catch (HumanoidEnvironmentClient.Unavailable failure) {
+            LOGGER.debug("类人实体释放暂不可用 releaseId={}: {}", release.getReleaseId(), failure.getMessage());
             return false;
         }
     }
@@ -175,7 +175,7 @@ public final class CreatureFabric implements ModInitializer {
     }
 
     static boolean isClaimed(LivingEntity entity) {
-        return CreatureSpecies.fromEntityId(net.minecraft.registry.Registries.ENTITY_TYPE
+        return HumanoidSpecies.fromEntityId(net.minecraft.registry.Registries.ENTITY_TYPE
                 .getId(entity.getType()).toString()).isPresent();
     }
 
@@ -187,55 +187,55 @@ public final class CreatureFabric implements ModInitializer {
                 || reason == Entity.RemovalReason.CHANGED_DIMENSION) {
             return;
         }
-        if (!(living instanceof CreatureEntityAccess access) || access.meridian$creatureConversionPending()
-                || access.meridian$creatureBody() == null
-                || access.meridian$creatureReleaseQueued()) {
+        if (!(living instanceof HumanoidEntityAccess access) || access.meridian$humanoidConversionPending()
+                || access.meridian$humanoidBody() == null
+                || access.meridian$humanoidReleaseQueued()) {
             return;
         }
-        access.meridian$creatureReleaseQueued(true);
-        var body = access.meridian$creatureBody();
+        access.meridian$humanoidReleaseQueued(true);
+        var body = access.meridian$humanoidBody();
         var released = dev.kizuna.meridian.core.QiInventory.empty();
         try {
             // 有时原版移除先于 Human 服务可用；此时保留当前库存，服务恢复后由账本重试。
             try {
                 released = dev.kizuna.meridian.core.QiInventory.combine(List.of(released,
                         dev.kizuna.meridian.protocol.BodyProtobuf.fromInventory(body.settle(now()))));
-            } catch (CreatureEnvironmentClient.Unavailable unavailable) {
-                LOGGER.debug("移除时无法结算生物时间 subject={}", entity.getUuidAsString());
+            } catch (HumanoidEnvironmentClient.Unavailable unavailable) {
+                LOGGER.debug("移除时无法结算类人实体时间 subject={}", entity.getUuidAsString());
             } catch (RuntimeException failure) {
-                LOGGER.error("移除时结算生物时间失败 subject={}", entity.getUuidAsString(), failure);
+                LOGGER.error("移除时结算类人实体时间失败 subject={}", entity.getUuidAsString(), failure);
             }
             // 结算损耗和身体剩余库存合并成一条 RegionRelease，避免同一实体产生多笔释放。
             released = dev.kizuna.meridian.core.QiInventory.combine(List.of(released, body.releaseInventory()));
             enqueueRelease(entity, released);
         } catch (RuntimeException failure) {
-            LOGGER.error("生物移除释放失败 subject={}", entity.getUuidAsString(), failure);
+            LOGGER.error("类人实体移除释放失败 subject={}", entity.getUuidAsString(), failure);
         }
     }
 
     public static void migrateBody(LivingEntity oldEntity, LivingEntity newEntity) {
         // VillagerEntity.convertTo 会先复制原版字段；这里迁移同一身体对象，保持身体 ID、伤势和年龄。
-        if (!(oldEntity instanceof CreatureEntityAccess oldAccess)
-                || !(newEntity instanceof CreatureEntityAccess newAccess)) {
+        if (!(oldEntity instanceof HumanoidEntityAccess oldAccess)
+                || !(newEntity instanceof HumanoidEntityAccess newAccess)) {
             return;
         }
-        oldAccess.meridian$creatureConversionPending(false);
-        if (oldAccess.meridian$creatureBody() != null) {
-            newAccess.meridian$creatureBody(oldAccess.meridian$creatureBody());
-            oldAccess.meridian$creatureBody(null);
+        oldAccess.meridian$humanoidConversionPending(false);
+        if (oldAccess.meridian$humanoidBody() != null) {
+            newAccess.meridian$humanoidBody(oldAccess.meridian$humanoidBody());
+            oldAccess.meridian$humanoidBody(null);
             return;
         }
-        byte[] saved = oldAccess.meridian$creatureSavedBody();
+        byte[] saved = oldAccess.meridian$humanoidSavedBody();
         if (saved != null && saved.length > 0) {
-            newAccess.meridian$creatureSavedBody(saved, oldAccess.meridian$creatureSavedReceipts(),
-                    oldAccess.meridian$creatureSavedRegionSource(), newEntity.getUuid());
-            oldAccess.meridian$creatureSavedBody(null, new byte[0][], "");
+            newAccess.meridian$humanoidSavedBody(saved, oldAccess.meridian$humanoidSavedReceipts(),
+                    oldAccess.meridian$humanoidSavedRegionSource(), newEntity.getUuid());
+            oldAccess.meridian$humanoidSavedBody(null, new byte[0][], "");
         }
     }
 
     public static void markConversion(LivingEntity oldEntity, boolean pending) {
-        if (oldEntity instanceof CreatureEntityAccess access) {
-            access.meridian$creatureConversionPending(pending);
+        if (oldEntity instanceof HumanoidEntityAccess access) {
+            access.meridian$humanoidConversionPending(pending);
         }
     }
 
@@ -268,9 +268,9 @@ public final class CreatureFabric implements ModInitializer {
                     world.getWorldBorder().getBoundNorth(), world.getWorldBorder().getBoundEast(),
                     world.getTopY(), world.getWorldBorder().getBoundSouth());
             for (LivingEntity entity : world.getEntitiesByClass(LivingEntity.class, bounds,
-                    CreatureFabric::hasTrueQiBody)) {
-                var access = (CreatureEntityAccess) entity;
-                int color = colorFor(mainAttribute(access.meridian$creatureBody().snapshot()));
+                    HumanoidFabric::hasTrueQiBody)) {
+                var access = (HumanoidEntityAccess) entity;
+                int color = colorFor(mainAttribute(access.meridian$humanoidBody().snapshot()));
                 var rgb = new Vector3f(((color >> 16) & 0xFF) / 255f, ((color >> 8) & 0xFF) / 255f,
                         (color & 0xFF) / 255f);
                 world.spawnParticles(new DustParticleEffect(rgb, 0.55f), entity.getX(),
@@ -280,14 +280,14 @@ public final class CreatureFabric implements ModInitializer {
     }
 
     private static boolean hasTrueQiBody(LivingEntity entity) {
-        return isClaimed(entity) && entity instanceof CreatureEntityAccess access
-                && access.meridian$creatureBody() != null
-                && access.meridian$creatureBody().snapshot().getRealm() == BodyMessages.Realm.TRUE_QI
-                && !access.meridian$creatureBody().snapshot().getVitality().getDead();
+        return isClaimed(entity) && entity instanceof HumanoidEntityAccess access
+                && access.meridian$humanoidBody() != null
+                && access.meridian$humanoidBody().snapshot().getRealm() == BodyMessages.Realm.TRUE_QI
+                && !access.meridian$humanoidBody().snapshot().getVitality().getDead();
     }
 
     private static void registerCommands(com.mojang.brigadier.CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("meridian").then(CommandManager.literal("creature")
+        dispatcher.register(CommandManager.literal("meridian").then(CommandManager.literal("humanoid")
                 .then(CommandManager.literal("inspect").requires(source -> source.hasPermissionLevel(2))
                         .executes(context -> inspect(context, context.getSource().getEntity()))
                         .then(CommandManager.argument("target", EntityArgumentType.entity())
@@ -297,14 +297,14 @@ public final class CreatureFabric implements ModInitializer {
 
     private static int inspect(CommandContext<ServerCommandSource> context, Entity entity) {
         if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
-            context.getSource().sendError(Text.literal("目标不是本批次生物"));
+            context.getSource().sendError(Text.literal("目标不是本批次类人实体"));
             return 0;
         }
-        if (!(living instanceof CreatureEntityAccess access) || access.meridian$creatureBody() == null) {
+        if (!(living instanceof HumanoidEntityAccess access) || access.meridian$humanoidBody() == null) {
             context.getSource().sendError(Text.literal("目标尚未创建身体"));
             return 0;
         }
-        var snapshot = access.meridian$creatureBody().snapshot();
+        var snapshot = access.meridian$humanoidBody().snapshot();
         var opened = snapshot.getMeridianStatesList().stream()
                 .filter(state -> state.getOpening().getStage() == BodyMessages.MeridianOpeningStage.OPENED)
                 .map(BodyMessages.MeridianState::getId).toList();
@@ -316,7 +316,7 @@ public final class CreatureFabric implements ModInitializer {
                 .flatMap(state -> java.util.stream.Stream.concat(state.getLumenQi().getEntriesList().stream(),
                         state.getWallQi().getEntriesList().stream()))
                 .mapToDouble(BodyMessages.Qi::getAmount).sum();
-        String source = access.meridian$creatureBody().regionSource();
+        String source = access.meridian$humanoidBody().regionSource();
         context.getSource().sendFeedback(() -> Text.literal("档位=" + snapshot.getRealm().name()
                 + " 开拓=" + opened.size() + " 主属性=" + mainAttribute(snapshot)
                 + " 密度=" + (volume == 0 ? 0 : amount / volume) + " 装填体积=" + volume
@@ -343,6 +343,6 @@ public final class CreatureFabric implements ModInitializer {
 
     static void report(Entity entity, RuntimeException failure) {
         // 单个实体的接线失败只记录并拒绝本次请求，不能回落为另一份生命账本。
-        LOGGER.error("生物身体宿主失败 subject={}", entity.getUuidAsString(), failure);
+        LOGGER.error("类人实体身体宿主失败 subject={}", entity.getUuidAsString(), failure);
     }
 }

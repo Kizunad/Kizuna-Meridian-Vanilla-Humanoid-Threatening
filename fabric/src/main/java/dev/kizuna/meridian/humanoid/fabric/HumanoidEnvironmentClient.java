@@ -1,6 +1,6 @@
-package dev.kizuna.meridian.creature.fabric;
+package dev.kizuna.meridian.humanoid.fabric;
 
-import dev.kizuna.meridian.creature.server.RegionInventory;
+import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Human 区域服务的 Fabric 字节协议客户端；不直接依赖 Human Fabric 实现类。 */
-final class CreatureEnvironmentClient {
+final class HumanoidEnvironmentClient {
     private static final String ENTRYPOINT = "meridian_environment_host";
     private Method exchange;
     private Object endpoint;

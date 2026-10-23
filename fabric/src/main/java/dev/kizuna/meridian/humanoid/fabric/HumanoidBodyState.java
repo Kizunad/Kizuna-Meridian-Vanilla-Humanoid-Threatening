@@ -1,9 +1,9 @@
-package dev.kizuna.meridian.creature.fabric;
+package dev.kizuna.meridian.humanoid.fabric;
 
-import dev.kizuna.meridian.creature.server.CreatureBodyGenerator;
-import dev.kizuna.meridian.creature.server.CreatureSpecies;
-import dev.kizuna.meridian.creature.server.CreatureVariant;
-import dev.kizuna.meridian.creature.server.RegionInventory;
+import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
+import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
+import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.server.HumanDamage;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 单个已加载生物的身体事务包装；权威状态仍由 Framework Store 持有。 */
-public final class CreatureBodyState {
+/** 单个已加载类人实体的身体事务包装；权威状态仍由 Framework Store 持有。 */
+public final class HumanoidBodyState {
     private static final int MAX_SAVED_RECEIPTS = 32;
 
     private final InMemoryBodyStore store;
@@ -28,7 +28,7 @@ public final class CreatureBodyState {
     private final String regionSource;
     private long targetMillis;
 
-    private CreatureBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
+    private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
                                String regionSource, long targetMillis) {
         // 恢复时把快照和回执一并交给 Framework，旧请求只能按同一身份做幂等重放。
         var core = BodyProtobuf.fromMessage(saved);
@@ -45,42 +45,42 @@ public final class CreatureBodyState {
                                 .setElapsedMillis(Math.max(targetMillis, body.settledAt().elapsedMillis()))).setMode(MeridianMessages.TimeAdvanceMode.ACTIVE)
                         .setBiologicalSecondsPerSimulationSecond(1).build(),
                 store, (caller, receipt, before, after) -> { /* 实体写回 NBT 时保存已提交快照。 */ },
-                CreatureFabric.content().recipes(), (caller, body, plan) -> Optional.empty(),
-                CreatureFabric.content().actions(), CreatureFabric.content().openings(), caller -> false,
+                HumanoidFabric.content().recipes(), (caller, body, plan) -> Optional.empty(),
+                HumanoidFabric.content().actions(), HumanoidFabric.content().openings(), caller -> false,
                 new HumanDamage());
     }
 
-    static CreatureBodyState born(CreatureSpecies species, UUID entityId, long worldSeed,
+    static HumanoidBodyState born(HumanoidSpecies species, UUID entityId, long worldSeed,
                                   RegionInventory region, String regionSource,
                                   BodyMessages.TimeCursor now) {
         // 第一次健康查询才生成身体；区域库存和浓度由 Human 服务在同一主线程提供。
-        var random = CreatureBodyGenerator.randomFor(worldSeed, entityId);
-        CreatureVariant variant = CreatureFabric.generator().rollVariant(species, region, random);
-        BodyMessages.BodySnapshot body = CreatureFabric.generator().generate(species, variant, entityId,
+        var random = HumanoidBodyGenerator.randomFor(worldSeed, entityId);
+        HumanoidVariant variant = HumanoidFabric.generator().rollVariant(species, region, random);
+        BodyMessages.BodySnapshot body = HumanoidFabric.generator().generate(species, variant, entityId,
                 region, random, now);
-        return new CreatureBodyState(body, List.of(), regionSource, now.getElapsedMillis());
+        return new HumanoidBodyState(body, List.of(), regionSource, now.getElapsedMillis());
     }
 
-    static CreatureBodyState restore(UUID entityId, UUID ownerId, byte[] bodyBytes, byte[][] receiptBytes, String regionSource,
+    static HumanoidBodyState restore(UUID entityId, UUID ownerId, byte[] bodyBytes, byte[][] receiptBytes, String regionSource,
                                      BodyMessages.TimeCursor now) {
         // NBT 正文先按 Framework 快照和回执协议解码，任何损坏都停止绑定而不重生身体。
         if (entityId == null || ownerId == null || !entityId.equals(ownerId)) {
-            throw new IllegalArgumentException("生物实体身份不能为空");
+            throw new IllegalArgumentException("类人实体实体身份不能为空");
         }
         BodyMessages.BodySnapshot body;
         try {
             body = BodyMessages.BodySnapshot.parseFrom(bodyBytes);
         } catch (com.google.protobuf.InvalidProtocolBufferException failure) {
-            throw new IllegalArgumentException("生物身体快照损坏", failure);
+            throw new IllegalArgumentException("类人实体身体快照损坏", failure);
         }
-        String bodyPrefix = "meridian_creature:entity/";
+        String bodyPrefix = "meridian_humanoid:entity/";
         if (!body.getId().startsWith(bodyPrefix)) {
-            throw new IllegalArgumentException("生物身体身份无效");
+            throw new IllegalArgumentException("类人实体身体身份无效");
         }
         try {
             UUID.fromString(body.getId().substring(bodyPrefix.length()));
         } catch (IllegalArgumentException invalid) {
-            throw new IllegalArgumentException("生物身体身份无效", invalid);
+            throw new IllegalArgumentException("类人实体身体身份无效", invalid);
         }
         var receipts = new ArrayList<MeridianMessages.CommandReceipt>();
         for (byte[] bytes : receiptBytes) {
@@ -89,15 +89,15 @@ public final class CreatureBodyState {
         if (body.getSettledAt().getDomain().isBlank() || body.getSettledAt().getEpoch().isBlank()
                 || !body.getSettledAt().getDomain().equals(now.getDomain())
                 || !body.getSettledAt().getEpoch().equals(now.getEpoch())) {
-            throw new IllegalArgumentException("生物身体时钟域不匹配");
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
-        return new CreatureBodyState(body, List.copyOf(receipts), regionSource, now.getElapsedMillis());
+        return new HumanoidBodyState(body, List.copyOf(receipts), regionSource, now.getElapsedMillis());
     }
 
     BodyMessages.QiInventory settle(BodyMessages.TimeCursor now) {
         // 查询或受伤前只推进到当前世界时钟；没有事件时不在每 tick 重算身体。
         if (!sameClock(now)) {
-            throw new IllegalArgumentException("生物身体时钟域不匹配");
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
         targetMillis = Math.max(targetMillis, now.getElapsedMillis());
         BodyMessages.BodySnapshot body = snapshot();
@@ -119,13 +119,13 @@ public final class CreatureBodyState {
     BodyMessages.QiInventory apply(MeridianMessages.RequestEnvelope request, BodyMessages.TimeCursor now) {
         // 健康效果必须按调用方固定的 request_id 和 expected_revision 交给可信处理器。
         if (!sameClock(now)) {
-            throw new IllegalArgumentException("生物身体时钟域不匹配");
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
         targetMillis = Math.max(targetMillis, now.getElapsedMillis());
         byte[] responseBytes = commands.handleHealthEffect(bodyId, MeridianProtocol.encodeRequest(request));
         MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
         if (response.hasFailure()) {
-            throw new CreatureHealthFailure(response.getFailure().getCode());
+            throw new HumanoidHealthFailure(response.getFailure().getCode());
         }
         return healthReceipt(request.getRequestId()).map(HealthMessages.HealthResult::getReleasedQi)
                 .orElse(BodyMessages.QiInventory.getDefaultInstance());
@@ -188,7 +188,7 @@ public final class CreatureBodyState {
                 : commands.handle(bodyId, MeridianProtocol.encodeRequest(request));
         MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
         if (response.hasFailure()) {
-            throw new CreatureHealthFailure(response.getFailure().getCode());
+            throw new HumanoidHealthFailure(response.getFailure().getCode());
         }
         return response;
     }
@@ -199,10 +199,10 @@ public final class CreatureBodyState {
                 && now.getElapsedMillis() >= 0;
     }
 
-    static final class CreatureHealthFailure extends RuntimeException {
+    static final class HumanoidHealthFailure extends RuntimeException {
         private final MeridianMessages.FailureCode code;
 
-        CreatureHealthFailure(MeridianMessages.FailureCode code) {
+        HumanoidHealthFailure(MeridianMessages.FailureCode code) {
             // 宿主层把 Framework 业务拒绝映射回公开 health_host 失败码。
             this.code = code;
         }

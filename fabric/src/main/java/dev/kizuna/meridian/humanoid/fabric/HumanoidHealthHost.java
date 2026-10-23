@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.fabric;
+package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.protocol.HealthHostProtobuf;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
@@ -14,17 +14,17 @@ import net.minecraft.server.world.ServerWorld;
 import java.util.UUID;
 
 /** Fabric 健康宿主入口；只认领本批次七种实体类型。 */
-public final class CreatureHealthHost implements BodyHealthHost {
+public final class HumanoidHealthHost implements BodyHealthHost {
     @Override
     public byte[] exchange(byte[] payload) {
         // 解析和线程检查都在宿主边界完成，客户端或异步线程不能创建身体。
         HealthHostRequest request = HealthHostProtobuf.decodeRequest(payload);
         HealthHostResponse.Builder response = HealthHostResponse.newBuilder().setProtocolVersion(1)
                 .setRequestId(request.getRequestId());
-        if (!CreatureFabric.isReady()) {
+        if (!HumanoidFabric.isReady()) {
             return HealthHostProtobuf.encodeResponse(response.setUnbound(true).build());
         }
-        if (!CreatureFabric.server().isOnThread()) {
+        if (!HumanoidFabric.server().isOnThread()) {
             return failure(response, MeridianMessages.FailureCode.ACCESS_DENIED);
         }
         UUID entityId;
@@ -33,54 +33,54 @@ public final class CreatureHealthHost implements BodyHealthHost {
         } catch (IllegalArgumentException invalid) {
             return HealthHostProtobuf.encodeResponse(response.setUnbound(true).build());
         }
-        var entity = CreatureFabric.findEntity(entityId);
+        var entity = HumanoidFabric.findEntity(entityId);
         if (entity == null) {
             return HealthHostProtobuf.encodeResponse(response.setUnbound(true).build());
         }
-        CreatureSpeciesBinding binding = CreatureSpeciesBinding.resolve(entity);
+        HumanoidSpeciesBinding binding = HumanoidSpeciesBinding.resolve(entity);
         if (binding == null) {
             return HealthHostProtobuf.encodeResponse(response.setUnbound(true).build());
         }
-        CreatureEntityAccess access = (CreatureEntityAccess) entity;
-        if (access.meridian$creatureLoading()) {
+        HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
+        if (access.meridian$humanoidLoading()) {
             // 实体正文尚未读完时不允许附属抢先创建身体。
             return HealthHostProtobuf.encodeResponse(response.setUnbound(true).build());
         }
         try {
-            BodyMessages.TimeCursor now = CreatureFabric.now();
-            CreatureBodyState state = access.meridian$creatureBody();
+            BodyMessages.TimeCursor now = HumanoidFabric.now();
+            HumanoidBodyState state = access.meridian$humanoidBody();
             if (state == null) {
-                byte[] saved = access.meridian$creatureSavedBody();
+                byte[] saved = access.meridian$humanoidSavedBody();
                 if (saved != null && saved.length > 0) {
-                    state = CreatureBodyState.restore(entityId, access.meridian$creatureSavedOwner(), saved,
-                            access.meridian$creatureSavedReceipts(),
-                            access.meridian$creatureSavedRegionSource(), now);
+                    state = HumanoidBodyState.restore(entityId, access.meridian$humanoidSavedOwner(), saved,
+                            access.meridian$humanoidSavedReceipts(),
+                            access.meridian$humanoidSavedRegionSource(), now);
                 } else {
-                    var region = CreatureFabric.region(entity);
-                    state = CreatureBodyState.born(binding.species(), entityId,
+                    var region = HumanoidFabric.region(entity);
+                    state = HumanoidBodyState.born(binding.species(), entityId,
                             ((ServerWorld) entity.getWorld()).getSeed(), region.inventory(), region.sourceId(), now);
                 }
-                access.meridian$creatureBody(state);
+                access.meridian$humanoidBody(state);
             }
-            CreatureFabric.enqueueRelease(entity, state.settle(now));
+            HumanoidFabric.enqueueRelease(entity, state.settle(now));
             if (request.hasInspect()) {
                 return HealthHostProtobuf.encodeResponse(response.setBody(state.snapshot()).build());
             }
             if (!request.hasEffect()) {
                 return failure(response, MeridianMessages.FailureCode.INVALID_REQUEST);
             }
-            CreatureFabric.enqueueRelease(entity, state.apply(request.getEffect(), now));
+            HumanoidFabric.enqueueRelease(entity, state.apply(request.getEffect(), now));
             var receipt = state.healthReceipt(request.getRequestId());
             if (receipt.isPresent()) {
                 response.setHealth(receipt.get());
             }
             return HealthHostProtobuf.encodeResponse(response.setBody(state.snapshot()).build());
-        } catch (CreatureBodyState.CreatureHealthFailure rejected) {
+        } catch (HumanoidBodyState.HumanoidHealthFailure rejected) {
             return failure(response, rejected.code());
-        } catch (CreatureEnvironmentClient.Unavailable unavailable) {
+        } catch (HumanoidEnvironmentClient.Unavailable unavailable) {
             return failure(response, unavailable.code());
         } catch (RuntimeException failure) {
-            CreatureFabric.report(entity, failure);
+            HumanoidFabric.report(entity, failure);
             return failure(response, MeridianMessages.FailureCode.INTERNAL_ERROR);
         }
     }
@@ -91,12 +91,12 @@ public final class CreatureHealthHost implements BodyHealthHost {
                 MeridianMessages.RequestFailure.newBuilder().setCode(code)).build());
     }
 
-    private record CreatureSpeciesBinding(dev.kizuna.meridian.creature.server.CreatureSpecies species) {
-        static CreatureSpeciesBinding resolve(net.minecraft.entity.LivingEntity entity) {
+    private record HumanoidSpeciesBinding(dev.kizuna.meridian.humanoid.server.HumanoidSpecies species) {
+        static HumanoidSpeciesBinding resolve(net.minecraft.entity.LivingEntity entity) {
             // 实体类型 ID 是唯一认领条件，未知来源的同类实体仍按类型进入同一规则。
             String id = net.minecraft.registry.Registries.ENTITY_TYPE.getId(entity.getType()).toString();
-            return dev.kizuna.meridian.creature.server.CreatureSpecies.fromEntityId(id)
-                    .map(CreatureSpeciesBinding::new).orElse(null);
+            return dev.kizuna.meridian.humanoid.server.HumanoidSpecies.fromEntityId(id)
+                    .map(HumanoidSpeciesBinding::new).orElse(null);
         }
     }
 }

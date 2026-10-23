@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "meridian_creature_host",
+  "id": "meridian_humanoid_host",
   "version": "${version}",
-  "name": "Kizuna's Meridian Vanilla Creature Threatening",
-  "description": "原版生人批次的 Meridian 经脉健康宿主",
+  "name": "Kizuna's Meridian Vanilla Humanoid Threatening",
+  "description": "原版类人实体批次的 Meridian 经脉健康宿主",
   "authors": ["Kizunad"],
   "license": "PolyForm-Noncommercial-1.0.0",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.kizuna.meridian.creature.fabric.CreatureFabric"],
-    "meridian_health_host": ["dev.kizuna.meridian.creature.fabric.CreatureHealthHost"]
+    "main": ["dev.kizuna.meridian.humanoid.fabric.HumanoidFabric"],
+    "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"]
   },
-  "mixins": ["meridian_creature.mixins.json"],
+  "mixins": ["meridian_humanoid.mixins.json"],
   "depends": {
     "java": ">=17",
     "minecraft": "1.20.1",

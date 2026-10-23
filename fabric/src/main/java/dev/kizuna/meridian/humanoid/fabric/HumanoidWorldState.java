@@ -1,4 +1,4 @@
-package dev.kizuna.meridian.creature.fabric;
+package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -11,26 +11,26 @@ import net.minecraft.world.PersistentState;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 生物释放账本；实体卸载后仍保留原请求，成功或 duplicate 才移除。 */
-final class CreatureWorldState extends PersistentState {
+/** 类人实体释放账本；实体卸载后仍保留原请求，成功或 duplicate 才移除。 */
+final class HumanoidWorldState extends PersistentState {
     private final List<EnvironmentHostMessages.RegionRelease> pending = new ArrayList<>();
     private long nextSequence;
 
-    static CreatureWorldState read(NbtCompound nbt) {
+    static HumanoidWorldState read(NbtCompound nbt) {
         // 世界文件只保存完整 RegionRelease 字节，加载时重新验证协议和库存明细。
         if (!nbt.contains("next_sequence", NbtElement.LONG_TYPE)
                 || !nbt.contains("pending", NbtElement.LIST_TYPE)) {
-            throw new IllegalArgumentException("生物释放账本字段缺失");
+            throw new IllegalArgumentException("类人实体释放账本字段缺失");
         }
-        CreatureWorldState state = new CreatureWorldState();
+        HumanoidWorldState state = new HumanoidWorldState();
         state.nextSequence = nbt.getLong("next_sequence");
         if (state.nextSequence < 0) {
-            throw new IllegalArgumentException("生物释放序号无效");
+            throw new IllegalArgumentException("类人实体释放序号无效");
         }
         NbtList entries = nbt.getList("pending", NbtElement.BYTE_ARRAY_TYPE);
         if (entries.getHeldType() != NbtElement.END_TYPE
                 && entries.getHeldType() != NbtElement.BYTE_ARRAY_TYPE) {
-            throw new IllegalArgumentException("生物释放账本列表类型无效");
+            throw new IllegalArgumentException("类人实体释放账本列表类型无效");
         }
         for (int index = 0; index < entries.size(); index++) {
             try {
@@ -40,14 +40,14 @@ final class CreatureWorldState extends PersistentState {
                 if (release.getReleaseId().isBlank() || !release.hasPosition()
                         || release.getPosition().getDimensionId().isBlank()
                         || release.getReleasedQi().getEntriesCount() == 0) {
-                    throw new IllegalArgumentException("生物释放记录无效");
+                    throw new IllegalArgumentException("类人实体释放记录无效");
                 }
                 if (state.pending.stream().anyMatch(value -> value.getReleaseId().equals(release.getReleaseId()))) {
-                    throw new IllegalArgumentException("生物释放记录重复");
+                    throw new IllegalArgumentException("类人实体释放记录重复");
                 }
                 state.pending.add(release);
             } catch (Exception failure) {
-                throw new IllegalArgumentException("生物释放记录损坏", failure);
+                throw new IllegalArgumentException("类人实体释放记录损坏", failure);
             }
         }
         return state;
@@ -59,9 +59,9 @@ final class CreatureWorldState extends PersistentState {
             return;
         }
         if (nextSequence == Long.MAX_VALUE) {
-            throw new IllegalStateException("生物释放序号耗尽");
+            throw new IllegalStateException("类人实体释放序号耗尽");
         }
-        String releaseId = "meridian_creature:" + entityId + ":" + nextSequence++;
+        String releaseId = "meridian_humanoid:" + entityId + ":" + nextSequence++;
         var position = EnvironmentHostMessages.RegionQuery.newBuilder()
                 .setDimensionId(entity.getWorld().getRegistryKey().getValue().toString())
                 .setBlockX(entity.getBlockX()).setBlockZ(entity.getBlockZ()).build();
@@ -81,7 +81,7 @@ final class CreatureWorldState extends PersistentState {
         var iterator = pending.iterator();
         while (iterator.hasNext()) {
             EnvironmentHostMessages.RegionRelease release = iterator.next();
-            if (CreatureFabric.release(release)) {
+            if (HumanoidFabric.release(release)) {
                 iterator.remove();
                 markDirty();
             }
