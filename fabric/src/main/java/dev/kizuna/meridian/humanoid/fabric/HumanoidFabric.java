@@ -318,7 +318,7 @@ public final class HumanoidFabric implements ModInitializer {
                 .mapToDouble(BodyMessages.Qi::getAmount).sum();
         String source = access.meridian$humanoidBody().regionSource();
         context.getSource().sendFeedback(() -> Text.literal("档位=" + snapshot.getRealm().name()
-                + " 开拓=" + opened.size() + " 主属性=" + mainAttribute(snapshot)
+                + " 开拓列表=" + opened + " 主属性=" + mainAttribute(snapshot)
                 + " 密度=" + (volume == 0 ? 0 : amount / volume) + " 装填体积=" + volume
                 + " 区域=" + (source.isBlank() ? "无" : source)), false);
         return 1;
