@@ -1,0 +1,102 @@
+package dev.kizuna.meridian.creature.fabric;
+
+import dev.kizuna.meridian.protocol.BodyProtobuf;
+import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.world.PersistentState;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** 生物释放账本；实体卸载后仍保留原请求，成功或 duplicate 才移除。 */
+final class CreatureWorldState extends PersistentState {
+    private final List<EnvironmentHostMessages.RegionRelease> pending = new ArrayList<>();
+    private long nextSequence;
+
+    static CreatureWorldState read(NbtCompound nbt) {
+        // 世界文件只保存完整 RegionRelease 字节，加载时重新验证协议和库存明细。
+        if (!nbt.contains("next_sequence", NbtElement.LONG_TYPE)
+                || !nbt.contains("pending", NbtElement.LIST_TYPE)) {
+            throw new IllegalArgumentException("生物释放账本字段缺失");
+        }
+        CreatureWorldState state = new CreatureWorldState();
+        state.nextSequence = nbt.getLong("next_sequence");
+        if (state.nextSequence < 0) {
+            throw new IllegalArgumentException("生物释放序号无效");
+        }
+        NbtList entries = nbt.getList("pending", NbtElement.BYTE_ARRAY_TYPE);
+        if (entries.getHeldType() != NbtElement.END_TYPE
+                && entries.getHeldType() != NbtElement.BYTE_ARRAY_TYPE) {
+            throw new IllegalArgumentException("生物释放账本列表类型无效");
+        }
+        for (int index = 0; index < entries.size(); index++) {
+            try {
+                var release = EnvironmentHostMessages.RegionRelease.parseFrom(
+                        ((net.minecraft.nbt.NbtByteArray) entries.get(index)).getByteArray());
+                BodyProtobuf.fromInventory(release.getReleasedQi());
+                if (release.getReleaseId().isBlank() || !release.hasPosition()
+                        || release.getPosition().getDimensionId().isBlank()
+                        || release.getReleasedQi().getEntriesCount() == 0) {
+                    throw new IllegalArgumentException("生物释放记录无效");
+                }
+                if (state.pending.stream().anyMatch(value -> value.getReleaseId().equals(release.getReleaseId()))) {
+                    throw new IllegalArgumentException("生物释放记录重复");
+                }
+                state.pending.add(release);
+            } catch (Exception failure) {
+                throw new IllegalArgumentException("生物释放记录损坏", failure);
+            }
+        }
+        return state;
+    }
+
+    void enqueue(java.util.UUID entityId, net.minecraft.entity.Entity entity, dev.kizuna.meridian.core.QiInventory qi) {
+        // 释放 ID 在世界账本内递增；完整请求相同则只保留一条，重启后仍可安全重试。
+        if (qi.entries().isEmpty()) {
+            return;
+        }
+        if (nextSequence == Long.MAX_VALUE) {
+            throw new IllegalStateException("生物释放序号耗尽");
+        }
+        String releaseId = "meridian_creature:" + entityId + ":" + nextSequence++;
+        var position = EnvironmentHostMessages.RegionQuery.newBuilder()
+                .setDimensionId(entity.getWorld().getRegistryKey().getValue().toString())
+                .setBlockX(entity.getBlockX()).setBlockZ(entity.getBlockZ()).build();
+        var release = EnvironmentHostMessages.RegionRelease.newBuilder().setReleaseId(releaseId)
+                .setPosition(position).setReleasedQi(BodyProtobuf.toInventory(qi)).build();
+        pending.add(release);
+        markDirty();
+    }
+
+    void enqueue(java.util.UUID entityId, net.minecraft.entity.Entity entity, BodyMessages.QiInventory qi) {
+        // 健康死亡回执已经是协议库存，先解码后复用同一个 ID 和入账路径。
+        enqueue(entityId, entity, BodyProtobuf.fromInventory(qi));
+    }
+
+    void retry() {
+        // 每个 tick 最多尝试一次当前队列快照；失败记录保留，成功和 duplicate 才删除。
+        var iterator = pending.iterator();
+        while (iterator.hasNext()) {
+            EnvironmentHostMessages.RegionRelease release = iterator.next();
+            if (CreatureFabric.release(release)) {
+                iterator.remove();
+                markDirty();
+            }
+        }
+    }
+
+    @Override
+    public NbtCompound writeNbt(NbtCompound nbt) {
+        // 实体移除与服务器停止都保存同一批完整请求，避免释放成功前丢失账。
+        nbt.putLong("next_sequence", nextSequence);
+        NbtList entries = new NbtList();
+        for (var release : pending) {
+            entries.add(new net.minecraft.nbt.NbtByteArray(release.toByteArray()));
+        }
+        nbt.put("pending", entries);
+        return nbt;
+    }
+}

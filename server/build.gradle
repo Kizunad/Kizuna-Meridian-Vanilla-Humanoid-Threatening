@@ -1,0 +1,26 @@
+description = '原版生人批次的纯 Java 身体变体生成与配置规则。'
+
+dependencies {
+    api 'local.meridian:server'
+    api 'dev.kizuna.meridian.qivariants:server:0.1.0-SNAPSHOT'
+    implementation 'org.tomlj:tomlj:1.1.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def useSourceHuman = providers.gradleProperty('meridianUseSourceHuman').getOrElse('false').toBoolean()
+if (useSourceHuman) {
+    dependencies {
+        api 'dev.kizuna.meridian.human:server:0.1.0-SNAPSHOT'
+    }
+} else {
+    // 阶段 1 使用相邻 Human 已构建的公开 server/shared 产物，避免触发其 Fabric 全量装配。
+    def humanRoot = rootProject.file('../Kizuna-Meridian-Human-Addon')
+    dependencies {
+        api files(new File(humanRoot, 'server/build/libs/kizuna-meridian-human-addon-server-0.1.0-SNAPSHOT.jar'))
+        api files(new File(humanRoot, 'shared/build/libs/kizuna-meridian-human-addon-shared-0.1.0-SNAPSHOT.jar'))
+    }
+}
+
+test {
+    useJUnit()
+}

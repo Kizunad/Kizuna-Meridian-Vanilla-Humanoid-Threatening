@@ -1,0 +1,29 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'kizuna-meridian-vanilla-creature-threatening'
+include 'server', 'fabric'
+
+// 生物内容只通过相邻仓库的公开 API 接入，不复制 Framework、Human 或 Qi-Variants 源码。
+includeBuild(providers.gradleProperty('meridianFrameworkDir')
+        .getOrElse('../Kizuna-Meridian-Mod-Framework')) {
+    dependencySubstitution {
+        substitute module('local.meridian:client') using project(':client')
+        substitute module('local.meridian:server') using project(':server')
+    }
+}
+includeBuild(providers.gradleProperty('meridianQiVariantsDir')
+        .getOrElse('../Kizuna-Meridian-Qi-Variants-Addon'))
+
+// Human 的 fabric 工程会在配置阶段检查整套外部安装产物，并且反向列出本仓库的
+// Fabric JAR。阶段 1 只需要其已发布的 server/shared API；需要联调 Human 源码时，
+// 显式传入 -PmeridianUseSourceHuman=true 再启用 composite build。
+if (providers.gradleProperty('meridianUseSourceHuman').getOrElse('false').toBoolean()) {
+    includeBuild(providers.gradleProperty('meridianHumanDir')
+            .getOrElse('../Kizuna-Meridian-Human-Addon'))
+}

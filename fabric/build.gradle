@@ -1,0 +1,39 @@
+plugins {
+    id 'fabric-loom'
+}
+
+description = '原版生人经脉身体的 Fabric 健康宿主。'
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.20.1'
+    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.3+1.20.1'
+
+    implementation project(':server')
+    include project(':server')
+    include files('../Kizuna-Meridian-Human-Addon/server/build/libs/kizuna-meridian-human-addon-server-0.1.0-SNAPSHOT.jar')
+    include files('../Kizuna-Meridian-Human-Addon/shared/build/libs/kizuna-meridian-human-addon-shared-0.1.0-SNAPSHOT.jar')
+    include files('../Kizuna-Meridian-Qi-Variants-Addon/server/build/libs/kizuna-meridian-qi-variants-addon-server-0.1.0-SNAPSHOT.jar')
+    include files('../Kizuna-Meridian-Qi-Variants-Addon/shared/build/libs/kizuna-meridian-qi-variants-addon-shared-0.1.0-SNAPSHOT.jar')
+    include 'local.meridian:server'
+    include 'com.google.protobuf:protobuf-java:4.36.2'
+    include 'org.tomlj:tomlj:1.1.1'
+    include 'org.antlr:antlr4-runtime:4.11.1'
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+
+loom {
+    mods {
+        meridian_creature_host { sourceSet sourceSets.main }
+    }
+}
