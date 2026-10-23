@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -98,10 +99,8 @@ public final class CreatureFabric implements ModInitializer {
             return;
         }
         tickCounter++;
-        // 释放调用必须在主线程进行；失败项留在世界账本中等待下一轮或重启。
-        if (tickCounter % 20 == 0) {
-            worldState.retry();
-        }
+        // 释放调用必须在主线程进行；失败项在下一个服务器 tick 或重启后重试。
+        worldState.retry();
         if (config.particleEnabled() && tickCounter % config.particleIntervalTicks() == 0) {
             emitParticles(server);
         }
@@ -194,15 +193,21 @@ public final class CreatureFabric implements ModInitializer {
             return;
         }
         access.meridian$creatureReleaseQueued(true);
+        var body = access.meridian$creatureBody();
+        var released = dev.kizuna.meridian.core.QiInventory.empty();
         try {
-            // 有时原版移除先于 Human 服务可用；此时至少保留当前库存，服务恢复后由账本重试。
+            // 有时原版移除先于 Human 服务可用；此时保留当前库存，服务恢复后由账本重试。
             try {
-                BodyMessages.QiInventory released = access.meridian$creatureBody().settle(now());
-                enqueueRelease(entity, released);
+                released = dev.kizuna.meridian.core.QiInventory.combine(List.of(released,
+                        dev.kizuna.meridian.protocol.BodyProtobuf.fromInventory(body.settle(now()))));
             } catch (CreatureEnvironmentClient.Unavailable unavailable) {
                 LOGGER.debug("移除时无法结算生物时间 subject={}", entity.getUuidAsString());
+            } catch (RuntimeException failure) {
+                LOGGER.error("移除时结算生物时间失败 subject={}", entity.getUuidAsString(), failure);
             }
-            enqueueRelease(entity, access.meridian$creatureBody().releaseInventory());
+            // 结算损耗和身体剩余库存合并成一条 RegionRelease，避免同一实体产生多笔释放。
+            released = dev.kizuna.meridian.core.QiInventory.combine(List.of(released, body.releaseInventory()));
+            enqueueRelease(entity, released);
         } catch (RuntimeException failure) {
             LOGGER.error("生物移除释放失败 subject={}", entity.getUuidAsString(), failure);
         }
@@ -235,13 +240,14 @@ public final class CreatureFabric implements ModInitializer {
     }
 
     static int colorFor(String attribute) {
-        Integer configured = config.particleColors().get(attribute);
-        if (configured != null) {
-            return configured;
-        }
-        return variants.catalog().getAttributesList().stream()
+        // 目录属性的展示色由 Qi-Variants 所有；配置只补充五行和无属性颜色。
+        var catalogColor = variants.catalog().getAttributesList().stream()
                 .filter(value -> value.getId().equals(attribute) && value.hasColorRgb())
-                .mapToInt(QiVariantsMessages.VariantAttribute::getColorRgb).findFirst().orElse(0xB8B8B8);
+                .mapToInt(QiVariantsMessages.VariantAttribute::getColorRgb).findFirst();
+        if (catalogColor.isPresent()) {
+            return catalogColor.getAsInt();
+        }
+        return config.particleColors().getOrDefault(attribute, 0xB8B8B8);
     }
 
     static String mainAttribute(BodyMessages.BodySnapshot snapshot) {

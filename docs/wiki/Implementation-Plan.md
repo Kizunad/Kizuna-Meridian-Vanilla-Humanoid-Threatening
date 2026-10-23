@@ -19,4 +19,4 @@
 - 释放账本保存完整 `RegionRelease` 字节请求，服务器 tick 重试；Human 返回成功或 duplicate 后才删除记录。`UNLOADED_*` 与 `CHANGED_DIMENSION` 保留身体，`KILLED`/`DISCARDED` 结算并释放。
 - `MobEntity.convertTo` 的村民转女巫路径迁移同一身体，避免把转换误算成死亡。真炁身体按配置频率发出主属性颜色粒子，OP 命令 `/meridian creature inspect` 输出档位、开拓数、主属性、密度、装填体积和区域来源。
 
-本仓库的 Fabric 工程依赖相邻 Human Addon 已构建的 shared/server JAR；Human Fabric 与本仓库的完整装配存在循环依赖，源码联调只作为显式诊断选项使用。真元属性的战斗效果仍由 Vanilla-Damage 另批次接入。
+本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配：Threatening Fabric JAR 进入 `modules`，Human/Damage/Healing 的 server JAR 进入 `serverLibraries`，Qi-Variants 的 shared/server JAR 进入 `localRuntime`。纯 Java 编译仍依赖相邻 Human Addon 已构建的 shared/server JAR；Human Fabric 与本仓库的源码联调存在循环依赖，源码联调只作为显式诊断选项使用。真元属性的战斗效果仍由 Vanilla-Damage 另批次接入。

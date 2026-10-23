@@ -17,15 +17,16 @@ dependencies {
 
     implementation project(':server')
     include project(':server')
-    include files('../Kizuna-Meridian-Human-Addon/server/build/libs/kizuna-meridian-human-addon-server-0.1.0-SNAPSHOT.jar')
-    include files('../Kizuna-Meridian-Human-Addon/shared/build/libs/kizuna-meridian-human-addon-shared-0.1.0-SNAPSHOT.jar')
-    include files('../Kizuna-Meridian-Qi-Variants-Addon/server/build/libs/kizuna-meridian-qi-variants-addon-server-0.1.0-SNAPSHOT.jar')
-    include files('../Kizuna-Meridian-Qi-Variants-Addon/shared/build/libs/kizuna-meridian-qi-variants-addon-shared-0.1.0-SNAPSHOT.jar')
-    include 'local.meridian:server'
-    include 'com.google.protobuf:protobuf-java:4.36.2'
-    include 'org.tomlj:tomlj:1.1.1'
-    include 'org.antlr:antlr4-runtime:4.11.1'
+    include implementation('local.meridian:server')
+    include implementation('com.google.protobuf:protobuf-java:4.36.2')
+    include implementation('org.tomlj:tomlj:1.1.1')
+    include implementation('org.antlr:antlr4-runtime:4.11.1')
 }
+
+// 开发运行与完整装配沿用 Meridian 统一布局：本模组进入 modules，
+// Human/Damage/Healing 的纯 Java JAR 进入 serverLibraries，Qi-Variants
+// 的 shared/server JAR 进入 localRuntime。
+apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
 
 processResources {
     inputs.property 'version', project.version
@@ -35,5 +36,8 @@ processResources {
 loom {
     mods {
         meridian_creature_host { sourceSet sourceSets.main }
+    }
+    runs {
+        server { runDir 'build/server' }
     }
 }

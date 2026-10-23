@@ -15,7 +15,8 @@ public abstract class MobCreatureConversionMixin {
     @Inject(method = "convertTo", at = @At("HEAD"))
     private void meridian$beginMigration(EntityType<? extends MobEntity> type, boolean keepEquipment,
                                           CallbackInfoReturnable<MobEntity> callback) {
-        if (type == EntityType.WITCH && (Object) this instanceof LivingEntity oldEntity) {
+        if (type == EntityType.WITCH && ((MobEntity) (Object) this).getType() == EntityType.VILLAGER
+                && (Object) this instanceof LivingEntity oldEntity) {
             CreatureFabric.markConversion(oldEntity, true);
         }
     }
@@ -23,7 +24,8 @@ public abstract class MobCreatureConversionMixin {
     @Inject(method = "convertTo", at = @At("RETURN"))
     private void meridian$migrateTo(EntityType<? extends MobEntity> type, boolean keepEquipment,
                                      CallbackInfoReturnable<MobEntity> callback) {
-        if (type == EntityType.WITCH && (Object) this instanceof LivingEntity oldEntity) {
+        if (type == EntityType.WITCH && ((MobEntity) (Object) this).getType() == EntityType.VILLAGER
+                && (Object) this instanceof LivingEntity oldEntity) {
             LivingEntity newEntity = callback.getReturnValue();
             if (newEntity == null) {
                 CreatureFabric.markConversion(oldEntity, false);
