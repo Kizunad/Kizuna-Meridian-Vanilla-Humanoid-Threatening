@@ -41,3 +41,32 @@ loom {
         server { runDir 'build/server' }
     }
 }
+
+// GameTest 使用完整 Fabric 服务端验证实体生命周期、Mixin 与 Human/Damage 装配。
+sourceSets {
+    gametest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+dependencies {
+    // GameTest 显式使用 server 运行依赖，发布产物仍通过 include 嵌套 server JAR。
+    gametestRuntimeOnly project(':server')
+}
+
+loom {
+    mods {
+        meridian_humanoid_test { sourceSet sourceSets.gametest }
+    }
+    runs {
+        gametest {
+            server()
+            name 'Humanoid GameTest'
+            source sourceSets.gametest
+            runDir 'build/gametest'
+            vmArg '-Dfabric-api.gametest'
+            vmArg '-Dfabric-api.gametest.report-file=build/gametest-results.xml'
+        }
+    }
+}

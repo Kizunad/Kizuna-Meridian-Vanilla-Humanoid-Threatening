@@ -1,10 +1,9 @@
 package dev.kizuna.meridian.humanoid.server;
 
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.Map;
 
-/** 阶段 1 的不可变出生参数；所有数值都可由 TOML 覆盖。 */
+/** 不可变出生参数；所有数值都可由 TOML 覆盖。 */
 public record HumanoidConfig(
         int configVersion,
         double lifespanYears,
@@ -19,10 +18,7 @@ public record HumanoidConfig(
         double trueQiNoRegionFactor,
         FillRange wanderingFill,
         FillRange trueQiFill,
-        Map<HumanoidSpecies, SpeciesProfile> speciesProfiles,
-        boolean particleEnabled,
-        int particleIntervalTicks,
-        Map<String, Integer> particleColors) {
+        Map<HumanoidSpecies, SpeciesProfile> speciesProfiles) {
 
     public HumanoidConfig {
         // 先校验全局范围，防止生成过程中才发现寿命或体积无法表示。
@@ -32,35 +28,18 @@ public record HumanoidConfig(
                 || !fraction(naturalFillVolumeRatio) || !fraction(mainAttributeShareMinimum)
                 || !fraction(mainAttributeShareMaximum) || mainAttributeShareMinimum > mainAttributeShareMaximum
                 || !finitePositive(trueQiReferenceConcentration) || !fraction(trueQiConcentrationCap)
-                || !fraction(trueQiNoRegionFactor) || particleIntervalTicks <= 0) {
+                || !fraction(trueQiNoRegionFactor)) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 全局范围无效");
         }
         if (wanderingFill == null || trueQiFill == null) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 装填范围不能为空");
         }
-        if (particleColors == null) {
-            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 粒子颜色不能为空");
-        }
-        var copiedColors = new HashMap<String, Integer>();
-        for (var entry : particleColors.entrySet()) {
-            if (entry.getKey() == null || entry.getKey().isBlank()
-                    || entry.getValue() == null || entry.getValue() < 0 || entry.getValue() > 0xFFFFFF) {
-                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 粒子颜色无效");
-            }
-            copiedColors.put(entry.getKey(), entry.getValue());
-        }
-        for (String required : java.util.List.of("meridian:none", "meridian:fire", "meridian:water",
-                "meridian:wood", "meridian:metal", "meridian:earth")) {
-            if (!copiedColors.containsKey(required)) {
-                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少粒子颜色 " + required);
-            }
-        }
-        particleColors = Map.copyOf(copiedColors);
         var copiedProfiles = new EnumMap<HumanoidSpecies, SpeciesProfile>(HumanoidSpecies.class);
-        if (speciesProfiles == null || speciesProfiles.size() != HumanoidSpecies.values().length) {
+        HumanoidSpecies[] speciesTypes = HumanoidSpecies.values();
+        if (speciesProfiles == null || speciesProfiles.size() != speciesTypes.length) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 必须为七种类人实体提供配置");
         }
-        for (HumanoidSpecies species : HumanoidSpecies.values()) {
+        for (HumanoidSpecies species : speciesTypes) {
             SpeciesProfile profile = speciesProfiles.get(species);
             if (profile == null) {
                 throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少 " + species.entityId());
@@ -98,11 +77,13 @@ public record HumanoidConfig(
                             double wallMinimum, double wallMaximum,
                             double densityMinimum, double densityMaximum,
                             double freeResidualProbability, double freeResidualVolumeMaximum) {
+        private static final double MINIMUM_DENSITY = 0.01;
+
         public FillRange {
             // 内腔、外壁使用稳定体积比例；密度上限是开区间端点。
             if (!range(lumenMinimum, lumenMaximum) || !range(wallMinimum, wallMaximum)
                     || !Double.isFinite(densityMinimum) || !Double.isFinite(densityMaximum)
-                    || densityMinimum < .01 || densityMinimum >= densityMaximum
+                    || densityMinimum < MINIMUM_DENSITY || densityMinimum >= densityMaximum
                     || !fraction(freeResidualProbability) || !fraction(freeResidualVolumeMaximum)) {
                 throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 装填或密度范围无效");
             }

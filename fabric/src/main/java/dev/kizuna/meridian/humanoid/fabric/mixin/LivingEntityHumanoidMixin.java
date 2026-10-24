@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
@@ -17,6 +18,7 @@ import java.util.UUID;
 /** 将身体快照按实体保存；查询宿主前不创建身体。 */
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess {
+    @Unique private static final int meridian$MAX_SAVED_RECEIPTS = 32;
     @Unique private HumanoidBodyState meridian$body;
     @Unique private byte[] meridian$savedBody;
     @Unique private byte[][] meridian$savedReceipts = new byte[0][];
@@ -24,7 +26,6 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private UUID meridian$savedOwner;
     @Unique private boolean meridian$loading;
     @Unique private boolean meridian$releaseQueued;
-    @Unique private boolean meridian$conversionPending;
 
     @Override
     public HumanoidBodyState meridian$humanoidBody() {
@@ -38,8 +39,12 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         meridian$body = state;
         meridian$savedBody = null;
         meridian$savedReceipts = new byte[0][];
-        meridian$savedRegionSource = state == null ? "" : state.regionSource();
-        meridian$savedOwner = ((net.minecraft.entity.Entity) (Object) this).getUuid();
+        if (state == null) {
+            meridian$savedRegionSource = "";
+        } else {
+            meridian$savedRegionSource = state.regionSource();
+        }
+        meridian$savedOwner = ((Entity) (Object) this).getUuid();
     }
 
     @Override
@@ -49,31 +54,17 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     }
 
     @Override
-    public void meridian$humanoidSavedBody(byte[] body, byte[][] receipts) {
-        // NBT 读取阶段先缓存字节，第一次健康查询才恢复 Framework Store。
-        meridian$humanoidSavedBody(body, receipts, "");
-    }
-
-    @Override
-    public void meridian$humanoidSavedBody(byte[] body, byte[][] receipts, String regionSource) {
-        // NBT 读取阶段先缓存字节，第一次健康查询才恢复 Framework Store。
-        meridian$humanoidSavedBody(body, receipts, regionSource,
-                ((net.minecraft.entity.Entity) (Object) this).getUuid());
-    }
-
-    @Override
-    public void meridian$humanoidSavedBody(byte[] body, byte[][] receipts, String regionSource, UUID ownerId) {
-        // 转化迁移可以保留旧身体 ID，但所有权改为当前实体，防止新实体恢复时误拒绝合法迁移。
-        meridian$savedBody = body;
-        meridian$savedReceipts = receipts == null ? new byte[0][] : receipts;
-        meridian$savedRegionSource = regionSource == null ? "" : regionSource;
-        meridian$savedOwner = ownerId == null ? ((net.minecraft.entity.Entity) (Object) this).getUuid() : ownerId;
-    }
-
-    @Override
     public byte[][] meridian$humanoidSavedReceipts() {
-        // 返回不可修改的数组副本，宿主恢复时不会改变实体暂存数据。
-        return java.util.Arrays.stream(meridian$savedReceipts).map(byte[]::clone).toArray(byte[][]::new);
+        // 逐条克隆回执，宿主修改返回数组时不会改变实体暂存数据。
+        byte[][] copy = new byte[meridian$savedReceipts.length][];
+        for (int index = 0; index < meridian$savedReceipts.length; index++) {
+            byte[] source = meridian$savedReceipts[index];
+            int length = source.length;
+            byte[] receiptCopy = new byte[length];
+            System.arraycopy(source, 0, receiptCopy, 0, length);
+            copy[index] = receiptCopy;
+        }
+        return copy;
     }
 
     @Override
@@ -84,9 +75,11 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
 
     @Override
     public UUID meridian$humanoidSavedOwner() {
-        // 未迁移的旧存档没有 owner_uuid 时由当前实体 UUID 补齐。
-        return meridian$savedOwner == null ? ((net.minecraft.entity.Entity) (Object) this).getUuid()
-                : meridian$savedOwner;
+        // 旧存档没有 owner_uuid 时由当前实体 UUID 补齐。
+        if (meridian$savedOwner == null) {
+            return ((Entity) (Object) this).getUuid();
+        }
+        return meridian$savedOwner;
     }
 
     @Override
@@ -96,29 +89,27 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     }
 
     @Override
-    public void meridian$humanoidLoading(boolean loading) {
-        // 读完 NBT 后由 mixin 尾部清除加载门闩。
-        meridian$loading = loading;
+    public void meridian$beginHumanoidLoading() {
+        // NBT 读取完成前阻止其他附属提前创建身体。
+        meridian$loading = true;
+    }
+
+    @Override
+    public void meridian$finishHumanoidLoading() {
+        // 读完 NBT 后允许健康宿主恢复已保存的身体。
+        meridian$loading = false;
     }
 
     @Override
     public boolean meridian$humanoidReleaseQueued() {
+        // 移除重入时使用已入队事实阻止重复释放。
         return meridian$releaseQueued;
     }
 
     @Override
-    public void meridian$humanoidReleaseQueued(boolean queued) {
-        meridian$releaseQueued = queued;
-    }
-
-    @Override
-    public boolean meridian$humanoidConversionPending() {
-        return meridian$conversionPending;
-    }
-
-    @Override
-    public void meridian$humanoidConversionPending(boolean pending) {
-        meridian$conversionPending = pending;
+    public void meridian$markHumanoidReleaseQueued() {
+        // 标记释放请求已归世界账本处理。
+        meridian$releaseQueued = true;
     }
 
     @Override
@@ -127,14 +118,25 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         if (meridian$body == null && (meridian$savedBody == null || meridian$savedBody.length == 0)) {
             return;
         }
-        byte[] body = meridian$body == null ? meridian$savedBody : meridian$body.encodeBody();
-        byte[][] receipts = meridian$body == null ? meridian$savedReceipts : meridian$body.encodeReceipts();
+        byte[] body;
+        byte[][] receipts;
+        UUID ownerId;
+        String regionSource;
+        if (meridian$body == null) {
+            body = meridian$savedBody;
+            receipts = meridian$savedReceipts;
+            ownerId = meridian$humanoidSavedOwner();
+            regionSource = meridian$savedRegionSource;
+        } else {
+            body = meridian$body.encodeBody();
+            receipts = meridian$body.encodeReceipts();
+            ownerId = ((Entity) (Object) this).getUuid();
+            regionSource = meridian$body.regionSource();
+        }
         NbtCompound stored = new NbtCompound();
         stored.putByteArray("body", body);
-        stored.putUuid("owner_uuid", meridian$body == null ? meridian$humanoidSavedOwner()
-                : ((net.minecraft.entity.Entity) (Object) this).getUuid());
-        stored.putString("region_source", meridian$body == null ? meridian$savedRegionSource
-                : meridian$body.regionSource());
+        stored.putUuid("owner_uuid", ownerId);
+        stored.putString("region_source", regionSource);
         NbtList receiptList = new NbtList();
         for (byte[] receipt : receipts) {
             receiptList.add(new net.minecraft.nbt.NbtByteArray(receipt));
@@ -146,7 +148,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Inject(method = "readCustomDataFromNbt", at = @At("HEAD"))
     private void meridian$beginRead(NbtCompound nbt, CallbackInfo callback) {
         // 读档期间保持未绑定，直到正文被完整解析并且实体再次被健康宿主查询。
-        meridian$loading = true;
+        meridian$beginHumanoidLoading();
         if (!nbt.contains("meridian_humanoid", NbtElement.COMPOUND_TYPE)) {
             return;
         }
@@ -159,29 +161,42 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         if (meridian$savedBody.length == 0) {
             throw new IllegalArgumentException("类人实体身体快照不能为空");
         }
-        meridian$savedRegionSource = stored.contains("region_source", NbtElement.STRING_TYPE)
-                ? stored.getString("region_source") : "";
-        if (stored.contains("owner_uuid") && !stored.contains("owner_uuid", NbtElement.INT_ARRAY_TYPE)) {
-            throw new IllegalArgumentException("类人实体身体 owner_uuid 类型无效");
+        if (stored.contains("region_source", NbtElement.STRING_TYPE)) {
+            meridian$savedRegionSource = stored.getString("region_source");
+        } else {
+            meridian$savedRegionSource = "";
         }
-        meridian$savedOwner = stored.contains("owner_uuid", NbtElement.INT_ARRAY_TYPE)
-                ? stored.getUuid("owner_uuid") : ((net.minecraft.entity.Entity) (Object) this).getUuid();
+        meridian$savedOwner = meridian$readOwner(stored);
         NbtList receiptList = stored.getList("receipts", NbtElement.BYTE_ARRAY_TYPE);
-        if (receiptList.getHeldType() != NbtElement.END_TYPE
-                && receiptList.getHeldType() != NbtElement.BYTE_ARRAY_TYPE
-                || receiptList.size() > 32) {
+        byte receiptType = receiptList.getHeldType();
+        int receiptCount = receiptList.size();
+        if (receiptType != NbtElement.END_TYPE && receiptType != NbtElement.BYTE_ARRAY_TYPE
+                || receiptCount > meridian$MAX_SAVED_RECEIPTS) {
             throw new IllegalArgumentException("类人实体身体回执列表无效");
         }
-        meridian$savedReceipts = new byte[receiptList.size()][];
-        for (int index = 0; index < receiptList.size(); index++) {
+        meridian$savedReceipts = new byte[receiptCount][];
+        for (int index = 0; index < receiptCount; index++) {
             meridian$savedReceipts[index] = ((net.minecraft.nbt.NbtByteArray) receiptList.get(index)).getByteArray();
         }
+    }
+
+    @Unique
+    private UUID meridian$readOwner(NbtCompound stored) {
+        // 旧存档缺少 owner_uuid 时补当前实体 UUID，错误类型仍拒绝恢复。
+        boolean uuidPresent = stored.contains("owner_uuid", NbtElement.INT_ARRAY_TYPE);
+        if (stored.contains("owner_uuid") && !uuidPresent) {
+            throw new IllegalArgumentException("类人实体身体 owner_uuid 类型无效");
+        }
+        if (uuidPresent) {
+            return stored.getUuid("owner_uuid");
+        }
+        return ((Entity) (Object) this).getUuid();
     }
 
     @Inject(method = "readCustomDataFromNbt", at = @At("TAIL"))
     private void meridian$finishRead(NbtCompound nbt, CallbackInfo callback) {
         // 未创建实体保持缓存状态；健康宿主会在主线程按实体类型验证后恢复。
-        meridian$loading = false;
+        meridian$finishHumanoidLoading();
     }
 
     @Inject(method = "writeCustomDataToNbt", at = @At("TAIL"))

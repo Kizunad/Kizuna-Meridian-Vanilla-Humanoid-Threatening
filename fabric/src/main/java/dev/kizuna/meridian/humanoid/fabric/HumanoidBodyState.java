@@ -3,7 +3,6 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
-import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.server.HumanDamage;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
@@ -36,62 +35,93 @@ public final class HumanoidBodyState {
         bodyId = core.id().value();
         this.regionSource = regionSource == null ? "" : regionSource;
         this.targetMillis = targetMillis;
+        var installedContent = HumanoidFabric.content();
         commands = new BodyCommandHandler<>(
-                (caller, command) -> caller.equals(bodyId) && command.getBodyId().equals(bodyId)
-                        ? Optional.of(caller) : Optional.empty(),
+                (caller, command) -> {
+                    if (caller.equals(bodyId) && command.getBodyId().equals(bodyId)) {
+                        return Optional.of(caller);
+                    }
+                    return Optional.empty();
+                },
                 (caller, command, body) -> true,
-                (caller, body) -> MeridianMessages.TimeAdvancePlan.newBuilder()
-                        .setTarget(BodyProtobuf.toTime(body.settledAt()).toBuilder()
-                                .setElapsedMillis(Math.max(targetMillis, body.settledAt().elapsedMillis()))).setMode(MeridianMessages.TimeAdvanceMode.ACTIVE)
-                        .setBiologicalSecondsPerSimulationSecond(1).build(),
+                (caller, body) -> timeAdvancePlan(body, targetMillis),
                 store, (caller, receipt, before, after) -> { /* 实体写回 NBT 时保存已提交快照。 */ },
-                HumanoidFabric.content().recipes(), (caller, body, plan) -> Optional.empty(),
-                HumanoidFabric.content().actions(), HumanoidFabric.content().openings(), caller -> false,
+                installedContent.recipes(), (caller, body, plan) -> Optional.empty(),
+                installedContent.actions(), installedContent.openings(), caller -> false,
                 new HumanDamage());
     }
 
-    static HumanoidBodyState born(HumanoidSpecies species, UUID entityId, long worldSeed,
-                                  RegionInventory region, String regionSource,
-                                  BodyMessages.TimeCursor now) {
-        // 第一次健康查询才生成身体；区域库存和浓度由 Human 服务在同一主线程提供。
-        var random = HumanoidBodyGenerator.randomFor(worldSeed, entityId);
-        HumanoidVariant variant = HumanoidFabric.generator().rollVariant(species, region, random);
-        BodyMessages.BodySnapshot body = HumanoidFabric.generator().generate(species, variant, entityId,
-                region, random, now);
-        return new HumanoidBodyState(body, List.of(), regionSource, now.getElapsedMillis());
+    private static MeridianMessages.TimeAdvancePlan timeAdvancePlan(
+            dev.kizuna.meridian.core.BodySnapshot body, long targetMillis) {
+        // 时间计划沿用恢复身体时的目标下限，不能倒退已结算游标。
+        var settledAt = body.settledAt();
+        BodyMessages.TimeCursor target = BodyProtobuf.toTime(settledAt).toBuilder()
+                .setElapsedMillis(Math.max(targetMillis, settledAt.elapsedMillis()))
+                .build();
+        return MeridianMessages.TimeAdvancePlan.newBuilder()
+                .setTarget(target)
+                .setMode(MeridianMessages.TimeAdvanceMode.ACTIVE)
+                .setBiologicalSecondsPerSimulationSecond(1)
+                .build();
     }
 
-    static HumanoidBodyState restore(UUID entityId, UUID ownerId, byte[] bodyBytes, byte[][] receiptBytes, String regionSource,
-                                     BodyMessages.TimeCursor now) {
+    static HumanoidBodyState born(HumanoidSpecies species, UUID entityId, long worldSeed,
+                                   HumanoidEnvironmentClient.RegionSnapshot region,
+                                   BodyMessages.TimeCursor now) {
+        // 第一次健康查询才生成身体；区域库存和浓度由 Human 服务在同一主线程提供。
+        var random = HumanoidBodyGenerator.randomFor(worldSeed, entityId);
+        HumanoidBodyGenerator generator = HumanoidFabric.generator();
+        var inventory = region.inventory();
+        HumanoidVariant variant = generator.rollVariant(species, inventory, random);
+        var request = new HumanoidBodyGenerator.GenerationRequest(species, variant, entityId, inventory, now);
+        BodyMessages.BodySnapshot body = generator.generate(request, random);
+        return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis());
+    }
+
+    static HumanoidBodyState restore(UUID entityId, SavedBody saved, BodyMessages.TimeCursor now) {
         // NBT 正文先按 Framework 快照和回执协议解码，任何损坏都停止绑定而不重生身体。
+        UUID ownerId = saved.ownerId();
         if (entityId == null || ownerId == null || !entityId.equals(ownerId)) {
             throw new IllegalArgumentException("类人实体实体身份不能为空");
         }
-        BodyMessages.BodySnapshot body;
+        BodyMessages.BodySnapshot body = decodeBody(saved.bodyBytes());
+        validateBodyIdentity(body);
+        var receipts = new ArrayList<MeridianMessages.CommandReceipt>();
+        for (byte[] bytes : saved.receiptBytes()) {
+            receipts.add(MeridianProtocol.decodeReceipt(bytes));
+        }
+        var settledAt = body.getSettledAt();
+        String domain = settledAt.getDomain();
+        String epoch = settledAt.getEpoch();
+        if (domain.isBlank() || epoch.isBlank()
+                || !domain.equals(now.getDomain()) || !epoch.equals(now.getEpoch())) {
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
+        }
+        return new HumanoidBodyState(body, List.copyOf(receipts), saved.regionSource(), now.getElapsedMillis());
+    }
+
+    private static BodyMessages.BodySnapshot decodeBody(byte[] bodyBytes) {
+        // 反序列化失败明确标记为快照损坏，不能改为新生身体。
         try {
-            body = BodyMessages.BodySnapshot.parseFrom(bodyBytes);
+            return BodyMessages.BodySnapshot.parseFrom(bodyBytes);
         } catch (com.google.protobuf.InvalidProtocolBufferException failure) {
             throw new IllegalArgumentException("类人实体身体快照损坏", failure);
         }
+    }
+
+    private static void validateBodyIdentity(BodyMessages.BodySnapshot body) {
+        // 身体 ID 的前缀和 UUID 格式必须合法，所属实体另由 owner_uuid 校验。
         String bodyPrefix = "meridian_humanoid:entity/";
-        if (!body.getId().startsWith(bodyPrefix)) {
+        String id = body.getId();
+        if (!id.startsWith(bodyPrefix)) {
             throw new IllegalArgumentException("类人实体身体身份无效");
         }
         try {
-            UUID.fromString(body.getId().substring(bodyPrefix.length()));
+            // 这里只校验 UUID 格式；非法值抛出 IllegalArgumentException。
+            UUID.fromString(id.substring(bodyPrefix.length()));
         } catch (IllegalArgumentException invalid) {
             throw new IllegalArgumentException("类人实体身体身份无效", invalid);
         }
-        var receipts = new ArrayList<MeridianMessages.CommandReceipt>();
-        for (byte[] bytes : receiptBytes) {
-            receipts.add(MeridianProtocol.decodeReceipt(bytes));
-        }
-        if (body.getSettledAt().getDomain().isBlank() || body.getSettledAt().getEpoch().isBlank()
-                || !body.getSettledAt().getDomain().equals(now.getDomain())
-                || !body.getSettledAt().getEpoch().equals(now.getEpoch())) {
-            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
-        }
-        return new HumanoidBodyState(body, List.copyOf(receipts), regionSource, now.getElapsedMillis());
     }
 
     BodyMessages.QiInventory settle(BodyMessages.TimeCursor now) {
@@ -104,11 +134,18 @@ public final class HumanoidBodyState {
         if (body.getSettledAt().getElapsedMillis() >= targetMillis || body.getVitality().getDead()) {
             return BodyMessages.QiInventory.getDefaultInstance();
         }
-        var command = MeridianMessages.BodyCommand.newBuilder().setBodyId(bodyId)
-                .setExpectedRevision(body.getRevision()).setAdvanceTime(MeridianMessages.AdvanceTime.getDefaultInstance()).build();
+        var command = MeridianMessages.BodyCommand.newBuilder()
+                .setBodyId(bodyId)
+                .setExpectedRevision(body.getRevision())
+                .setAdvanceTime(MeridianMessages.AdvanceTime.getDefaultInstance())
+                .build();
         String requestId = UUID.randomUUID().toString();
-        submit(MeridianMessages.RequestEnvelope.newBuilder().setProtocolVersion(1)
-                .setRequestId(requestId).setBodyCommand(command).build(), false);
+        MeridianMessages.RequestEnvelope request = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(requestId)
+                .setBodyCommand(command)
+                .build();
+        submit(request);
         return store.receipts().stream().filter(receipt -> receipt.getRequestId().equals(requestId)
                         && receipt.hasTimeAdvance())
                 .map(MeridianMessages.CommandReceipt::getTimeAdvance)
@@ -155,9 +192,10 @@ public final class HumanoidBodyState {
     public byte[][] encodeReceipts() {
         // 仅保存最近 32 条回执，覆盖当前实体的正常幂等重试窗口并限制 NBT 体积。
         List<MeridianMessages.CommandReceipt> receipts = store.receipts();
-        int start = Math.max(0, receipts.size() - MAX_SAVED_RECEIPTS);
-        byte[][] result = new byte[receipts.size() - start][];
-        for (int index = start; index < receipts.size(); index++) {
+        int receiptCount = receipts.size();
+        int start = Math.max(0, receiptCount - MAX_SAVED_RECEIPTS);
+        byte[][] result = new byte[receiptCount - start][];
+        for (int index = start; index < receiptCount; index++) {
             result[index - start] = MeridianProtocol.encodeReceipt(receipts.get(index));
         }
         return result;
@@ -173,30 +211,36 @@ public final class HumanoidBodyState {
         });
         body.organStates().forEach(organ -> {
             inventories.add(organ.buffer());
-            if (organ.process() != null) {
-                inventories.add(organ.process().input());
+            var process = organ.process();
+            if (process != null) {
+                inventories.add(process.input());
             }
         });
         body.transits().forEach(transit -> inventories.add(transit.cargo()));
         return dev.kizuna.meridian.core.QiInventory.combine(inventories);
     }
 
-    private MeridianMessages.ResponseEnvelope submit(MeridianMessages.RequestEnvelope request, boolean health) {
-        // 时间推进和健康命令共用同一身份校验；失败只抛固定失败码，不发布部分身体。
-        byte[] responseBytes = health
-                ? commands.handleHealthEffect(bodyId, MeridianProtocol.encodeRequest(request))
-                : commands.handle(bodyId, MeridianProtocol.encodeRequest(request));
+    private void submit(MeridianMessages.RequestEnvelope request) {
+        // 时间推进命令使用相同身份提交，失败只抛固定失败码。
+        byte[] responseBytes = commands.handle(bodyId, MeridianProtocol.encodeRequest(request));
         MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
         if (response.hasFailure()) {
             throw new HumanoidHealthFailure(response.getFailure().getCode());
         }
-        return response;
     }
 
     private boolean sameClock(BodyMessages.TimeCursor now) {
-        return now != null && now.getDomain().equals(snapshot().getSettledAt().getDomain())
-                && now.getEpoch().equals(snapshot().getSettledAt().getEpoch())
+        // 同一次检查只读取一份已提交游标，域和 epoch 必须同时匹配。
+        if (now == null) {
+            return false;
+        }
+        var settledAt = snapshot().getSettledAt();
+        return now.getDomain().equals(settledAt.getDomain())
+                && now.getEpoch().equals(settledAt.getEpoch())
                 && now.getElapsedMillis() >= 0;
+    }
+
+    record SavedBody(UUID ownerId, byte[] bodyBytes, byte[][] receiptBytes, String regionSource) {
     }
 
     static final class HumanoidHealthFailure extends RuntimeException {

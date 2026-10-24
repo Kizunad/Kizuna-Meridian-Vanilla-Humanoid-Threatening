@@ -14,28 +14,34 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /** Human 区域服务投影到类人实体生成器的只读库存和浓度。 */
-public record RegionInventory(List<Entry> entries, double concentration, boolean regionPresent) {
+public record RegionInventory(List<Entry> entries, double concentration, Presence presence) {
     public RegionInventory {
         // 生成器只读取快照；复制列表后拒绝负库存和非法密度。
-        entries = List.copyOf(entries);
+        List<Entry> copiedEntries = List.copyOf(entries);
         if (!Double.isFinite(concentration) || concentration < 0) {
             throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 浓度必须为有限非负数");
         }
-        for (Entry entry : entries) {
+        for (Entry entry : copiedEntries) {
             if (entry == null) {
                 throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 库存明细不能为空");
             }
         }
+        entries = copiedEntries;
     }
 
     public static RegionInventory present(double concentration, List<Entry> entries) {
         // 有区域时即使库存为空也保留“区域存在”事实，真炁概率仍按浓度函数计算。
-        return new RegionInventory(entries, concentration, true);
+        return new RegionInventory(entries, concentration, Presence.PRESENT);
     }
 
     public static RegionInventory absent() {
         // 没有区域来源的维度使用配置中的默认概率因子。
-        return new RegionInventory(List.of(), 0, false);
+        return new RegionInventory(List.of(), 0, Presence.ABSENT);
+    }
+
+    public boolean regionPresent() {
+        // 区域存在事实与浓度和库存相互独立，空区域仍视为存在。
+        return presence == Presence.PRESENT;
     }
 
     public static RegionInventory fromShares(double concentration, Map<String, Double> shares) {
@@ -57,10 +63,11 @@ public record RegionInventory(List<Entry> entries, double concentration, boolean
         registry.catalog().getAttributesList().forEach(attribute -> allowed.add(attribute.getId()));
         var totals = new TreeMap<String, Double>();
         for (Entry entry : entries) {
-            if (entry.attribute().equals("meridian:none") || !allowed.contains(entry.attribute())) {
+            String attribute = entry.attribute();
+            if (attribute.equals("meridian:none") || !allowed.contains(attribute)) {
                 continue;
             }
-            totals.merge(entry.attribute(), entry.amount(), Double::sum);
+            totals.merge(attribute, entry.amount(), Double::sum);
         }
         totals.values().removeIf(value -> value == 0);
         return Collections.unmodifiableMap(totals);
@@ -70,11 +77,17 @@ public record RegionInventory(List<Entry> entries, double concentration, boolean
     public record Entry(String attribute, double density, double amount) {
         public Entry {
             // 同一属性可以有多个相态；合并发生在 eligibleShares，不改变输入明细。
+            // 定义 ID 和密度转换仅用于校验；非法值会抛出输入校验异常。
             new DefinitionId(attribute);
             QiDensity.phase(density);
             if (!Double.isFinite(amount) || amount < 0) {
                 throw HumanoidErrors.invalid(HumanoidErrors.REGION + ": 数量必须为有限非负数");
             }
         }
+    }
+
+    public enum Presence {
+        PRESENT,
+        ABSENT
     }
 }

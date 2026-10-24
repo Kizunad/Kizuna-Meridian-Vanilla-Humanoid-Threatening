@@ -87,15 +87,3 @@ fill_multiplier = 1.0
 wall_fill_multiplier = 1.0
 arm_opening_weight = 1.0
 foot_opening_weight = 1.0
-
-[particle]
-enabled = true
-interval_ticks = 4
-
-[particle.colors]
-"meridian:none" = 0xB8B8B8
-"meridian:fire" = 0xE53935
-"meridian:water" = 0x42A5F5
-"meridian:wood" = 0x66BB6A
-"meridian:metal" = 0xCFD8DC
-"meridian:earth" = 0xD4A72C

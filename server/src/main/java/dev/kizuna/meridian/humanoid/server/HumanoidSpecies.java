@@ -3,7 +3,7 @@ package dev.kizuna.meridian.humanoid.server;
 import java.util.Arrays;
 import java.util.Optional;
 
-/** 本批次允许认领的七种原版生人实体。 */
+/** 允许认领的七种原版生人实体。 */
 public enum HumanoidSpecies {
     VILLAGER("minecraft:villager"),
     WANDERING_TRADER("minecraft:wandering_trader"),

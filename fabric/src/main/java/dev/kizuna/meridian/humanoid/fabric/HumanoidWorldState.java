@@ -4,6 +4,7 @@ import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtByteArray;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.world.PersistentState;
@@ -28,29 +29,37 @@ final class HumanoidWorldState extends PersistentState {
             throw new IllegalArgumentException("类人实体释放序号无效");
         }
         NbtList entries = nbt.getList("pending", NbtElement.BYTE_ARRAY_TYPE);
-        if (entries.getHeldType() != NbtElement.END_TYPE
-                && entries.getHeldType() != NbtElement.BYTE_ARRAY_TYPE) {
+        byte entryType = entries.getHeldType();
+        if (entryType != NbtElement.END_TYPE && entryType != NbtElement.BYTE_ARRAY_TYPE) {
             throw new IllegalArgumentException("类人实体释放账本列表类型无效");
         }
-        for (int index = 0; index < entries.size(); index++) {
-            try {
-                var release = EnvironmentHostMessages.RegionRelease.parseFrom(
-                        ((net.minecraft.nbt.NbtByteArray) entries.get(index)).getByteArray());
-                BodyProtobuf.fromInventory(release.getReleasedQi());
-                if (release.getReleaseId().isBlank() || !release.hasPosition()
-                        || release.getPosition().getDimensionId().isBlank()
-                        || release.getReleasedQi().getEntriesCount() == 0) {
-                    throw new IllegalArgumentException("类人实体释放记录无效");
-                }
-                if (state.pending.stream().anyMatch(value -> value.getReleaseId().equals(release.getReleaseId()))) {
-                    throw new IllegalArgumentException("类人实体释放记录重复");
-                }
-                state.pending.add(release);
-            } catch (Exception failure) {
-                throw new IllegalArgumentException("类人实体释放记录损坏", failure);
-            }
+        int entryCount = entries.size();
+        for (int index = 0; index < entryCount; index++) {
+            state.pending.add(readRelease(entries.get(index), state.pending));
         }
         return state;
+    }
+
+    private static EnvironmentHostMessages.RegionRelease readRelease(
+            NbtElement entry, List<EnvironmentHostMessages.RegionRelease> pending) {
+        // 每条请求先校验库存和身份，再检查序列内是否重复，损坏记录使整份存档加载失败。
+        try {
+            var release = EnvironmentHostMessages.RegionRelease.parseFrom(((NbtByteArray) entry).getByteArray());
+            var releasedQi = release.getReleasedQi();
+            // 这里只校验库存，非法属性、密度或元数会抛出协议校验异常。
+            BodyProtobuf.fromInventory(releasedQi);
+            String releaseId = release.getReleaseId();
+            if (releaseId.isBlank() || !release.hasPosition()
+                    || release.getPosition().getDimensionId().isBlank() || releasedQi.getEntriesCount() == 0) {
+                throw new IllegalArgumentException("类人实体释放记录无效");
+            }
+            if (pending.stream().anyMatch(value -> value.getReleaseId().equals(releaseId))) {
+                throw new IllegalArgumentException("类人实体释放记录重复");
+            }
+            return release;
+        } catch (Exception failure) {
+            throw new IllegalArgumentException("类人实体释放记录损坏", failure);
+        }
     }
 
     void enqueue(java.util.UUID entityId, net.minecraft.entity.Entity entity, dev.kizuna.meridian.core.QiInventory qi) {
@@ -64,9 +73,14 @@ final class HumanoidWorldState extends PersistentState {
         String releaseId = "meridian_humanoid:" + entityId + ":" + nextSequence++;
         var position = EnvironmentHostMessages.RegionQuery.newBuilder()
                 .setDimensionId(entity.getWorld().getRegistryKey().getValue().toString())
-                .setBlockX(entity.getBlockX()).setBlockZ(entity.getBlockZ()).build();
-        var release = EnvironmentHostMessages.RegionRelease.newBuilder().setReleaseId(releaseId)
-                .setPosition(position).setReleasedQi(BodyProtobuf.toInventory(qi)).build();
+                .setBlockX(entity.getBlockX())
+                .setBlockZ(entity.getBlockZ())
+                .build();
+        var release = EnvironmentHostMessages.RegionRelease.newBuilder()
+                .setReleaseId(releaseId)
+                .setPosition(position)
+                .setReleasedQi(BodyProtobuf.toInventory(qi))
+                .build();
         pending.add(release);
         markDirty();
     }

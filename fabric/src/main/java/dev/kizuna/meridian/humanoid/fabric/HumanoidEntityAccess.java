@@ -12,12 +12,6 @@ public interface HumanoidEntityAccess {
 
     byte[] meridian$humanoidSavedBody();
 
-    void meridian$humanoidSavedBody(byte[] body, byte[][] receipts);
-
-    void meridian$humanoidSavedBody(byte[] body, byte[][] receipts, String regionSource);
-
-    void meridian$humanoidSavedBody(byte[] body, byte[][] receipts, String regionSource, UUID ownerId);
-
     byte[][] meridian$humanoidSavedReceipts();
 
     String meridian$humanoidSavedRegionSource();
@@ -26,15 +20,13 @@ public interface HumanoidEntityAccess {
 
     boolean meridian$humanoidLoading();
 
-    void meridian$humanoidLoading(boolean loading);
+    void meridian$beginHumanoidLoading();
+
+    void meridian$finishHumanoidLoading();
 
     boolean meridian$humanoidReleaseQueued();
 
-    void meridian$humanoidReleaseQueued(boolean queued);
-
-    boolean meridian$humanoidConversionPending();
-
-    void meridian$humanoidConversionPending(boolean pending);
+    void meridian$markHumanoidReleaseQueued();
 
     void meridian$writeHumanoidNbt(NbtCompound nbt);
 }

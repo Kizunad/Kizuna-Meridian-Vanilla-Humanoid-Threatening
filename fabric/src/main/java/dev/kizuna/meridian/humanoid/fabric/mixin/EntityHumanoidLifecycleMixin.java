@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class EntityHumanoidLifecycleMixin {
     @Inject(method = "remove", at = @At("HEAD"))
     private void meridian$onRemove(Entity.RemovalReason reason, CallbackInfo callback) {
+        // 移除原因由宿主区分，卸载保留身体，死亡和丢弃写入释放账本。
         HumanoidFabric.onEntityRemoved((Entity) (Object) this, reason);
     }
 }

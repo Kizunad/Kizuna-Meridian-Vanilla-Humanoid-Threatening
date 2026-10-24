@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /** 类人实体出生参数的 TOML 读取器；解析结果交给不可变配置构造器统一校验。 */
@@ -70,7 +69,7 @@ public final class HumanoidConfigLoader {
         checkKeys(parsed, Set.of("config_version", "lifespan_years", "age_min_years", "age_max_years",
                 "opened_lumen_gain", "natural_fill_volume_ratio", "main_attribute_share_min",
                 "main_attribute_share_max", "true_qi_reference_concentration", "true_qi_concentration_cap",
-                "true_qi_no_region_factor", "fill", "species", "particle"), "");
+                "true_qi_no_region_factor", "fill", "species"), "");
 
         TomlTable fill = table(parsed, "fill", "fill");
         checkKeys(fill, Set.of("wandering_qi", "true_qi"), "fill.");
@@ -78,31 +77,7 @@ public final class HumanoidConfigLoader {
                 "fill.wandering_qi");
         HumanoidConfig.FillRange trueQi = fillRange(table(fill, "true_qi", "fill.true_qi"), "fill.true_qi");
 
-        TomlTable species = table(parsed, "species", "species");
-        var profiles = new EnumMap<HumanoidSpecies, HumanoidConfig.SpeciesProfile>(HumanoidSpecies.class);
-        var knownKeys = new HashSet<String>();
-        for (String key : species.keySet()) {
-            HumanoidSpecies value = HumanoidSpecies.fromEntityId(key)
-                    .orElseThrow(() -> HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 未知物种 " + key));
-            knownKeys.add(key);
-            profiles.put(value, speciesProfile(table(species, key, "species." + key), "species." + key));
-        }
-        if (knownKeys.size() != HumanoidSpecies.values().length) {
-            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种配置必须覆盖本批次全部七种类人实体");
-        }
-
-        TomlTable particle = table(parsed, "particle", "particle");
-        checkKeys(particle, Set.of("enabled", "interval_ticks", "colors"), "particle.");
-        TomlTable colors = table(particle, "colors", "particle.colors");
-        var particleColors = new java.util.HashMap<String, Integer>();
-        for (String key : colors.keySet()) {
-            Object value = colors.get(List.of(key));
-            if (!(value instanceof Long color) || color < 0 || color > 0xFFFFFF) {
-                throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": particle.colors." + key
-                        + " 必须是 24 位 RGB 整数");
-            }
-            particleColors.put(key, color.intValue());
-        }
+        var profiles = speciesProfiles(table(parsed, "species", "species"));
         return new HumanoidConfig(
                 integer(parsed, "config_version", "config_version"),
                 number(parsed, "lifespan_years", "lifespan_years"),
@@ -115,8 +90,24 @@ public final class HumanoidConfigLoader {
                 number(parsed, "true_qi_reference_concentration", "true_qi_reference_concentration"),
                 number(parsed, "true_qi_concentration_cap", "true_qi_concentration_cap"),
                 number(parsed, "true_qi_no_region_factor", "true_qi_no_region_factor"), wandering, trueQi,
-                profiles, bool(particle, "enabled", "particle.enabled"),
-                integer(particle, "interval_ticks", "particle.interval_ticks"), particleColors);
+                profiles);
+    }
+
+    private static EnumMap<HumanoidSpecies, HumanoidConfig.SpeciesProfile> speciesProfiles(TomlTable species) {
+        // 先逐项解析物种，再确认全部受支持实体都有配置。
+        var profiles = new EnumMap<HumanoidSpecies, HumanoidConfig.SpeciesProfile>(HumanoidSpecies.class);
+        var knownKeys = new HashSet<String>();
+        for (String key : species.keySet()) {
+            HumanoidSpecies value = HumanoidSpecies.fromEntityId(key)
+                    .orElseThrow(() -> HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 未知物种 " + key));
+            knownKeys.add(key);
+            profiles.put(value, speciesProfile(table(species, key, "species." + key), "species." + key));
+        }
+        if (knownKeys.size() != HumanoidSpecies.values().length) {
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种配置必须覆盖全部七种类人实体");
+        }
+
+        return profiles;
     }
 
     private static HumanoidConfig.FillRange fillRange(TomlTable table, String path) {
@@ -156,7 +147,7 @@ public final class HumanoidConfigLoader {
     }
 
     private static int integer(TomlTable table, String key, String path) {
-        // 版本和 tick 间隔只接受完整正整数，不通过 double 截断。
+        // 配置版本只接受完整正整数，不通过 double 截断。
         Object value = table.get(List.of(key));
         if (!(value instanceof Long integer) || integer <= 0 || integer > Integer.MAX_VALUE) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是正整数");
@@ -167,19 +158,13 @@ public final class HumanoidConfigLoader {
     private static double number(TomlTable table, String key, String path) {
         // TOML 整数和小数统一为有限 double，范围由配置 record 继续校验。
         Object value = table.get(List.of(key));
-        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) {
-            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是有限数值");
+        if (value instanceof Number number) {
+            double numericValue = number.doubleValue();
+            if (Double.isFinite(numericValue)) {
+                return numericValue;
+            }
         }
-        return number.doubleValue();
-    }
-
-    private static boolean bool(TomlTable table, String key, String path) {
-        // 开关必须是真正的 TOML 布尔值，不接受字符串猜测。
-        Object value = table.get(List.of(key));
-        if (!(value instanceof Boolean result)) {
-            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是布尔值");
-        }
-        return result;
+        throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": " + path + " 必须是有限数值");
     }
 
     private static void checkKeys(TomlTable table, Set<String> allowed, String prefix) {
