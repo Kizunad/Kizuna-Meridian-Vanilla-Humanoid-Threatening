@@ -28,13 +28,13 @@ public final class HumanoidBodyState {
     private long targetMillis;
 
     private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
-                               String regionSource, long targetMillis) {
+                               String regionSource, long initialTargetMillis) {
         // 恢复时把快照和回执一并交给 Framework，旧请求只能按同一身份做幂等重放。
         var core = BodyProtobuf.fromMessage(saved);
         store = new InMemoryBodyStore(List.of(core), receipts, dev.kizuna.meridian.core.QiInventory.empty());
         bodyId = core.id().value();
         this.regionSource = regionSource == null ? "" : regionSource;
-        this.targetMillis = targetMillis;
+        targetMillis = initialTargetMillis;
         var installedContent = HumanoidFabric.content();
         commands = new BodyCommandHandler<>(
                 (caller, command) -> {
@@ -44,7 +44,7 @@ public final class HumanoidBodyState {
                     return Optional.empty();
                 },
                 (caller, command, body) -> true,
-                (caller, body) -> timeAdvancePlan(body, targetMillis),
+                (caller, body) -> timeAdvancePlan(body, this.targetMillis),
                 store, (caller, receipt, before, after) -> { /* 实体写回 NBT 时保存已提交快照。 */ },
                 installedContent.recipes(), (caller, body, plan) -> Optional.empty(),
                 installedContent.actions(), installedContent.openings(), caller -> false,
@@ -53,7 +53,7 @@ public final class HumanoidBodyState {
 
     private static MeridianMessages.TimeAdvancePlan timeAdvancePlan(
             dev.kizuna.meridian.core.BodySnapshot body, long targetMillis) {
-        // 时间计划沿用恢复身体时的目标下限，不能倒退已结算游标。
+        // 时间计划跟随查询或健康效果更新的目标，不能倒退已结算游标。
         var settledAt = body.settledAt();
         BodyMessages.TimeCursor target = BodyProtobuf.toTime(settledAt).toBuilder()
                 .setElapsedMillis(Math.max(targetMillis, settledAt.elapsedMillis()))

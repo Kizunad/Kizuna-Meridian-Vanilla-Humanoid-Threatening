@@ -3,6 +3,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
+import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.HealthHostProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -23,13 +24,16 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.test.GameTest;
 import net.minecraft.test.TestContext;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Difficulty;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -47,6 +51,15 @@ public final class HumanoidGameTest implements FabricGameTest {
     private static final int REMOVED_ENTITY_COUNT = 2;
     private static final int RAID_ENTITY_COUNT = 32;
     private static final int RAID_GRID_WIDTH = 8;
+    private static final long CLOCK_ADVANCE_TICKS = 2;
+    private static final UUID CLOCK_ENTITY_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+    private static final UUID RESTORED_CLOCK_ENTITY_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private static final UUID VANILLA_DAMAGE_ENTITY_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID PLAYER_ATTACK_ENTITY_ID = UUID.fromString("00000000-0000-0000-0000-000000000005");
+    private static final long PRECISION_WORLD_SEED = 0;
+    private static final List<UUID> PRECISION_ENTITY_IDS = List.of(
+            UUID.fromString("91b98b98-31fc-4317-9381-0b98c1828409"),
+            UUID.fromString("00000000-0000-0000-0000-000000000001"));
     private static final List<EntityType<? extends LivingEntity>> CLAIMED_TYPES = List.of(
             EntityType.VILLAGER,
             EntityType.WANDERING_TRADER,
@@ -183,6 +196,189 @@ public final class HumanoidGameTest implements FabricGameTest {
         context.assertTrue(afterDeath != null && afterDeath.snapshot().getVitality().getDead(),
                 "致死伤害没有标记身体死亡");
         context.complete();
+    }
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void clockAdvancesTwiceOnTheSameBody(TestContext context) {
+        // 连续跨服务器 tick 查询，时间计划必须读取同一身体的最新目标。
+        LivingEntity entity = spawnBoundClockVillager(context, CLOCK_ENTITY_ID);
+        HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
+        BodyMessages.BodySnapshot initial = body.snapshot();
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            BodyMessages.BodySnapshot first = inspectAdvancedBody(context, entity, body, initial);
+            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+                inspectAdvancedBody(context, entity, body, first);
+                context.complete();
+            });
+        });
+    }
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void restoredBodyClockKeepsAdvancingAfterNbtRoundTrip(TestContext context) {
+        // 实体 NBT 恢复创建新的事务包装，随后两次推进都须使用新的世界时钟。
+        LivingEntity entity = spawnBoundClockVillager(context, RESTORED_CLOCK_ENTITY_ID);
+        HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
+        HumanoidBodyState original = access.meridian$humanoidBody();
+        BodyMessages.BodySnapshot initial = original.snapshot();
+        NbtCompound saved = entity.writeNbt(new NbtCompound());
+        access.meridian$humanoidBody(null);
+        entity.readNbt(saved);
+        HealthHostMessages.HealthHostResponse response = inspect(entity);
+        context.assertTrue(response.hasBody() && response.getBody().equals(initial),
+                "NBT 恢复改变了身体快照：" + response);
+        HumanoidBodyState restored = access.meridian$humanoidBody();
+        context.assertTrue(restored != null && restored != original, "NBT 恢复没有创建新的身体事务包装");
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            BodyMessages.BodySnapshot first = inspectAdvancedBody(context, entity, restored, initial);
+            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+                inspectAdvancedBody(context, entity, restored, first);
+                context.complete();
+            });
+        });
+    }
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void villagerTakesVanillaDamageAfterSeveralTicks(TestContext context) {
+        // 身体创建后延迟受伤，覆盖 Damage 查询、时间结算和健康事务整条路径。
+        LivingEntity entity = spawnBoundClockVillager(context, VANILLA_DAMAGE_ENTITY_ID);
+        HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            verifyDelayedDamage(context, entity, body,
+                    () -> entity.damage(entity.getDamageSources().generic(), 1.0F));
+            context.complete();
+        });
+    }
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void villagerTakesPlayerAttackAfterSeveralTicks(TestContext context) {
+        // 从原版玩家攻击入口触发伤害，不能仅用健康协议代替一次真实攻击。
+        LivingEntity entity = spawnBoundClockVillager(context, PLAYER_ATTACK_ENTITY_ID);
+        HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
+        var player = context.createMockSurvivalPlayer();
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            verifyDelayedDamage(context, entity, body, () -> player.attack(entity));
+            context.complete();
+        });
+    }
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void mixedAttributeBodiesKeepHealthDamageAndNbtWorking(TestContext context) {
+        // 固定两个已知混属性边界，延迟查询、存档和伤害均走真实宿主。
+        List<LivingEntity> entities = PRECISION_ENTITY_IDS.stream()
+                .map(id -> spawnMixedVillager(context, id))
+                .toList();
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            inspectAndReloadMixedBodies(context, entities);
+            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> verifyMixedDamage(context, entities));
+        });
+    }
+
+    private static LivingEntity spawnMixedVillager(TestContext context, UUID entityId) {
+        // 出生使用五行等量区域和种子 0，变体与库存沿用生产出生方法的同一随机流。
+        LivingEntity entity = spawnBoundClockVillager(context, entityId);
+        RegionInventory inventory = RegionInventory.fromShares(1, Map.of(
+                "meridian:metal", 1.0,
+                "meridian:wood", 1.0,
+                "meridian:water", 1.0,
+                "meridian:fire", 1.0,
+                "meridian:earth", 1.0));
+        String sourceId = HumanoidFabric.region(entity).sourceId();
+        var region = new HumanoidEnvironmentClient.RegionSnapshot(inventory, sourceId);
+        HumanoidBodyState body = HumanoidBodyState.born(HumanoidSpecies.VILLAGER, entityId,
+                PRECISION_WORLD_SEED, region, HumanoidFabric.now());
+        ((HumanoidEntityAccess) entity).meridian$humanoidBody(body);
+        return entity;
+    }
+
+    private static void inspectAndReloadMixedBodies(TestContext context, List<LivingEntity> entities) {
+        // 健康查询先结时；真实实体 NBT 往返必须保留已扣源、在途及当前游标。
+        for (LivingEntity entity : entities) {
+            HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
+            HumanoidBodyState body = access.meridian$humanoidBody();
+            BodyMessages.BodySnapshot advanced = inspectAdvancedBody(context, entity, body, body.snapshot());
+            NbtCompound saved = entity.writeNbt(new NbtCompound());
+            access.meridian$humanoidBody(null);
+            entity.readNbt(saved);
+            HealthHostMessages.HealthHostResponse restored = inspect(entity);
+            context.assertTrue(restored.hasBody() && restored.getBody().equals(advanced),
+                    "混属性身体 NBT 恢复失败：" + entity.getUuid() + " response=" + restored);
+        }
+    }
+
+    private static void verifyMixedDamage(TestContext context, List<LivingEntity> entities) {
+        // 两种伤害分别在新的时刻触发结算，不能用前置查询提前消除扩散事件。
+        for (LivingEntity entity : entities) {
+            HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
+            verifyDelayedDamage(context, entity, body,
+                    () -> entity.damage(entity.getDamageSources().generic(), 1.0F));
+        }
+        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            var player = context.createMockSurvivalPlayer();
+            for (LivingEntity entity : entities) {
+                // 两次命中独立验证结时与扣血，清除首击留下的原版无敌帧。
+                entity.timeUntilRegen = 0;
+                HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
+                verifyDelayedDamage(context, entity, body, () -> player.attack(entity));
+            }
+            context.complete();
+        });
+    }
+
+    private static LivingEntity spawnBoundClockVillager(TestContext context, UUID entityId) {
+        // 入世界前固定 UUID，使真实生成器产生可复现的身体；等待时禁用寻路和重力。
+        ServerWorld world = context.getWorld();
+        VillagerEntity entity = EntityType.VILLAGER.create(world);
+        context.assertTrue(entity != null, "无法创建测试村民");
+        entity.setUuid(entityId);
+        BlockPos position = context.getAbsolutePos(new BlockPos(SPAWN_X, SPAWN_Y, SPAWN_Z));
+        entity.refreshPositionAndAngles(position.getX(), position.getY(), position.getZ(), 0, 0);
+        disableAi(entity);
+        entity.setNoGravity(true /* noGravity */);
+        context.assertTrue(world.spawnEntity(entity), "测试村民未加入真实世界");
+        HealthHostMessages.HealthHostResponse response = inspect(entity);
+        context.assertTrue(response.hasBody(), "初始身体未创建：" + response);
+        return entity;
+    }
+
+    private static BodyMessages.BodySnapshot inspectAdvancedBody(TestContext context, LivingEntity entity,
+                                                                 HumanoidBodyState expectedBody,
+                                                                 BodyMessages.BodySnapshot previous) {
+        // 检查公开响应和已提交游标，失败文案保留实际目标、旧值与协议失败码。
+        BodyMessages.TimeCursor expected = HumanoidFabric.now();
+        HealthHostMessages.HealthHostResponse response = inspect(entity);
+        BodyMessages.BodySnapshot actual = expectedBody.snapshot();
+        long expectedMillis = expected.getElapsedMillis();
+        BodyMessages.TimeCursor actualTime = actual.getSettledAt();
+        long actualMillis = actualTime.getElapsedMillis();
+        long previousMillis = previous.getSettledAt().getElapsedMillis();
+        context.assertTrue(expectedMillis > previousMillis,
+                "服务器时钟没有实际推进");
+        context.assertTrue(response.hasBody() && response.getBody().equals(actual)
+                        && actualTime.equals(expected) && actual.getRevision() > previous.getRevision(),
+                "身体时钟未推进：expected=" + expectedMillis
+                        + " actual=" + actualMillis + " previous=" + previousMillis
+                        + " response=" + response.getResultCase() + " failure=" + response.getFailure().getCode());
+        context.assertTrue(((HumanoidEntityAccess) entity).meridian$humanoidBody() == expectedBody,
+                "推进时钟不应替换已绑定的身体实例");
+        return actual;
+    }
+
+    private static void verifyDelayedDamage(TestContext context, LivingEntity entity,
+                                             HumanoidBodyState body, Runnable damage) {
+        // 伤害前不查询宿主，让原版伤害调用负责触发延迟结算。
+        BodyMessages.BodySnapshot before = body.snapshot();
+        BodyMessages.TimeCursor now = HumanoidFabric.now();
+        context.assertTrue(now.getElapsedMillis() > before.getSettledAt().getElapsedMillis(),
+                "延迟伤害前服务器时钟没有实际推进");
+        damage.run();
+        BodyMessages.BodySnapshot after = body.snapshot();
+        double beforeHp = before.getPartStatesList().stream().mapToDouble(part -> part.getHp()).sum();
+        double afterHp = after.getPartStatesList().stream().mapToDouble(part -> part.getHp()).sum();
+        context.assertTrue(after.getSettledAt().equals(now) && after.getRevision() > before.getRevision()
+                        && afterHp < beforeHp,
+                "延迟伤害未推进时钟并扣减身体 HP：before=" + beforeHp + " after=" + afterHp);
+        context.assertTrue(((HumanoidEntityAccess) entity).meridian$humanoidBody() == body && entity.isAlive(),
+                "非致死伤害不应替换身体或杀死村民");
     }
 
     @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
