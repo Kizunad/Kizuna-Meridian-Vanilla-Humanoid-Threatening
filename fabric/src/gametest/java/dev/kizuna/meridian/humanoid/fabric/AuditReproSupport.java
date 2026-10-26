@@ -193,7 +193,17 @@ final class AuditReproSupport {
 
     static boolean humanHasRelease(PersistentState state, String releaseId) throws IOException {
         // pending 与已受理 ID 都由同一 Human 持久化快照提供。
-        NbtCompound saved = state.writeNbt(new NbtCompound());
+        return savedHasRelease(state.writeNbt(new NbtCompound()), releaseId);
+    }
+
+    static boolean humanFileHasRelease(TestContext context, String releaseId) throws IOException {
+        // 直接读取正式文件，排除只在接收端内存受理的假阳性。
+        NbtCompound saved = NbtIo.readCompressed(worldFile(context, HUMAN_FILE).toFile()).getCompound("data");
+        return savedHasRelease(saved, releaseId);
+    }
+
+    private static boolean savedHasRelease(NbtCompound saved, String releaseId) throws IOException {
+        // 内存快照和正式文件使用同一解码，逐项核对实际保存的原请求 ID。
         NbtList entries = saved.getList("release_ids", NbtElement.COMPOUND_TYPE);
         for (int index = 0; index < entries.size(); index++) {
             var request = EnvironmentHostMessages.RegionRelease.parseFrom(

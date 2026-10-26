@@ -79,6 +79,7 @@ public final class HumanoidFabric implements ModInitializer {
                 worldState = new HumanoidWorldState();
                 persistence.set(STATE_ID, worldState);
             }
+            worldState.bind(file);
         } catch (RuntimeException failure) {
             worldState = null;
             LOGGER.error("无法加载类人实体释放账本，类人实体健康请求将失败", failure);
@@ -130,11 +131,21 @@ public final class HumanoidFabric implements ModInitializer {
     }
 
     static boolean release(dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelease release) {
-        // Human 返回成功或 duplicate 都表示这笔释放已受理；所有其他结果保留待重试。
+        // 只接受 Human 的同步写盘确认；失败或响应丢失时继续保留原请求。
         try {
             return environment.release(release);
         } catch (HumanoidEnvironmentClient.Unavailable failure) {
             LOGGER.debug("类人实体释放暂不可用 releaseId={}: {}", release.getReleaseId(), failure.getMessage());
+            return false;
+        }
+    }
+
+    static boolean forgetRelease(String releaseId) {
+        // 遗忘失败和丢响应都保留待遗忘 ID，下一 tick 使用同一个 ID 重发。
+        try {
+            return environment.forgetRelease(releaseId);
+        } catch (HumanoidEnvironmentClient.Unavailable failure) {
+            LOGGER.debug("类人实体释放遗忘暂不可用 releaseId={}: {}", releaseId, failure.getMessage());
             return false;
         }
     }

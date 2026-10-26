@@ -68,7 +68,7 @@ final class HumanoidEnvironmentClient {
     }
 
     boolean release(EnvironmentHostMessages.RegionRelease release) {
-        // 成功和 duplicate 都通过 released 响应确认受理，其他结果交给调用方重试。
+        // 只查询该请求是否已包含在成功保存中，duplicate 仍只表示此前受理。
         var request = EnvironmentHostMessages.EnvironmentHostRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(UUID.randomUUID().toString())
@@ -78,7 +78,18 @@ final class HumanoidEnvironmentClient {
         if (response.getUnbound() || response.hasFailure()) {
             return false;
         }
-        return response.hasReleased();
+        return response.hasReleased() && response.getReleased().getPersisted();
+    }
+
+    boolean forgetRelease(String releaseId) {
+        // 此调用的前提是本地原请求已持久删除；对端未入账或删除尚未保存时继续重试。
+        var request = EnvironmentHostMessages.EnvironmentHostRequest.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(UUID.randomUUID().toString())
+                .setForgetRelease(releaseId)
+                .build();
+        var response = exchange(request);
+        return response.hasForgotten() && response.getForgotten().getPersisted();
     }
 
     private EnvironmentHostMessages.RegionQuery position(Entity entity) {

@@ -1,9 +1,8 @@
 # 存档边界与回归
 
-本次基于干净的 `master@c7ff29d7ad7f21e09375287372d4d382468a38d6`。
-四项存档问题均先应用交接补丁、运行真实 Fabric 复现后再处理。
-前三项已经修复，实体坏档保存保护已按审阅意见修订；跨 Human/Humanoid 文件的释放交接按用户要求暂停。
-没有修改 Human，没有提交或推送。
+前三项存档问题与实体坏档保存保护已在前轮修复。
+当前基线为 Humanoid `master@fd5d382`、Human `main@88cba0a`，继续在两端已有未提交修改上修正释放交接。
+四项问题均有真实 Fabric 复现或回归；本轮同时修改 Human 与 Humanoid，没有提交或推送。
 
 ## 已修复的边界
 
@@ -12,10 +11,11 @@
 | 最新成功回执遗漏 | Store 从 HashMap 提供回执，截取尾部不代表最新提交 | 按 `committed.revision` 升序排列后保留最高的 32 条 | `audit02NewestReceiptSurvivesEntityNbtRoundTrip`：提交 100 笔、核对完整 69–100 窗口、实体 NBT 往返并重放最后一笔 |
 | 错误类型列表被吞空 | `getList(key, BYTE_ARRAY_TYPE)` 先返回空列表，之后检查已经失去原始类型 | 世界队列与实体回执直接检查原始 `NbtList`；实体全部字段校验后才更新缓存，失败时隔离身体功能并原样保存标签 | `audit03WorldQueueRejectsWrongElementType`、`audit03EntityReceiptsRejectWrongElementType`；另保留合法空列表往返 |
 | 坏账本使身体退回原版 HP | `isReady` 失败被当成不归本宿主管理 | 先检查活动世界、线程及实体认领，再将已认领实体的装配失败映射为 `INTERNAL_ERROR` | `audit04CorruptLedgerMustNotBecomeUnbound`：真实坏档启动、恢复已绑定实体、拒绝伤害且原版 HP 不变；未认领牛仍为 `unbound`，随后保存不覆盖坏文件 |
+| 释放交接强退丢真元 | 把内存受理或 `duplicate` 当作写盘确认，发送端先删除且保存 | Human tick 末合并保存后确认；Humanoid 持久删除后发送遗忘，完成历史被回收 | 两端释放持久化 GameTest，以及 `release-before` → `release-after` 真实强退重启 |
 
 这里继续保留原有类名及 `audit02`–`audit05` 方法名，便于和交接材料对应。
 测试放在正常 `fabric/src/gametest` 源集，默认 GameTest 包含原有整体回归和新增存档回归。
-坏档与强退测试必须选择独立模式；强退测试的恢复断言保持失败，不能作为已经修复的证明。
+坏档与强退测试必须选择独立模式；`release-before` 预期以 87 强退，随后同世界的 `release-after` 必须成功恢复。
 
 实体读取 `meridian_humanoid` 前先保存完整 `NbtCompound.copy()`。
 字段校验失败时清除运行中的身体引用、标记加载失败，并保留原始复合标签；
@@ -29,42 +29,77 @@
 NBT 复合标签没有键顺序约定，`copy()` 可能改变 HashMap 遍历顺序；
 字节比较前统一映射布局，字段类型和载荷仍逐字节一致，不要求整个实体文件的编码顺序或压缩字节一致。
 
-## 已暂停的释放交接
+## 释放交接协议与写盘边界
 
-Human 当前源码基线是 `88cba0a6ca81bdafdd9bfe05450f9e4248f82c37`。
-已核对 `HumanWorldState.release`、`renewEnvironment` 和其 Wiki：
+Human 和 Humanoid 通过必装的 `meridian_environment_host.exchange(byte[])` 交换 Protobuf；生产代码不读取 Human 私有状态。双方一起更新，不保留旧接口降级路径。
 
-1. 同一 `release_id` 和完整相同请求返回 `duplicate=true`；同 ID 改变位置或库存返回 `REQUEST_ID_CONFLICT`。
-2. `released` 与 `duplicate=true` 只说明请求已在内存登记，随后 `markDirty`；都不表示文件已经落盘。
-3. `release_ids` 自首次受理起保留 `8,400,000` 世界模拟毫秒，即七个游戏日；待入账记录未处理完时不会清除。
-4. 入账完成且超过期限后，原 ID 会被移除，再次发送原请求会被当成新释放。
+| 协议 | 字段与语义 |
+|---|---|
+| `ReleaseResult.persisted = 3` | 释放 ID、完整原请求及待入账事实或余额已包含在一次成功的持久保存中 |
+| `duplicate = 2` | 仅表示此前受理，原语义不变；不授权删除 |
+| `EnvironmentHostRequest.forget_release = 13` | 新增 oneof 操作，内容为已持久删除原请求的释放 ID；接原最大号 12 |
+| `EnvironmentHostResponse.forgotten = 15` | 新增结果，接原最大号 14；`ForgetReleaseResult.persisted = 1` 为 true 才确认删除已持久化 |
 
-原实现的故障窗口是：先保存接收端旧状态与发送队列，接收端内存受理后删除发送队列，
-只保存发送端，随后进程强退。重启时两边都没有该请求。
+同 ID 同完整内容不重复入账，位置或库存冲突返回 `REQUEST_ID_CONFLICT`；ID 不得复用。七个游戏日不再触发自动回收。
 
-仅让 Humanoid 保留记录至重启再发送，可以覆盖短期窗口，但有两个无法由当前公开接口排除的情况：
+### Minecraft 保存时机与平台差异
 
-- 本进程首次重发已被接收，但随后响应丢失或本地处理失败；下一次收到的 `duplicate` 仍可能只来自本进程内存。
-- 长期运行或关闭自动保存后，发送端旧记录仍在磁盘，而接收端已经入账并清理去重 ID；重启重发会重复入账。
+已核对 Minecraft 1.20.1 Yarn 映射 JAR 的实际字节码：`markDirty()` 只设内存标记，`PersistentStateManager.save()` 才调用 `PersistentState.save(File)`。世界保存经过 `ServerWorld.saveLevel()`；自动保存每 6000 个 tick（20 TPS 时五分钟），正常关服也保存。`savingDisabled` 跳过普通世界保存。原版直接覆盖，捕获异常后仍清 dirty，没有刷盘确认。
 
-因此没有将有限期限去重当成永久持久化确认，也没有读取或反射 Human 私有运行状态来实现生产接线。
-测试读取真实 Human 状态只用于故障证据。按任务限定，暂停第四项实现，保留失败回归。
+两端保存均保留原版 `data`、`DataVersion` 封装，写同目录 `.dat.tmp`、关闭压缩流、对文件执行 `FileChannel.force(true)`、使用 `ATOMIC_MOVE + REPLACE_EXISTING` 原子替换正式文件。**文件 force 和原子替换始终必须成功。** Unix 平台还同步目录及其上级目录；Windows 不打开不支持的目录通道，跳过目录同步，采用文件 force 和 NTFS 原子移动的元数据日志保证。支持目录同步的平台上的真实 I/O 错误仍算保存失败，不被吞掉。
 
-所需 Human 最小协作改动：通过现有公开 Protobuf 服务提供可验证的持久化确认，
-仅在释放 ID、原请求和待入账事实成功持久化后确认；磁盘失败必须返回失败。
-Humanoid 只有收到此确认后才删除原请求。若保留普通 `released` 的内存受理语义，
-应新增明确的持久化结果或查询操作，不能重新解释 `duplicate`。
+“写盘确认”指适用于该平台的全部步骤收到操作系统成功返回。替换前失败保留旧文件；替换后目录同步失败可能已更新文件，仍不确认。失败保留 dirty 和待确认事实，日志报告异常，下一 tick 继续尝试；仅从正式文件恢复，临时文件下次覆盖。操作系统及文件系统须兑现其同步和原子替换语义。
 
-确认丢失、发送端删除尚未落盘就再次崩溃时，仍要允许原请求安全重发。
-Human 的去重记录必须覆盖这段未决交接期，例如在发送端确认本地删除前保留去重事实；
-不能对尚未完成交接的 ID 直接沿用七日清理。
-Human 契约、持久化错误处理及去重回收机制需要一起调整，本次均未修改。
+### tick 末合并与最坏延迟
 
-该方案还需覆盖：首次受理后未落盘、目标先落盘、重复响应丢失、发送端删除未落盘、
-任一文件写入失败、超过七日的未决请求、相同 ID 内容冲突，以及反复强退重启。
-这些是后续协议修复的验收条件，本次没有声称通过。
+Human 首次受理只登记内存并返回 `persisted=false`，END_SERVER_TICK 合并保存所有未确认释放和待保存遗忘。成功后更新持久 ID 集合；重复请求只查询该集合，不写盘。普通世界保存与合并保存共用 `lastSaveTick`，**运行中一个 tick 最多尝试一次 Human 持久保存，失败也算一次**。正常关服在停止 tick 后提交最终脏状态。
 
-## 实际执行
+Humanoid 每 tick 重试原请求，收到 true 后才从待释放转成待遗忘，并合并保存自己的文件。正常磁盘下，从 Human 内存受理到 Humanoid 收到释放确认最多两个服务器 tick，20 TPS 下约 100 毫秒；边界包含两个模组回调顺序和当 tick 已执行世界保存的情况。单次文件保存仍在主线程，耗时会拉长 tick。磁盘故障、暂停或低 TPS 没有有限墙钟延迟保证。
+
+### 持久删除后遗忘
+
+1. Human 持久保存 ID、完整原请求、待入账事实或余额，重试返回 `released.persisted=true`。
+2. Humanoid 删除原请求并登记 `pending_forget`，**先将这两个变化保存到同一份自己的文件**。失败时仍不能发送遗忘，旧正式文件可恢复原释放。
+3. 只有成功保存中的待遗忘 ID 才能发 `forget_release`。Human 尚未入账时返回 false，保留去重原请求；主世界等待对应 30 秒窗口，非主世界等待下一个 30 秒边界。
+4. 入账后 Human 内存删除去重项，tick 末保存余额与删除；此前响应为 false。保存成功或 ID 已不存在时返回 `forgotten.persisted=true`。
+5. Humanoid 收到遗忘确认后删除待遗忘 ID 并保存。失败或响应丢失后只会重试遗忘，不会重发原释放。双方不保留永久遗忘墓碑。
+
+正常情况下 Human 去重项及 Humanoid 待遗忘 ID 的驻留时间最多为剩余 30 秒入账窗加少量交接 tick；保守按 30 秒加 6 tick（20 TPS 下约 30.3 秒）估算完整往返。故障会延后，未完成事实不能按时间丢弃。
+
+### 崩溃窗口与存档上界
+
+| 崩溃位置 | 重启行为与安全依据 |
+|---|---|
+| 受理前、受理后未落盘 | 发送端原请求仍在；同 ID 重发，未落盘事实可以重新受理 |
+| Human 已落盘，首次或重复确认丢失 | 发送端继续重发；Human 用已保存完整请求去重，不再次入账 |
+| Humanoid 内存删除，自己的保存未完成或失败 | 正式旧文件仍含原请求；Human 尚未获遗忘证明，继续去重 |
+| Humanoid 删除及待遗忘已落盘，遗忘未送达 | 只恢复待遗忘 ID；Human 仍拥有待入账事实或余额 |
+| Human 已入账，删除去重项尚未落盘 | 正式文件仍含去重项及待入账事实或余额；待入账与余额只从同一快照恢复，遗忘继续重试 |
+| Human 删除已落盘，遗忘响应丢失 | 发送端仍保留待遗忘 ID；Human 对不存在的 ID 幂等确认 |
+| Humanoid 删除待遗忘 ID 尚未落盘 | 只会多发一次遗忘，不会恢复原释放；确认后重新保存 |
+
+“有界”指不再保存已经完成的累计死亡历史：Human 去重空间为 O(未确认释放 + 等待入账/遗忘的释放)，Humanoid 为 O(待释放 + 待遗忘)，释放序号仍占固定大小。稳定速率 λ 笔/秒、磁盘正常时，活动历史约受 λ ×（30 秒 + 交接延迟）限制；准确条数取决于瞬时输入峰值。无限故障或无限新输入下没有固定字节上限，安全性要求保留全部未决积压。整份 Human 文件还含玩家和区域，这些资源的规模不在本次释放历史回收范围。
+
+遗忘是发送端不可撤回的“原请求已持久删除”声明；完成遗忘后不得人工回滚单侧旧备份并重放 release。
+
+### 验收与测试对应
+
+| 验收条件 | 测试 |
+|---|---|
+| 首次受理未落盘、duplicate 不等于确认 | Human `memoryAcceptanceAndDuplicateDoNotConfirmDisk`；Humanoid `acceptanceAndDuplicateWithoutPersistenceKeepSenderRecord` |
+| 目标先落盘、反复重启只入账一次 | Human `durableReleaseSurvivesRepeatedReloadAndCreditsOnce` 四轮真实文件重载；两轮 `release-before` → `release-after` JVM 强退恢复 |
+| 首次及重复响应丢失 | Humanoid `lostInitialAndDuplicateResponsesAndUnsavedDeletionRetrySafely` |
+| 发送端删除未落盘、自己的文件写入失败 | `senderDeletionWriteFailureKeepsReplayableOldFile`；统计公开请求，确认本地持久删除前遗忘调用次数为 0 |
+| Human 写入/替换失败 | Human `failedWriteKeepsOldFileAndDuplicateMustRetryDisk`、`failedAtomicReplacementDoesNotConfirmDisk`；Humanoid `receiverWriteFailureDoesNotConfirmAndKeepsSenderRecord` |
+| 超过七日未决、同 ID 内容冲突 | Human `unresolvedReleaseSurvivesSevenDaysAndRejectsConflictingContent` |
+| Windows 目录同步不支持 | 两端单元 `DurableStateFileTest.unsupportedDirectorySyncStillSavesAndReplacesFile`、`unsupportedDirectorySyncDoesNotSkipFileForce`；Humanoid 单元 `unsupportedDirectorySyncSavesActualWorldState`；两端 GameTest `unsupportedDirectorySyncStillConfirmsPersistence`、`unsupportedDirectorySyncPersistsSenderDeletionBeforeForget` |
+| 同 tick 合并保存、失败也仅一次 | Human `batchAndWorldSaveShareOneAttemptPerTick`（32 笔）、`failedBatchOnlyRetriesNextTick` |
+| 遗忘必须等待入账、删除写失败后重启恢复 | Human `forgetWaitsForCreditAndDurableDeletionThenReclaimsHistory`，同时检查余额守恒及去重项已回收 |
+| 遗忘请求未送达、响应丢失、两端回收 | Humanoid `durableForgetRetriesLostResponsesAndReclaimsBothFiles`；真实窗口后读取两端正式文件，旧发送文件重载只含待遗忘 ID |
+| 待遗忘存档损坏 | Humanoid 单元 `forgetListRejectsWrongTypeBlankAndDuplicateIds` |
+| 正常生命周期 | 原 `killedAndDiscardedReleasesRetryUntilPersisted` 等 21 项整体回归继续运行 |
+
+## 前轮复现与验证记录
 
 所有命令的工作目录都是本仓库，使用 Java 17 和完整 Fabric 附属装配。
 复现补丁先执行 `git apply --check --whitespace=error-all`，再实际应用。
@@ -119,8 +154,7 @@ cp "fabric/build/gametest/eula.txt" "fabric/build/repro-release/eula.txt"
 正式回归现已接受并校验这个具体失败，仍要求 HP 不变、公开失败码正确且坏文件未覆盖。
 没有吞掉其他运行错误或放宽成功断言。
 
-本轮按要求只运行 `full` 和 `bad-ledger`，未重新运行释放强退模式。
-第四项仍未修复，其失败回归和故障证据保留，等待用户决定协议方案。
+上述保存保护记录属于前轮，当时第四项尚未修复；本轮结果见下节。
 
 日志保存在 `fabric/build/persistence-logs/`，证据保存在 `fabric/build/persistence-evidence/`。
 本轮命令和退出码另存为 `fabric/build/persistence-logs/save-protection-final-results.json`。
@@ -128,16 +162,45 @@ XML 报告位于 `fabric/build/repro-<模式>.xml`；默认整体运行使用 `r
 `release-before` 和 `release-after` 共用 `fabric/build/repro-release/world`，必须按顺序执行，
 前者预期非零，不能用 `&&` 跳过后者。
 
-## 自查与未覆盖
+## 本轮执行与未覆盖
 
-修改保持在现有 Store、NBT、健康宿主和 GameTest 接线中，没有增加库或第二份身体账本。
-按版本排序在保存边界完成，原始列表类型校验在读取边界完成，错误归属在健康宿主完成。
+2026-10-27，两个原工作区，Gradle 编译、测试与 GameTest 使用 Java 17，保持完整附属装配。Human 新协议和 JAR 先构建，Humanoid 随后读取新产物。旧生成测试世界保留为 `world.before-review`，新模式从独立测试世界起跑；每组 before/after 共用同一个世界，第二轮继续用它。
 
-代码形状自查：第 4 条，`HumanoidHealthHost.exchange` 缓存服务器引用；
-第 9 条，`LivingEntityHumanoidMixin.meridian$beginRead` 提取完整回执读取，
-并将身体字段校验提取到 `meridian$readBody`；坏档保存回归提取断言与编码方法，
-`ReleaseCrashBeforeGameTest` 提取标记写入，保持方法不超过约 40 行；
-第 8、10 条，测试校验说明异常含义，清理只适用于副本或旧缺陷背景的注释。
+```bash
+# Human 仓库
+"./gradlew" --offline --console=plain test build demo :fabric:compileGametestJava
+"./gradlew" --offline --console=plain :fabric:runGametest
 
-未检查随机物理断电、磁盘控制器缓存或硬件故障、多人长时运行、全部附属各自的完整测试集。
-第四项仍有真实可复现的真元丢失风险，按用户要求暂不修复，也未修改 Human。
+# Humanoid 仓库
+"./gradlew" --offline --console=plain test build :server:test --rerun
+"./gradlew" --offline --console=plain :fabric:runGametest -PreproMode=full
+"./gradlew" --offline --console=plain :fabric:runGametest -PreproMode=bad-ledger
+"./gradlew" --offline --console=plain :fabric:runGametest -PreproMode=release-before
+"./gradlew" --offline --console=plain :fabric:runGametest -PreproMode=release-after
+# before、after 顺序再执行一轮；before 预期非零，不能用 && 跳过 after。
+
+# 两个仓库分别执行
+python3 "scripts/check_docs.py"
+git diff --check
+```
+
+| 检查 | 最终结果 | 日志 |
+|---|---|---|
+| Human test/build/demo、GameTest 编译 | 退出 0；42 项 JUnit，无失败/跳过，演示通过 | Human `review-final-build.log` |
+| Human GameTest | 退出 0；原有 7 项、新增 9 项，共 16 项通过 | Human `review-final-human-gametest.log` |
+| Humanoid test/build | 退出 0；9 项 JUnit，无失败/跳过 | `review-final-build.log` |
+| Humanoid full | 退出 0；原有 21 项、新增 6 项，共 27 项通过 | `review-final-full.log` |
+| Humanoid bad-ledger | 退出 0；1 项通过，坏档未覆盖 | `review-final-bad-ledger.log` |
+| 第一轮 before → after | before JVM 87、Gradle 1；after 退出 0，恢复及遗忘回收通过 | `review-final-before-1.log`、`review-final-after-1.log` |
+| 第二轮 before → after | before JVM 87、Gradle 1；after 退出 0，同世界再次恢复及回收通过 | `review-final-before-2.log`、`review-final-after-2.log` |
+| 两端文档与 diff | 退出 0 | `review-final-docs.log`、`review-final-diff.log` |
+
+日志及结果记录位于各仓 `fabric/build/persistence-logs/`，命令及退出码存于 `review-final-results.json`；本轮 GameTest XML 位于 Human `fabric/build/gametest/build/gametest-results.xml` 与 Humanoid `fabric/build/repro-<模式>.xml`。Human 上一级旧报告不是本轮结果。before 的成功证据为强退前断言、`senderForgetSaved=true`、JVM 87 和 after 恢复，不会生成通过 XML。after 继续正常 tick，最终要求 `REPRO-A-05-RECLAIM` 显示两端历史均回收。
+
+首轮新单元夹具曾因未初始化 Minecraft 版本而失败，定位为 `NbtHelper.putDataVersion` 的 `Game version not set`；补充 `SharedConstants.createGameVersion()` 后重跑通过。故障注入产生预期 I/O 日志；原 mock 玩家缺少 UI 频道及坏身体夹具的错误日志不代表真实客户端已受测试。
+
+增强遗忘丢包后，复用 GameTest 世界曾因旧区域窗口晚于测试服务器重启后的时钟而未能在 600 tick 内回收，诊断见 `review-debug-full-2.log`。遗忘丢包夹具改用无区域账户的明确时间边界，强退夹具每轮选择新区域；仍使用生产协议、实际文件、正常 tick 和同一重启世界。生产强退也可能回滚尚未保存的世界时钟，延后旧窗口入账；期间继续保留未决记录，不能提前回收。
+
+代码形状自查：第 1、2、9 条，Human 释放回归拆开 builder、提前构造内层消息，保存读取按身体、区域、交接事实拆分；第 3、4、5 条，Human 配置改为 if/else，释放复用已读取的 ID、位置，读取余额不再复用加工变量；第 7、8 条，命名区块宽度、批量、窗口和 tick 常量，时间/库存校验用途写清；第 9 条，异步回归按故障窗口拆出断言并修正缩进和长行。
+
+未检查 Windows 实机、随机物理断电、控制器缓存/硬件故障、网络文件系统、多人持续死亡时的长时间性能、从实体身体到首次登记发送队列的跨文件事务，以及全部附属各自完整测试集。单 tick 仍有一次整份同步保存；故障期间未决积压必须增长。未提交、未推送。

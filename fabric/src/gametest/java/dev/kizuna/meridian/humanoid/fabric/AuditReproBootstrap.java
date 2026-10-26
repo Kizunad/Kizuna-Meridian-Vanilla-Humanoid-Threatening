@@ -36,6 +36,7 @@ public final class AuditReproBootstrap implements ModInitializer {
             NbtCompound corrupt = new NbtCompound();
             corrupt.putLong("next_sequence", INVALID_SEQUENCE);
             corrupt.put("pending", new NbtList());
+            corrupt.put("pending_forget", new NbtList());
             NbtCompound root = new NbtCompound();
             root.putInt("DataVersion", human.getInt("DataVersion"));
             root.put("data", corrupt);

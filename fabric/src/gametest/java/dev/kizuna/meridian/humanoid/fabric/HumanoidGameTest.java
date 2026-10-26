@@ -382,8 +382,8 @@ public final class HumanoidGameTest implements FabricGameTest {
     }
 
     @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void killedAndDiscardedReleasesRetryUntilSuccessOrDuplicate(TestContext context) throws Exception {
-        // 服务不可用时保留释放记录，恢复后在下一 tick 删除成功或重复请求。
+    public void killedAndDiscardedReleasesRetryUntilPersisted(TestContext context) throws Exception {
+        // 服务不可用时保留释放记录，恢复后在下一 tick 收到写盘确认才删除。
         int before = pendingCount();
         LivingEntity killed = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         LivingEntity discarded = context.spawnEntity(EntityType.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
@@ -424,13 +424,13 @@ public final class HumanoidGameTest implements FabricGameTest {
     private static void verifyReleasesAfterRecovery(TestContext context,
                                                     EnvironmentHostMessages.RegionRelease first,
                                                     List<String> releaseIds, Object delegate) throws Exception {
-        // 预提交第一条请求制造 duplicate，其余请求由正常 tick 首次提交。
+        // 预提交制造内存 duplicate；tick 末合并保存后，重试才允许删除队列。
         restoreHumanDelegate(delegate);
-        context.assertTrue(HumanoidFabric.release(first), "预提交释放请求失败");
-        context.assertTrue(HumanoidFabric.release(first), "重复释放请求未返回 duplicate 成功");
-        context.waitAndRun(1, () -> {
+        context.assertTrue(!HumanoidFabric.release(first), "预提交释放不应同步写盘");
+        context.assertTrue(!HumanoidFabric.release(first), "内存 duplicate 不应确认写盘");
+        context.waitAndRun(4 /* recoveryTicks */, () -> {
             context.assertTrue(!containsPending(releaseIds),
-                    "成功与 duplicate 释放都应从账本删除，剩余=" + pendingCount());
+                    "已确认持久化的释放应从账本删除，剩余=" + pendingCount());
             context.complete();
         });
     }

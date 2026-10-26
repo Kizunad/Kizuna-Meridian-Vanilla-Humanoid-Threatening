@@ -80,6 +80,7 @@ public final class HumanoidAuditReproGameTest implements FabricGameTest {
         NbtCompound saved = new NbtCompound();
         saved.putLong("next_sequence", 1);
         saved.put("pending", wrong);
+        saved.put("pending_forget", new NbtList());
         try {
             HumanoidWorldState restored = HumanoidWorldState.read(saved);
             var entries = restored.writeNbt(new NbtCompound())
@@ -163,6 +164,7 @@ public final class HumanoidAuditReproGameTest implements FabricGameTest {
         NbtCompound empty = new NbtCompound();
         empty.putLong("next_sequence", 0);
         empty.put("pending", new NbtList());
+        empty.put("pending_forget", new NbtList());
         var state = HumanoidWorldState.read(empty);
         context.assertTrue(state.writeNbt(new NbtCompound()).equals(empty), "空释放队列无法往返");
 

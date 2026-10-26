@@ -1,7 +1,7 @@
 // 常规回归包含存档边界；坏档启动和强退重启使用独立世界，防止污染普通测试。
 def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
 def reproClasses = [
-        full: ['HumanoidGameTest', 'HumanoidAuditReproGameTest'],
+        full: ['HumanoidGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest'],
         normal: ['HumanoidAuditReproGameTest'],
         'bad-ledger': ['BadLedgerReproGameTest'],
         'release-before': ['ReleaseCrashBeforeGameTest'],

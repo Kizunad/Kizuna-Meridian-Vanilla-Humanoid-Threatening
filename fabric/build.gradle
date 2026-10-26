@@ -21,7 +21,10 @@ dependencies {
     include implementation('com.google.protobuf:protobuf-java:4.36.2')
     include implementation('org.tomlj:tomlj:1.1.1')
     include implementation('org.antlr:antlr4-runtime:4.11.1')
+    testImplementation 'junit:junit:4.13.2'
 }
+
+test { useJUnit() }
 
 // 开发运行与完整装配沿用 Meridian 统一布局：本模组进入 modules，
 // Human/Damage/Healing 的纯 Java JAR 进入 serverLibraries，Qi-Variants
