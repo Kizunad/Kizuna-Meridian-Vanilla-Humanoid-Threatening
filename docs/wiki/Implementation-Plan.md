@@ -2,7 +2,7 @@
 
 本仓库只收活着的类人生物（生人）。支持村民、流浪商人、掠夺者、卫道士、唤魔者、女巫和幻术师；类人亡灵不在范围内。每种生人生成游炁与真炁两档变体，身体都使用 Human Addon 的 `human:adult` 完整结构和 36 条经脉。
 
-当前实现状态：阶段 1–3 的本仓库部分已经落地，阶段 4（真元属性战斗效果）仍待另行设计。
+当前实现状态：阶段 1–3 的本仓库部分已经落地。阶段 4 取消：真元属性没有被动战斗效果，只在被使用时（例如功法）才有区别。
 
 阶段 1 的纯 Java 生成器已经落地：
 
@@ -20,4 +20,4 @@
 - 已绑定身体的村民（游炁和真炁）雷击时不转女巫，沿用原版和平难度分支的普通雷击处理：仍是同一个村民、保留原身体、照常着火，伤害经过 Damage-Addon 与健康宿主；无身体村民保留原版转化。注入只改变村民雷击入口的难度判断，不修改世界难度。
 - 村民转僵尸村民后不再属于生人，原身体按死亡路径释放。OP 命令 `/meridian humanoid inspect` 输出档位、开拓经脉列表、主属性、密度、装填体积和区域来源。
 
-本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配：Humanoid Threatening Fabric JAR 进入 `modules`，Human/Damage/Healing 的 server JAR 进入 `serverLibraries`，Qi-Variants 的 shared/server JAR 进入 `localRuntime`。纯 Java 编译仍依赖相邻 Human Addon 已构建的 shared/server JAR；Human Fabric 与本仓库的源码联调存在循环依赖，源码联调只作为显式诊断选项使用。真元属性的战斗效果仍由 Vanilla-Damage 另批次接入。
+本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配：Humanoid Threatening Fabric JAR 进入 `modules`，Human/Damage/Healing 的 server JAR 进入 `serverLibraries`，Qi-Variants 的 shared/server JAR 进入 `localRuntime`。纯 Java 编译仍依赖相邻 Human Addon 已构建的 shared/server JAR；Human Fabric 与本仓库的源码联调存在循环依赖，源码联调只作为显式诊断选项使用。真元属性不带被动战斗效果，只在被使用时才有区别。
