@@ -14,6 +14,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtHelper;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.test.TestContext;
@@ -221,13 +222,11 @@ final class AuditReproSupport {
     }
 
     static void save(PersistentState state, Path file) throws IOException {
-        // 使用原版保存实现，并验证确有可读取文件；markDirty 本身不作为持久化证据。
-        Files.createDirectories(file.getParent());
-        state.markDirty();
-        state.save(file.toFile());
-        // 校验保存文件可被 NBT 解码，损坏时抛出 IOException。
-        NbtIo.readCompressed(file.toFile());
-        force(file);
+        // 按原版存档结构直接写出；Human 的 save(File) 同 tick 只写一次，夹具不能依赖它。
+        var root = new NbtCompound();
+        root.put("data", state.writeNbt(new NbtCompound()));
+        NbtHelper.putDataVersion(root);
+        write(root, file);
     }
 
     static void write(NbtCompound nbt, Path file) throws IOException {
