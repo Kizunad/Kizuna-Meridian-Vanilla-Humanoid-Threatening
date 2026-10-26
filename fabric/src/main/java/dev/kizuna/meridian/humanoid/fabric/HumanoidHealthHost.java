@@ -8,6 +8,7 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.server.BodyHealthHost;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 
 import java.util.UUID;
@@ -21,10 +22,11 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         HealthHostResponse.Builder response = HealthHostResponse.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(request.getRequestId());
-        if (!HumanoidFabric.isReady()) {
+        MinecraftServer server = HumanoidFabric.server();
+        if (server == null) {
             return unbound(response);
         }
-        if (!HumanoidFabric.server().isOnThread()) {
+        if (!server.isOnThread()) {
             return failure(response, MeridianMessages.FailureCode.ACCESS_DENIED);
         }
         LivingEntity entity = findSubject(request.getSubjectId());
@@ -36,6 +38,10 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             return unbound(response);
         }
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
+        if (!HumanoidFabric.isReady() || access.meridian$humanoidLoadFailed()) {
+            // 世界账本或此实体的身体读档失败都属于宿主错误，不能退回原版 HP。
+            return failure(response, MeridianMessages.FailureCode.INTERNAL_ERROR);
+        }
         if (access.meridian$humanoidLoading()) {
             // 实体正文尚未读完时不允许附属抢先创建身体。
             return unbound(response);
@@ -108,7 +114,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
     }
 
     private static byte[] unbound(HealthHostResponse.Builder response) {
-        // 未认领与暂未装配都使用协议约定的未绑定响应。
+        // 无活动世界、未认领或实体正文尚在读取时使用未绑定响应。
         return HealthHostProtobuf.encodeResponse(response.setUnbound(true /* unbound */).build());
     }
 

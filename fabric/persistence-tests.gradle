@@ -1,0 +1,38 @@
+// 常规回归包含存档边界；坏档启动和强退重启使用独立世界，防止污染普通测试。
+def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
+def reproClasses = [
+        full: ['HumanoidGameTest', 'HumanoidAuditReproGameTest'],
+        normal: ['HumanoidAuditReproGameTest'],
+        'bad-ledger': ['BadLedgerReproGameTest'],
+        'release-before': ['ReleaseCrashBeforeGameTest'],
+        'release-after': ['ReleaseCrashAfterGameTest']
+]
+if (!reproClasses.containsKey(reproMode)) {
+    throw new GradleException("未知持久化测试模式：${reproMode}")
+}
+def reproEvidence = rootProject.file('fabric/build/persistence-evidence').absolutePath
+def reproRunDirectory = 'build/gametest'
+if (reproMode != 'full') {
+    reproRunDirectory = "build/repro-${reproMode}"
+}
+if (reproMode.startsWith('release-')) {
+    reproRunDirectory = 'build/repro-release'
+}
+loom.runs.gametest {
+    runDir reproRunDirectory
+    vmArg "-Dmeridian.repro.mode=${reproMode}"
+    vmArg "-Dmeridian.repro.evidence=${reproEvidence}"
+    vmArg "-Dfabric-api.gametest.report-file=${rootProject.file("fabric/build/repro-${reproMode}.xml")}"
+}
+tasks.named('processGametestResources') {
+    inputs.property('reproMode', reproMode)
+    doLast {
+        def metadata = new File(destinationDir, 'fabric.mod.json')
+        def document = new groovy.json.JsonSlurper().parse(metadata)
+        document.entrypoints.main = ['dev.kizuna.meridian.humanoid.fabric.AuditReproBootstrap']
+        document.entrypoints['fabric-gametest'] = reproClasses[reproMode].collect {
+            "dev.kizuna.meridian.humanoid.fabric.${it}".toString()
+        }
+        metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(document)) + '\n'
+    }
+}

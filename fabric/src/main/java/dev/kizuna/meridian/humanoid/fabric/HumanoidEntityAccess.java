@@ -20,6 +20,8 @@ public interface HumanoidEntityAccess {
 
     boolean meridian$humanoidLoading();
 
+    boolean meridian$humanoidLoadFailed();
+
     void meridian$beginHumanoidLoading();
 
     void meridian$finishHumanoidLoading();

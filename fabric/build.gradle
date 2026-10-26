@@ -70,3 +70,5 @@ loom {
         }
     }
 }
+
+apply from: 'persistence-tests.gradle'

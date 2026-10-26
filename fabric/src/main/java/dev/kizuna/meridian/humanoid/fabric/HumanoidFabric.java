@@ -65,7 +65,7 @@ public final class HumanoidFabric implements ModInitializer {
     }
 
     private static void startServer(MinecraftServer server) {
-        // 世界释放请求从持久化状态恢复，无法恢复时保持宿主未绑定。
+        // 世界释放请求从持久化状态恢复，无法恢复时拒绝已认领实体的健康请求。
         activeServer = server;
         try {
             PersistentStateManager persistence = server.getOverworld().getPersistentStateManager();
@@ -81,7 +81,7 @@ public final class HumanoidFabric implements ModInitializer {
             }
         } catch (RuntimeException failure) {
             worldState = null;
-            LOGGER.error("无法加载类人实体释放账本，类人实体宿主保持未绑定", failure);
+            LOGGER.error("无法加载类人实体释放账本，类人实体健康请求将失败", failure);
         }
     }
 

@@ -15,8 +15,9 @@
 配置资源为 `server/src/main/resources/meridian-humanoid.toml`。Fabric 阶段已完成以下接线：
 
 - `HumanoidHealthHost` 只认领七种实体；首次健康查询从 Human `meridian_environment_host` 取得区域库存和世界时钟，生成失败时不创建临时身体。
-- 身体快照、最多 32 条回执、区域来源和当前实体所有者写入实体 `meridian_humanoid` NBT。Framework 时间推进和健康回执中的 `released_qi` 会进入本模组世界 `PersistentState` 释放账本；所有者字段阻止其他实体借用快照，并兼容已有存档的身体 ID。
-- 释放账本保存完整 `RegionRelease` 字节请求，服务器 tick 重试；Human 返回成功或 duplicate 后才删除记录。`UNLOADED_*` 与 `CHANGED_DIMENSION` 保留身体，`KILLED`/`DISCARDED` 结算并释放。
+- 身体快照、按提交 revision 选择的最新 32 条回执、区域来源和当前实体所有者写入实体 `meridian_humanoid` NBT。Framework 时间推进和健康回执中的 `released_qi` 会进入本模组世界 `PersistentState` 释放账本；所有者字段阻止其他实体借用快照，并兼容已有存档的身体 ID。
+- 世界释放队列与实体回执从原始 NBT 列表检查元素类型，错误类型拒绝加载。实体身体标签读取失败时保留完整副本，保存时原样写回并只记录一次加载错误；世界账本或实体身体标签恢复失败时，已认领实体的健康请求返回 `INTERNAL_ERROR`，不退回原版 HP。
+- 释放账本保存完整 `RegionRelease` 字节请求，服务器 tick 重试；当前 Human 返回成功或 duplicate 后就删除记录，仍有跨文件崩溃丢账风险，所需接收端确认见[存档边界与回归](Persistence.md)。`UNLOADED_*` 与 `CHANGED_DIMENSION` 保留身体，`KILLED`/`DISCARDED` 结算并释放。
 - 已绑定身体的村民（游炁和真炁）雷击时不转女巫，沿用原版和平难度分支的普通雷击处理：仍是同一个村民、保留原身体、照常着火，伤害经过 Damage-Addon 与健康宿主；无身体村民保留原版转化。注入只改变村民雷击入口的难度判断，不修改世界难度。
 - 村民转僵尸村民后不再属于生人，原身体按死亡路径释放。OP 命令 `/meridian humanoid inspect` 输出档位、开拓经脉列表、主属性、密度、装填体积和区域来源。
 

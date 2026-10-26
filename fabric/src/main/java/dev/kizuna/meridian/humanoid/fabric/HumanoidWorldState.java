@@ -28,7 +28,8 @@ final class HumanoidWorldState extends PersistentState {
         if (state.nextSequence < 0) {
             throw new IllegalArgumentException("类人实体释放序号无效");
         }
-        NbtList entries = nbt.getList("pending", NbtElement.BYTE_ARRAY_TYPE);
+        // getList 会把错误元素类型替换成空列表，必须检查原始标签才能拒绝损坏存档。
+        NbtList entries = (NbtList) nbt.get("pending");
         byte entryType = entries.getHeldType();
         if (entryType != NbtElement.END_TYPE && entryType != NbtElement.BYTE_ARRAY_TYPE) {
             throw new IllegalArgumentException("类人实体释放账本列表类型无效");

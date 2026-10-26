@@ -7,6 +7,8 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -19,12 +21,16 @@ import java.util.UUID;
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess {
     @Unique private static final int meridian$MAX_SAVED_RECEIPTS = 32;
+    @Unique private static final Logger meridian$LOGGER = LoggerFactory.getLogger("meridian_humanoid_host");
     @Unique private HumanoidBodyState meridian$body;
     @Unique private byte[] meridian$savedBody;
     @Unique private byte[][] meridian$savedReceipts = new byte[0][];
     @Unique private String meridian$savedRegionSource = "";
     @Unique private UUID meridian$savedOwner;
     @Unique private boolean meridian$loading;
+    @Unique private NbtCompound meridian$preservedBodyNbt;
+    @Unique private boolean meridian$loadFailed;
+    @Unique private boolean meridian$loadFailureLogged;
     @Unique private boolean meridian$releaseQueued;
 
     @Override
@@ -89,15 +95,26 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     }
 
     @Override
+    public boolean meridian$humanoidLoadFailed() {
+        // 坏身体标签只允许原样保存，健康宿主必须继续拒绝使用这具身体。
+        return meridian$loadFailed;
+    }
+
+    @Override
     public void meridian$beginHumanoidLoading() {
         // NBT 读取完成前阻止其他附属提前创建身体。
         meridian$loading = true;
+        meridian$loadFailed = false;
+        meridian$preservedBodyNbt = null;
     }
 
     @Override
     public void meridian$finishHumanoidLoading() {
-        // 读完 NBT 后允许健康宿主恢复已保存的身体。
+        // 正常读完后释放原始副本；坏档继续保留，供后续实体和区块保存。
         meridian$loading = false;
+        if (!meridian$loadFailed) {
+            meridian$preservedBodyNbt = null;
+        }
     }
 
     @Override
@@ -115,6 +132,11 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Override
     public void meridian$writeHumanoidNbt(NbtCompound nbt) {
         // 已创建身体写回最新快照；未创建身体保留原始字节，跨区块卸载不重抽。
+        if (meridian$preservedBodyNbt != null) {
+            // 读取尚未完成或已经失败时保留原标签，不能让坏身体阻断整个实体保存。
+            nbt.put("meridian_humanoid", meridian$preservedBodyNbt.copy());
+            return;
+        }
         if (meridian$body == null && (meridian$savedBody == null || meridian$savedBody.length == 0)) {
             return;
         }
@@ -147,37 +169,67 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
 
     @Inject(method = "readCustomDataFromNbt", at = @At("HEAD"))
     private void meridian$beginRead(NbtCompound nbt, CallbackInfo callback) {
-        // 读档期间保持未绑定，直到正文被完整解析并且实体再次被健康宿主查询。
+        // 先保留独立的原始标签，校验失败只隔离身体功能，不能中断整个实体读档。
         meridian$beginHumanoidLoading();
         if (!nbt.contains("meridian_humanoid", NbtElement.COMPOUND_TYPE)) {
             return;
         }
         NbtCompound stored = nbt.getCompound("meridian_humanoid");
+        meridian$preservedBodyNbt = stored.copy();
+        try {
+            meridian$readBody(stored);
+        } catch (RuntimeException failure) {
+            meridian$loadFailed = true;
+            meridian$body = null;
+            if (!meridian$loadFailureLogged) {
+                meridian$loadFailureLogged = true;
+                Entity entity = (Entity) (Object) this;
+                meridian$LOGGER.error("类人实体身体 NBT 加载失败，保留原始数据 subject={}",
+                        entity.getUuidAsString(), failure);
+            }
+        }
+    }
+
+    @Unique
+    private void meridian$readBody(NbtCompound stored) {
+        // 身体字段完整通过校验后才更新缓存，不能将坏回执当成合法空窗口。
         if (!stored.contains("body", NbtElement.BYTE_ARRAY_TYPE)
                 || !stored.contains("receipts", NbtElement.LIST_TYPE)) {
             throw new IllegalArgumentException("类人实体身体 NBT 字段缺失");
         }
-        meridian$savedBody = stored.getByteArray("body");
-        if (meridian$savedBody.length == 0) {
+        byte[] savedBody = stored.getByteArray("body");
+        if (savedBody.length == 0) {
             throw new IllegalArgumentException("类人实体身体快照不能为空");
         }
+        byte[][] savedReceipts = meridian$readReceipts(stored);
+        UUID savedOwner = meridian$readOwner(stored);
+
+        // 所有必需字段通过校验后才更新实体缓存，坏档不能留下半恢复状态。
+        meridian$savedBody = savedBody;
+        meridian$savedReceipts = savedReceipts;
+        meridian$savedOwner = savedOwner;
         if (stored.contains("region_source", NbtElement.STRING_TYPE)) {
             meridian$savedRegionSource = stored.getString("region_source");
         } else {
             meridian$savedRegionSource = "";
         }
-        meridian$savedOwner = meridian$readOwner(stored);
-        NbtList receiptList = stored.getList("receipts", NbtElement.BYTE_ARRAY_TYPE);
+    }
+
+    @Unique
+    private byte[][] meridian$readReceipts(NbtCompound stored) {
+        // 原始列表保留真实元素类型，不能用 getList 把错误类型吞成空回执窗口。
+        NbtList receiptList = (NbtList) stored.get("receipts");
         byte receiptType = receiptList.getHeldType();
         int receiptCount = receiptList.size();
         if (receiptType != NbtElement.END_TYPE && receiptType != NbtElement.BYTE_ARRAY_TYPE
                 || receiptCount > meridian$MAX_SAVED_RECEIPTS) {
             throw new IllegalArgumentException("类人实体身体回执列表无效");
         }
-        meridian$savedReceipts = new byte[receiptCount][];
+        byte[][] receipts = new byte[receiptCount][];
         for (int index = 0; index < receiptCount; index++) {
-            meridian$savedReceipts[index] = ((net.minecraft.nbt.NbtByteArray) receiptList.get(index)).getByteArray();
+            receipts[index] = ((net.minecraft.nbt.NbtByteArray) receiptList.get(index)).getByteArray();
         }
+        return receipts;
     }
 
     @Unique

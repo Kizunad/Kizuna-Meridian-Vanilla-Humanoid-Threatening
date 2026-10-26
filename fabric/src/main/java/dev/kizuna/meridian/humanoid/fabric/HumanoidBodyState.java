@@ -13,6 +13,7 @@ import dev.kizuna.meridian.server.InMemoryBodyStore;
 import dev.kizuna.meridian.protocol.pb.HealthMessages;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -190,8 +191,10 @@ public final class HumanoidBodyState {
     }
 
     public byte[][] encodeReceipts() {
-        // 仅保存最近 32 条回执，覆盖当前实体的正常幂等重试窗口并限制 NBT 体积。
-        List<MeridianMessages.CommandReceipt> receipts = store.receipts();
+        // Store 不保证遍历顺序；按提交版本保留最新 32 条，确保最近请求在重载后仍可重放。
+        List<MeridianMessages.CommandReceipt> receipts = store.receipts().stream()
+                .sorted(Comparator.comparingLong(receipt -> receipt.getCommitted().getRevision()))
+                .toList();
         int receiptCount = receipts.size();
         int start = Math.max(0, receiptCount - MAX_SAVED_RECEIPTS);
         byte[][] result = new byte[receiptCount - start][];
