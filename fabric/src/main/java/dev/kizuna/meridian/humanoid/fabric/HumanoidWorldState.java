@@ -44,18 +44,19 @@ final class HumanoidWorldState extends PersistentState {
 
     static HumanoidWorldState read(NbtCompound nbt) {
         // 世界文件只保存完整 RegionRelease 字节，加载时重新验证协议和库存明细。
-        if (!nbt.contains("next_sequence", NbtElement.LONG_TYPE)
-                || !nbt.contains("pending", NbtElement.LIST_TYPE)
-                || !nbt.contains("pending_forget", NbtElement.LIST_TYPE)) {
+        NbtCompound migrated = migrateLegacy(nbt);
+        if (!migrated.contains("next_sequence", NbtElement.LONG_TYPE)
+                || !migrated.contains("pending", NbtElement.LIST_TYPE)
+                || !migrated.contains("pending_forget", NbtElement.LIST_TYPE)) {
             throw new IllegalArgumentException("类人实体释放账本字段缺失");
         }
         HumanoidWorldState state = new HumanoidWorldState();
-        state.nextSequence = nbt.getLong("next_sequence");
+        state.nextSequence = migrated.getLong("next_sequence");
         if (state.nextSequence < 0) {
             throw new IllegalArgumentException("类人实体释放序号无效");
         }
         // getList 会把错误元素类型替换成空列表，必须检查原始标签才能拒绝损坏存档。
-        NbtList entries = (NbtList) nbt.get("pending");
+        NbtList entries = (NbtList) migrated.get("pending");
         byte entryType = entries.getHeldType();
         if (entryType != NbtElement.END_TYPE && entryType != NbtElement.BYTE_ARRAY_TYPE) {
             throw new IllegalArgumentException("类人实体释放账本列表类型无效");
@@ -64,8 +65,21 @@ final class HumanoidWorldState extends PersistentState {
         for (int index = 0; index < entryCount; index++) {
             state.pending.add(readRelease(entries.get(index), state.pending));
         }
-        state.readForget(nbt);
+        state.readForget(migrated);
+        if (migrated != nbt) {
+            state.markDirty();
+        }
         return state;
+    }
+
+    private static NbtCompound migrateLegacy(NbtCompound nbt) {
+        // 旧账本没有待遗忘字段；仅补缺失字段，已有的错误类型仍交给完整校验拒绝。
+        if (nbt.contains("pending_forget")) {
+            return nbt;
+        }
+        NbtCompound migrated = nbt.copy();
+        migrated.put("pending_forget", new NbtList());
+        return migrated;
     }
 
     private void readForget(NbtCompound nbt) {

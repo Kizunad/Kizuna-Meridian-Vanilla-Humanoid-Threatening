@@ -6,6 +6,12 @@
 
 ## 已修复的边界
 
+旧账本（只有 `next_sequence` 和 `pending`）加载时补空的 `pending_forget`，再执行全部新格式校验。
+迁移不改变输入标签、序号或完整释放请求，并标记待保存，下一次世界保存写入新格式。
+字段已存在但顶层或元素类型错误、旧字段缺失、负序号和重复请求仍拒绝加载。
+`HumanoidWorldStateTest.legacyWriterFilesMigrateAndPersistWithoutChangingRequests` 使用旧写入器布局
+分别写入空队列和非空队列文件，经新读取器加载、保存并再次重载。
+
 | 问题 | 根因 | 修改 | 整体回归 |
 |---|---|---|---|
 | 最新成功回执遗漏 | Store 从 HashMap 提供回执，截取尾部不代表最新提交 | 按 `committed.revision` 升序排列后保留最高的 32 条 | `audit02NewestReceiptSurvivesEntityNbtRoundTrip`：提交 100 笔、核对完整 69–100 窗口、实体 NBT 往返并重放最后一笔 |
