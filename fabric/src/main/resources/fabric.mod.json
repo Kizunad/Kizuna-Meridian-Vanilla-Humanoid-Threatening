@@ -9,7 +9,9 @@
   "environment": "*",
   "entrypoints": {
     "main": ["dev.kizuna.meridian.humanoid.fabric.HumanoidFabric"],
-    "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"]
+    "client": ["dev.kizuna.meridian.humanoid.fabric.client.HumanoidSpawnEggClient"],
+    "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"],
+    "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"]
   },
   "mixins": ["meridian_humanoid.mixins.json"],
   "depends": {
@@ -17,7 +19,11 @@
     "minecraft": "1.20.1",
     "fabricloader": ">=0.16.10",
     "fabric-api": "*",
+    "kizuna_players_animation_mobs": "*",
     "meridian_human_host": "*",
+    "meridian_technique": "*",
+    "meridian_door_breaker": "*",
+    "meridian_basic_techniques": "*",
     "meridian_vanilla_damage": "*",
     "meridian_vanilla_healing": "*"
   }

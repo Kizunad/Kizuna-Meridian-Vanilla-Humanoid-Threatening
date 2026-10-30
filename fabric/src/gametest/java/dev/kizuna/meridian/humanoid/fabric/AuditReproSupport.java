@@ -9,6 +9,7 @@ import dev.kizuna.meridian.protocol.pb.HealthMessages;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.passive.VillagerEntity;
@@ -55,7 +56,11 @@ final class AuditReproSupport {
     }
 
     static VillagerEntity villager(TestContext context, UUID id) {
-        // UUID 在加入世界前固定，宿主索引与实体身份保持一致。
+        // UUID 在加入世界前固定，宿主索引与实体身份保持一致；GameTest 世界跨运行保留，上次留下的同 UUID 实体先移除。
+        Entity stale = context.getWorld().getEntity(id);
+        if (stale != null) {
+            stale.discard();
+        }
         VillagerEntity entity = EntityType.VILLAGER.create(context.getWorld());
         if (entity == null) {
             throw new IllegalStateException("无法创建测试村民");

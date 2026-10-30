@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.brigadier.context.CommandContext;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
+import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfigLoader;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfigLoader;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
@@ -13,6 +14,9 @@ import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.qivariants.server.QiVariantRegistry;
 import dev.kizuna.meridian.qivariants.server.QiVariantsContent;
 import dev.kizuna.meridian.server.AddonRegistry;
+import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
+import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -48,12 +52,18 @@ public final class HumanoidFabric implements ModInitializer {
     private static HumanoidBodyGenerator generator;
     private static HumanoidEnvironmentClient environment;
     private static HumanoidWorldState worldState;
+    private static boolean volumesChecked;
 
     @Override
     public void onInitialize() {
         // 内容目录在服务端启动时固定；缺少 Human 或 Qi-Variants 登记会直接阻止接线。
-        config = HumanoidConfigLoader.load(FabricLoader.getInstance().getConfigDir()
-                .resolve("meridian-humanoid.toml"));
+        HumanoidSpawnEggs.register();
+        var configDirectory = FabricLoader.getInstance().getConfigDir();
+        config = HumanoidConfigLoader.load(configDirectory.resolve("meridian-humanoid.toml"));
+        var brainConfig = HumanoidBrainConfigLoader.load(configDirectory.resolve("meridian-humanoid-brain.toml"));
+        HumanoidBrain.configure(brainConfig);
+        VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
+        TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
         content = installContent();
         variants = QiVariantRegistry.load(content, QiVariantsContent.catalog());
         generator = new HumanoidBodyGenerator(variants, config);
@@ -89,15 +99,30 @@ public final class HumanoidFabric implements ModInitializer {
     private static void stopServer(MinecraftServer server) {
         // 服务器停止后拒绝健康查询，等待下一次世界接线。
         worldState = null;
+        volumesChecked = false;
+        HumanoidTechniqueHost.clear();
         activeServer = null;
     }
 
     private static void tick(MinecraftServer server) {
-        if (server != activeServer || worldState == null) {
+        if (server != activeServer) {
+            return;
+        }
+        if (!volumesChecked) {
+            checkVolumes();
+        }
+        if (worldState == null) {
             return;
         }
         // 释放调用必须在主线程进行；失败项在下一个服务器 tick 或重启后重试。
         worldState.retry();
+    }
+
+    private static void checkVolumes() {
+        // 功法服务在服务器启动回调里才建好，学卷表放到第一个 tick 对注册表核对，缺卷直接失败。
+        var registry = TechniqueFabric.service().registry();
+        HumanoidBrain.config().volumes().requireInstalled(volume -> registry.findVolume(volume).isPresent());
+        volumesChecked = true;
     }
 
     static boolean isReady() {
@@ -188,8 +213,15 @@ public final class HumanoidFabric implements ModInitializer {
 
     public static void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         // 区块卸载和跨维度只移除运行时对象，身体仍由实体 NBT 承载；只有真正离开世界才释放。
-        if (!(entity instanceof LivingEntity living) || !isClaimed(living)
-                || reason == Entity.RemovalReason.UNLOADED_TO_CHUNK
+        if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
+            return;
+        }
+        try {
+            HumanoidTechniqueHost.removed(living);
+        } catch (RuntimeException failure) {
+            report(living, failure);
+        }
+        if (reason == Entity.RemovalReason.UNLOADED_TO_CHUNK
                 || reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER
                 || reason == Entity.RemovalReason.CHANGED_DIMENSION) {
             return;
@@ -249,7 +281,9 @@ public final class HumanoidFabric implements ModInitializer {
                 .requires(source -> source.hasPermissionLevel(INSPECT_PERMISSION_LEVEL))
                 .executes(context -> inspect(context, context.getSource().getEntity()))
                 .then(target);
-        var humanoid = CommandManager.literal("humanoid").then(inspect);
+        var humanoid = CommandManager.literal("humanoid")
+                .then(inspect)
+                .then(HumanoidSpawnCommands.command());
         dispatcher.register(CommandManager.literal("meridian").then(humanoid));
     }
 

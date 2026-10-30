@@ -1,26 +1,35 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.core.BodyId;
+import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
+import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
-import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
-import dev.kizuna.meridian.human.server.HumanDamage;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.protocol.pb.HealthMessages;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
 import dev.kizuna.meridian.server.BodyCommandHandler;
 import dev.kizuna.meridian.server.InMemoryBodyStore;
-import dev.kizuna.meridian.protocol.pb.HealthMessages;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostRequest;
+import dev.kizuna.meridian.technique.server.TechniqueErrors;
+import dev.kizuna.meridian.technique.server.TechniqueHost;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.random.RandomGenerator;
 
 /** 单个已加载类人实体的身体事务包装；权威状态仍由 Framework Store 持有。 */
 public final class HumanoidBodyState {
     private static final int MAX_SAVED_RECEIPTS = 32;
+    private static final String DEBUG_CALLER_ID = "meridian_debug:command";
 
     private final InMemoryBodyStore store;
     private final BodyCommandHandler<String> commands;
@@ -29,16 +38,23 @@ public final class HumanoidBodyState {
     private long targetMillis;
 
     private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
-                               String regionSource, long initialTargetMillis) {
-        // 恢复时把快照和回执一并交给 Framework，旧请求只能按同一身份做幂等重放。
+                               String regionSource, long initialTargetMillis, HumanoidSpecies species) {
+        // 快照和回执由 Framework 恢复；可信功法调用保留自身身份以校验能力修正的来源。
         var core = BodyProtobuf.fromMessage(saved);
-        store = new InMemoryBodyStore(List.of(core), receipts, dev.kizuna.meridian.core.QiInventory.empty());
+        store = new InMemoryBodyStore(List.of(core), receipts, QiInventory.empty());
         bodyId = core.id().value();
         this.regionSource = regionSource == null ? "" : regionSource;
         targetMillis = initialTargetMillis;
         var installedContent = HumanoidFabric.content();
         commands = new BodyCommandHandler<>(
                 (caller, command) -> {
+                    if (caller.equals(TechniqueHost.CALLER_ID)
+                            && command.hasExecuteActivity() && command.getBodyId().equals(bodyId)) {
+                        return Optional.of(caller);
+                    }
+                    if (caller.equals(DEBUG_CALLER_ID) && command.getBodyId().equals(bodyId)) {
+                        return Optional.of(caller);
+                    }
                     if (caller.equals(bodyId) && command.getBodyId().equals(bodyId)) {
                         return Optional.of(caller);
                     }
@@ -48,12 +64,12 @@ public final class HumanoidBodyState {
                 (caller, body) -> timeAdvancePlan(body, this.targetMillis),
                 store, (caller, receipt, before, after) -> { /* 实体写回 NBT 时保存已提交快照。 */ },
                 installedContent.recipes(), (caller, body, plan) -> Optional.empty(),
-                installedContent.actions(), installedContent.openings(), caller -> false,
-                new HumanDamage());
+                installedContent.actions(), installedContent.openings(), DEBUG_CALLER_ID::equals,
+                HumanoidDamagePolicy.forSpecies(species));
     }
 
     private static MeridianMessages.TimeAdvancePlan timeAdvancePlan(
-            dev.kizuna.meridian.core.BodySnapshot body, long targetMillis) {
+            BodySnapshot body, long targetMillis) {
         // 时间计划跟随查询或健康效果更新的目标，不能倒退已结算游标。
         var settledAt = body.settledAt();
         BodyMessages.TimeCursor target = BodyProtobuf.toTime(settledAt).toBuilder()
@@ -66,20 +82,39 @@ public final class HumanoidBodyState {
                 .build();
     }
 
-    static HumanoidBodyState born(HumanoidSpecies species, UUID entityId, long worldSeed,
+    static HumanoidBodyState born(BirthSubject subject, long worldSeed,
                                    HumanoidEnvironmentClient.RegionSnapshot region,
                                    BodyMessages.TimeCursor now) {
-        // 第一次健康查询才生成身体；区域库存和浓度由 Human 服务在同一主线程提供。
+        // 自然出生与指定档位共用随机流；强制档位仍消耗原有抽档随机数。
+        // 这样可以保持其他抽样顺序。
+        UUID entityId = subject.entityId();
+        HumanoidSpecies species = subject.species();
         var random = HumanoidBodyGenerator.randomFor(worldSeed, entityId);
         HumanoidBodyGenerator generator = HumanoidFabric.generator();
         var inventory = region.inventory();
-        HumanoidVariant variant = generator.rollVariant(species, inventory, random);
-        var request = new HumanoidBodyGenerator.GenerationRequest(species, variant, entityId, inventory, now);
-        BodyMessages.BodySnapshot body = generator.generate(request, random);
-        return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis());
+        HumanoidTier rolled = HumanoidTier.of(generator.rollVariant(species, inventory, random));
+        HumanoidTier forced = subject.forcedTier();
+        HumanoidTier tier = forced == null ? rolled : forced;
+        var request = new HumanoidBodyGenerator.GenerationRequest(species, tier.variant(), entityId, inventory, now);
+        BodyMessages.BodySnapshot body = generate(generator, tier, request, random);
+        return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis(), species);
     }
 
-    static HumanoidBodyState restore(UUID entityId, SavedBody saved, BodyMessages.TimeCursor now) {
+    private static BodyMessages.BodySnapshot generate(HumanoidBodyGenerator generator, HumanoidTier tier,
+                                                      HumanoidBodyGenerator.GenerationRequest request,
+                                                      RandomGenerator random) {
+        // 凡人档不开脉，其余两档按变体抽取开脉。
+        if (tier == HumanoidTier.MORTAL) {
+            return generator.generateUnopened(request, random);
+        }
+        return generator.generate(request, random);
+    }
+
+    /** forcedTier 为空时沿用自然抽档。 */
+    record BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier) { }
+
+    static HumanoidBodyState restore(UUID entityId, SavedBody saved, BodyMessages.TimeCursor now,
+                                     HumanoidSpecies species) {
         // NBT 正文先按 Framework 快照和回执协议解码，任何损坏都停止绑定而不重生身体。
         UUID ownerId = saved.ownerId();
         if (entityId == null || ownerId == null || !entityId.equals(ownerId)) {
@@ -98,7 +133,7 @@ public final class HumanoidBodyState {
                 || !domain.equals(now.getDomain()) || !epoch.equals(now.getEpoch())) {
             throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
-        return new HumanoidBodyState(body, List.copyOf(receipts), saved.regionSource(), now.getElapsedMillis());
+        return new HumanoidBodyState(body, List.copyOf(receipts), saved.regionSource(), now.getElapsedMillis(), species);
     }
 
     private static BodyMessages.BodySnapshot decodeBody(byte[] bodyBytes) {
@@ -169,12 +204,88 @@ public final class HumanoidBodyState {
                 .orElse(BodyMessages.QiInventory.getDefaultInstance());
     }
 
-    BodyMessages.BodySnapshot snapshot() {
-        // Store 只返回已提交快照；不存在身体属于内部一致性错误。
-        return BodyProtobuf.toMessage(store.find(new dev.kizuna.meridian.core.BodyId(bodyId)).orElseThrow());
+    void exert(MeridianMessages.RequestEnvelope request, BodyMessages.TimeCursor now) {
+        // 做功使用绑定身体的可信身份，保留请求版本及幂等 ID，不走健康专用命令入口。
+        if (!sameClock(now)) {
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
+        }
+        if (!request.getBodyCommand().getBodyId().equals(bodyId)) {
+            throw new HumanoidHealthFailure(MeridianMessages.FailureCode.ACCESS_DENIED);
+        }
+        targetMillis = Math.max(targetMillis, now.getElapsedMillis());
+        submit(request);
     }
 
-    Optional<dev.kizuna.meridian.protocol.pb.HealthMessages.HealthResult> healthReceipt(String requestId) {
+    MeridianMessages.ResponseEnvelope applyTechnique(TechniqueHostRequest request) {
+        // 起手和结束保留服务生成的请求与预期版本，通过固定可信身份提交活动。
+        var command = MeridianMessages.BodyCommand.newBuilder()
+                .setBodyId(bodyId)
+                .setExpectedRevision(request.getExpectedRevision())
+                .setExecuteActivity(request.getActivity())
+                .build();
+        return recoveryResponse(request.getRequestId(), command);
+    }
+
+    long submitRecovery(String requestId, MeridianMessages.BodyCommand command) {
+        // 死体及未认领身体也可清理功法进度，仍检查命令版本及身份。
+        var response = recoveryResponse(requestId, command);
+        if (response.hasFailure()) {
+            throw new TechniqueErrors.HostRejected(response.getFailure().getCode());
+        }
+        return response.getCommandCommitted().getRevision();
+    }
+
+    private MeridianMessages.ResponseEnvelope recoveryResponse(String requestId,
+                                                               MeridianMessages.BodyCommand command) {
+        // 两种可信命令都使用同一 Framework Store，实体 NBT 保存其回执和快照。
+        var envelope = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(MeridianProtocol.VERSION)
+                .setRequestId(requestId)
+                .setBodyCommand(command)
+                .build();
+        byte[] payload = MeridianProtocol.encodeRequest(envelope);
+        byte[] result;
+        if (command.hasSetAddonProgress()) {
+            result = commands.handleAddonProgress(bodyId, payload);
+        } else {
+            result = commands.handleActivity(TechniqueHost.CALLER_ID, payload);
+        }
+        return MeridianProtocol.decodeResponse(result);
+    }
+
+    BodyMessages.BodySnapshot snapshot() {
+        // Store 只返回已提交快照；不存在身体属于内部一致性错误。
+        return BodyProtobuf.toMessage(store.find(new BodyId(bodyId)).orElseThrow());
+    }
+
+    BodyMessages.BodySnapshot debugQi(DebugQi debugQi, BodyMessages.TimeCursor now) {
+        // 调试入口只改写真元库存，仍通过同一 Framework 事务校验调试授权、版本和时间。
+        if (!sameClock(now)) {
+            throw new IllegalArgumentException("类人实体身体时钟域不匹配");
+        }
+        targetMillis = Math.max(targetMillis, now.getElapsedMillis());
+        BodyMessages.BodySnapshot body = snapshot();
+        MeridianMessages.BodyCommand command = MeridianMessages.BodyCommand.newBuilder()
+                .setBodyId(bodyId)
+                .setExpectedRevision(body.getRevision())
+                .setDebugQi(debugQi)
+                .build();
+        String requestId = UUID.randomUUID().toString();
+        MeridianMessages.RequestEnvelope request = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(MeridianProtocol.VERSION)
+                .setRequestId(requestId)
+                .setBodyCommand(command)
+                .build();
+        byte[] responseBytes = commands.handle(DEBUG_CALLER_ID,
+                MeridianProtocol.encodeRequest(request));
+        MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
+        if (response.hasFailure()) {
+            throw new HumanoidHealthFailure(response.getFailure().getCode());
+        }
+        return snapshot();
+    }
+
+    Optional<HealthMessages.HealthResult> healthReceipt(String requestId) {
         // 回执事实与当前身体同一 Store 读取，避免重新执行 HumanDamage。
         return store.receipts().stream().filter(receipt -> receipt.getRequestId().equals(requestId)
                 && receipt.hasHealth()).map(MeridianMessages.CommandReceipt::getHealth).findFirst();
@@ -187,7 +298,7 @@ public final class HumanoidBodyState {
 
     public byte[] encodeBody() {
         // NBT 只封装 Framework 的协议字节，不复制或派生另一份身体数据。
-        return BodyProtobuf.encodeSnapshot(store.find(new dev.kizuna.meridian.core.BodyId(bodyId)).orElseThrow());
+        return BodyProtobuf.encodeSnapshot(store.find(new BodyId(bodyId)).orElseThrow());
     }
 
     public byte[][] encodeReceipts() {
@@ -204,10 +315,10 @@ public final class HumanoidBodyState {
         return result;
     }
 
-    dev.kizuna.meridian.core.QiInventory releaseInventory() {
+    QiInventory releaseInventory() {
         // 自然消失的实体没有健康回执，直接合并经脉、器官和在途账户后交给世界释放队列。
-        var body = store.find(new dev.kizuna.meridian.core.BodyId(bodyId)).orElseThrow();
-        var inventories = new ArrayList<dev.kizuna.meridian.core.QiInventory>();
+        var body = store.find(new BodyId(bodyId)).orElseThrow();
+        var inventories = new ArrayList<QiInventory>();
         body.meridianStates().forEach(state -> {
             inventories.add(state.lumenQi());
             inventories.add(state.wallQi());
@@ -220,7 +331,7 @@ public final class HumanoidBodyState {
             }
         });
         body.transits().forEach(transit -> inventories.add(transit.cargo()));
-        return dev.kizuna.meridian.core.QiInventory.combine(inventories);
+        return QiInventory.combine(inventories);
     }
 
     private void submit(MeridianMessages.RequestEnvelope request) {
@@ -251,6 +362,7 @@ public final class HumanoidBodyState {
 
         HumanoidHealthFailure(MeridianMessages.FailureCode code) {
             // 宿主层把 Framework 业务拒绝映射回公开 health_host 失败码。
+            super(code.name());
             this.code = code;
         }
 

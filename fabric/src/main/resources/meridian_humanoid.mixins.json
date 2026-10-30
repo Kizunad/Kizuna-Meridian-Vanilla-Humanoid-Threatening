@@ -2,6 +2,7 @@
   "required": true,
   "package": "dev.kizuna.meridian.humanoid.fabric.mixin",
   "compatibilityLevel": "JAVA_17",
-  "mixins": ["LivingEntityHumanoidMixin", "EntityHumanoidLifecycleMixin", "VillagerHumanoidLightningMixin"],
+  "mixins": ["LivingEntityHumanoidMixin", "EntityHumanoidLifecycleMixin", "VillagerHumanoidLightningMixin",
+    "MobTechniqueMixin", "VillagerHumanoidBrainMixin", "BrainHumanoidInvoker", "PanicTaskHumanoidMixin"],
   "injectors": {"defaultRequire": 1}
 }

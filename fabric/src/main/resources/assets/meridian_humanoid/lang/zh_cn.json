@@ -1,0 +1,17 @@
+{
+  "itemGroup.meridian_humanoid.humanoids": "类人",
+  "item.meridian_humanoid.villager_wandering_qi_spawn_egg": "村民刷怪蛋（游炁）",
+  "item.meridian_humanoid.villager_true_qi_spawn_egg": "村民刷怪蛋（真炁）",
+  "item.meridian_humanoid.wandering_trader_wandering_qi_spawn_egg": "流浪商人刷怪蛋（游炁）",
+  "item.meridian_humanoid.wandering_trader_true_qi_spawn_egg": "流浪商人刷怪蛋（真炁）",
+  "item.meridian_humanoid.pillager_wandering_qi_spawn_egg": "掠夺者刷怪蛋（游炁）",
+  "item.meridian_humanoid.pillager_true_qi_spawn_egg": "掠夺者刷怪蛋（真炁）",
+  "item.meridian_humanoid.vindicator_wandering_qi_spawn_egg": "卫道士刷怪蛋（游炁）",
+  "item.meridian_humanoid.vindicator_true_qi_spawn_egg": "卫道士刷怪蛋（真炁）",
+  "item.meridian_humanoid.evoker_wandering_qi_spawn_egg": "唤魔者刷怪蛋（游炁）",
+  "item.meridian_humanoid.evoker_true_qi_spawn_egg": "唤魔者刷怪蛋（真炁）",
+  "item.meridian_humanoid.witch_wandering_qi_spawn_egg": "女巫刷怪蛋（游炁）",
+  "item.meridian_humanoid.witch_true_qi_spawn_egg": "女巫刷怪蛋（真炁）",
+  "item.meridian_humanoid.illusioner_wandering_qi_spawn_egg": "幻术师刷怪蛋（游炁）",
+  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "幻术师刷怪蛋（真炁）"
+}

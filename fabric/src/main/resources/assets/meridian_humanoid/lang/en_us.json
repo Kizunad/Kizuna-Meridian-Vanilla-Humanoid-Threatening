@@ -1,0 +1,17 @@
+{
+  "itemGroup.meridian_humanoid.humanoids": "Humanoids",
+  "item.meridian_humanoid.villager_wandering_qi_spawn_egg": "Villager Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.villager_true_qi_spawn_egg": "Villager Spawn Egg (True Qi)",
+  "item.meridian_humanoid.wandering_trader_wandering_qi_spawn_egg": "Wandering Trader Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.wandering_trader_true_qi_spawn_egg": "Wandering Trader Spawn Egg (True Qi)",
+  "item.meridian_humanoid.pillager_wandering_qi_spawn_egg": "Pillager Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.pillager_true_qi_spawn_egg": "Pillager Spawn Egg (True Qi)",
+  "item.meridian_humanoid.vindicator_wandering_qi_spawn_egg": "Vindicator Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.vindicator_true_qi_spawn_egg": "Vindicator Spawn Egg (True Qi)",
+  "item.meridian_humanoid.evoker_wandering_qi_spawn_egg": "Evoker Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.evoker_true_qi_spawn_egg": "Evoker Spawn Egg (True Qi)",
+  "item.meridian_humanoid.witch_wandering_qi_spawn_egg": "Witch Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.witch_true_qi_spawn_egg": "Witch Spawn Egg (True Qi)",
+  "item.meridian_humanoid.illusioner_wandering_qi_spawn_egg": "Illusioner Spawn Egg (Wandering Qi)",
+  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "Illusioner Spawn Egg (True Qi)"
+}

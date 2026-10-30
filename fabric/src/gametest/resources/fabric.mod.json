@@ -5,6 +5,12 @@
   "name": "Meridian Humanoid GameTest",
   "environment": "*",
   "entrypoints": {
-    "fabric-gametest": ["dev.kizuna.meridian.humanoid.fabric.HumanoidGameTest"]
+    "fabric-gametest": [
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidSpawnGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidBrainGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidDebugQiGameTest"
+    ]
   }
 }

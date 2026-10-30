@@ -6,6 +6,7 @@ import dev.kizuna.meridian.human.server.HumanOpening;
 import dev.kizuna.meridian.protocol.QiDensity;
 import dev.kizuna.meridian.protocol.pb.AddonMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningStage;
 import dev.kizuna.meridian.qivariants.server.QiVariantRegistry;
 import dev.kizuna.meridian.qivariants.server.QiVariantsContent;
 import dev.kizuna.meridian.server.AddonRegistry;
@@ -106,6 +107,27 @@ public class HumanoidBodyGeneratorTest {
         byte[] first = generator.generate(request, REPRODUCIBLE_WORLD_SEED).toByteArray();
         byte[] second = generator.generate(request, REPRODUCIBLE_WORLD_SEED).toByteArray();
         assertArrayEquals(first, second);
+    }
+
+    @Test
+    public void tiersReadBackFromGeneratedBodies() {
+        // 凡人档保持游炁境界但不开任何经脉；三档出生后都能从快照读回；不开脉的出生不接受真炁变体。
+        UUID id = UUID.fromString("66666666-7777-8888-9999-000000000000");
+        RegionInventory region = RegionInventory.fromShares(1.0, Map.of("meridian:fire", 1.0));
+        var wandering = new HumanoidBodyGenerator.GenerationRequest(
+                HumanoidSpecies.VILLAGER, HumanoidVariant.WANDERING_QI, id, region, null);
+        var trueQi = new HumanoidBodyGenerator.GenerationRequest(
+                HumanoidSpecies.VILLAGER, HumanoidVariant.TRUE_QI, id, region, null);
+        var random = HumanoidBodyGenerator.randomFor(REPRODUCIBLE_WORLD_SEED, id);
+        BodyMessages.BodySnapshot mortal = generator.generateUnopened(wandering, random);
+        assertEquals(BodyMessages.Realm.WANDERING_QI, mortal.getRealm());
+        assertTrue(mortal.getMeridianStatesList().stream()
+                .noneMatch(meridian -> meridian.getOpening().getStage() == MeridianOpeningStage.OPENED));
+        assertEquals(HumanoidTier.MORTAL, HumanoidTier.of(mortal));
+        assertEquals(HumanoidTier.WANDERING_QI,
+                HumanoidTier.of(generator.generate(wandering, REPRODUCIBLE_WORLD_SEED)));
+        assertEquals(HumanoidTier.TRUE_QI, HumanoidTier.of(generator.generate(trueQi, REPRODUCIBLE_WORLD_SEED)));
+        assertThrows(IllegalArgumentException.class, () -> generator.generateUnopened(trueQi, random));
     }
 
     @Test

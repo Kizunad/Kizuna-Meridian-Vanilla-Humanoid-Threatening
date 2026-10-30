@@ -1,0 +1,129 @@
+# 类人大脑：决策节奏、敌意记忆、威胁评估、来袭应对与学卷表。数值均为初版可调值。
+# 已有文件不会被新默认值覆盖；config_version 不符时加载失败，请删除旧文件或按新默认值合并。
+config_version = 1
+decision_interval_ticks = 10   # 每个实体按 ID 错相，每隔这么多 tick 决策一次
+log_decisions = false          # true 时每次决策写一行日志（动作与理由）
+
+[threat]
+memory_seconds = 30            # 攻击过我或同伴者保持为敌人的秒数
+ally_radius = 16               # 同伴受击时一起敌对攻击者的半径（格）
+forget_distance = 32           # 敌人远于此且看不见即放下（格）
+safe_distance = 12             # 撤退要拉开到的距离（格）
+
+[assessment]
+# 战力 = 境界档 × realm + 会可施放打击式 × strike + 持武器 × armed
+#      + min(完好率, 较强一臂力量比) × body + 真元占容 × qi + 正在施放 × casting
+realm_weight = 1.0
+strike_weight = 1.0
+armed_weight = 0.75
+body_weight = 1.0
+qi_weight = 0.25
+casting_weight = 0.25
+engage_margin = -0.5           # 我方战力 − 对方战力 ≥ 此值则对敌
+retreat_hp_ratio = 0.35        # 完好率低于此值撤退
+retreat_part_hp_ratio = 0.25   # 最弱存活部位 HP 比低于此值撤退
+arm_exhausted_ratio = 0.8      # 较强一臂有效力量比低于此值视为双臂虚脱，撤退
+return_hp_ratio = 0.6          # 撤退后完好率恢复到此值以上
+return_arm_ratio = 0.9         # 且较强一臂力量比恢复到此值以上，并已拉开到安全距离，才重新评估
+
+[response]
+reaction_window_millis = 1000  # 来袭命中剩余不超过此值才考虑躲或抗
+interrupt_margin_millis = 150  # 打断要求我的首击比对方起手结束早出这么多
+absorb_own_hit_millis = 300    # 自己正在施放且下一击剩余不超过此值时硬抗
+absorb_dose_ratio = 0.15       # 预计剂量占最弱存活部位当前 HP 比低于此值时硬抗
+dodge_margin_millis = 100      # 走出范围要比命中早出这么多才躲
+assault_stand_off = 1.5        # 突击落点在目标身前的距离（格）
+failure_limit = 2              # 同一式连续施放失败这么多次后暂停尝试
+failure_block_millis = 5000    # 暂停时长；冷却更长时以冷却为准
+
+# 学卷表：每个物种按境界档写明学哪几卷与概率；档位每档写全，不从低档继承。
+# 卷可以来自任何已安装的功法目录；七种原版类人必须全部出现，也可加其他实体 ID。
+# 概率按实体 UUID 与卷 ID 确定性分桶，同一实体每次分配结果相同。
+
+[volumes."minecraft:villager"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+
+[volumes."minecraft:wandering_trader"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+
+[volumes."minecraft:pillager"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+
+[volumes."minecraft:vindicator"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+  { volume = "meridian_door_breaker:upper", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+  { volume = "meridian_door_breaker:upper", chance = 1.0 },
+  { volume = "meridian_door_breaker:middle", chance = 1.0 },
+  { volume = "meridian_door_breaker:lower", chance = 0.1 },
+]
+
+[volumes."minecraft:evoker"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+
+[volumes."minecraft:witch"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+
+[volumes."minecraft:illusioner"]
+wandering_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]
+true_qi = [
+  { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
+  { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+]

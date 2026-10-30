@@ -1,6 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 
 /** 不可变出生参数；所有数值都可由 TOML 覆盖。 */
@@ -18,7 +18,7 @@ public record HumanoidConfig(
         double trueQiNoRegionFactor,
         FillRange wanderingFill,
         FillRange trueQiFill,
-        Map<HumanoidSpecies, SpeciesProfile> speciesProfiles) {
+        Map<String, SpeciesProfile> speciesProfiles) {
 
     public HumanoidConfig {
         // 先校验全局范围，防止生成过程中才发现寿命或体积无法表示。
@@ -34,27 +34,29 @@ public record HumanoidConfig(
         if (wanderingFill == null || trueQiFill == null) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 装填范围不能为空");
         }
-        var copiedProfiles = new EnumMap<HumanoidSpecies, SpeciesProfile>(HumanoidSpecies.class);
-        HumanoidSpecies[] speciesTypes = HumanoidSpecies.values();
-        if (speciesProfiles == null || speciesProfiles.size() != speciesTypes.length) {
+        var builtIn = HumanoidSpecies.values();
+        if (speciesProfiles == null || speciesProfiles.size() != builtIn.size()) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 必须为七种类人实体提供配置");
         }
-        for (HumanoidSpecies species : speciesTypes) {
-            SpeciesProfile profile = speciesProfiles.get(species);
+        var copiedProfiles = new HashMap<String, SpeciesProfile>();
+        for (HumanoidSpecies species : builtIn) {
+            SpeciesProfile profile = speciesProfiles.get(species.entityId());
             if (profile == null) {
                 throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 缺少 " + species.entityId());
             }
-            copiedProfiles.put(species, profile);
+            copiedProfiles.put(species.entityId(), profile);
         }
         speciesProfiles = Map.copyOf(copiedProfiles);
     }
 
     public SpeciesProfile profile(HumanoidSpecies species) {
-        // 物种配置只按枚举读取，未知实体在宿主认领层提前拒绝。
+        // 内置物种按实体 ID 读本配置；登记物种使用自身定义里的画像。
         if (species == null) {
             throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种不能为空");
         }
-        return speciesProfiles.get(species);
+        return species.definition()
+                .map(HumanoidSpeciesDefinition::profile)
+                .orElseGet(() -> speciesProfiles.get(species.entityId()));
     }
 
     private static boolean finitePositive(double value) {

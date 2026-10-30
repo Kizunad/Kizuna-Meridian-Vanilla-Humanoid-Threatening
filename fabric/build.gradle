@@ -22,6 +22,7 @@ dependencies {
     include implementation('org.tomlj:tomlj:1.1.1')
     include implementation('org.antlr:antlr4-runtime:4.11.1')
     testImplementation 'junit:junit:4.13.2'
+    modImplementation files('../../Kizuna-Players-Animation-Mobs-Addon/build/libs/kizuna-players-animation-mobs-addon-0.1.0-SNAPSHOT.jar')
 }
 
 test { useJUnit() }
@@ -31,9 +32,47 @@ test { useJUnit() }
 // 的 shared/server JAR 进入 localRuntime。
 apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
 
+// Human 的必需功法模块进入开发装配，Loom 运行时显式补齐其嵌套库。
+def techniqueDirectory = rootProject.file('../Kizuna-Meridian-Technique-Framework')
+def techniqueArtifacts = [
+        fabric: new File(techniqueDirectory,
+                'fabric/build/libs/kizuna-meridian-technique-framework-fabric-0.1.0-SNAPSHOT.jar'),
+        server: new File(techniqueDirectory,
+                'server/build/libs/kizuna-meridian-technique-framework-server-0.1.0-SNAPSHOT.jar'),
+        shared: new File(techniqueDirectory,
+                'shared/build/libs/kizuna-meridian-technique-framework-shared-0.1.0-SNAPSHOT.jar')
+]
+dependencies {
+    modImplementation files(techniqueArtifacts.fabric)
+    implementation 'local.meridian.technique:server'
+    modLocalRuntime files('../../Kizuna-Meridian-Door-Breaker-Addon/fabric/build/libs/kizuna-meridian-door-breaker-addon-fabric-0.1.0-SNAPSHOT.jar')
+    modLocalRuntime files('../../Kizuna-Meridian-Basic-Techniques-Addon/fabric/build/libs/kizuna-meridian-basic-techniques-addon-fabric-0.1.0-SNAPSHOT.jar')
+    modImplementation files('../../Kizuna-Meridian-Vanilla-Damage-Addon/fabric/build/libs/kizuna-meridian-vanilla-damage-addon-fabric-0.1.0-SNAPSHOT.jar')
+    // Damage 的纯 Java 规则类型（肌力握法、僵直规则）只在编译期可见，运行时由上面 JAR 内嵌的同一份提供。
+    compileOnly files('../../Kizuna-Meridian-Vanilla-Damage-Addon/server/build/libs/kizuna-meridian-vanilla-damage-addon-server-0.1.0-SNAPSHOT.jar')
+}
+tasks.withType(JavaExec).configureEach {
+    doFirst {
+        techniqueArtifacts.values().each { artifact ->
+            if (!artifact.isFile()) {
+                throw new GradleException("缺少必需功法装配产物：${artifact}")
+            }
+        }
+    }
+}
+
 processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') { expand version: project.version }
+}
+
+// Loom 只按坐标复用 modprocessing 里的嵌套 JAR，SNAPSHOT 坐标不变时会把旧 server JAR 打进发布 JAR；
+// 每次打发布 JAR 前清掉该缓存，让 include 的 JAR 按当前产物重新生成。
+def clearNestedJarCache = tasks.register('clearNestedJarCache', Delete) {
+    delete layout.buildDirectory.dir('loom-cache/temp/modprocessing')
+}
+tasks.named('remapJar') {
+    dependsOn clearNestedJarCache
 }
 
 loom {

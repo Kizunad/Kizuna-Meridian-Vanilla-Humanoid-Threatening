@@ -65,7 +65,19 @@ public final class HumanoidBodyGenerator {
         Objects.requireNonNull(random, "random");
         BodyMessages.TimeCursor time = generationTime(request);
         BodyMessages.BodyTemplate template = humanTemplate();
-        return buildSnapshot(request, template, random, time);
+        return buildSnapshot(request, template, random, time, Opening.ROLLED);
+    }
+
+    public BodyMessages.BodySnapshot generateUnopened(GenerationRequest request, RandomGenerator random) {
+        // 凡人档：游炁境界与装填区间，但不开任何经脉；其余抽样顺序与普通出生相同。
+        validateSubject(request);
+        if (request.variant() != HumanoidVariant.WANDERING_QI) {
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 不开脉的身体只能是游炁境界");
+        }
+        Objects.requireNonNull(request.region(), "region");
+        Objects.requireNonNull(random, "random");
+        BodyMessages.TimeCursor time = generationTime(request);
+        return buildSnapshot(request, humanTemplate(), random, time, Opening.NONE);
     }
 
     public BodyMessages.BodySnapshot generateFromTemplate(GenerationRequest request,
@@ -77,7 +89,7 @@ public final class HumanoidBodyGenerator {
         Objects.requireNonNull(request.region(), "region");
         Objects.requireNonNull(random, "random");
         BodyMessages.TimeCursor time = generationTime(request);
-        return buildSnapshot(request, template, random, time);
+        return buildSnapshot(request, template, random, time, Opening.ROLLED);
     }
 
     private static void validateSubject(GenerationRequest request) {
@@ -114,21 +126,26 @@ public final class HumanoidBodyGenerator {
     }
 
     public static RandomGenerator randomFor(long worldSeed, UUID entityId) {
+        // 随机流由世界种子与实体 UUID 混出的种子决定。
+        return new java.util.Random(seedFor(worldSeed, entityId));
+    }
+
+    public static long seedFor(long worldSeed, UUID entityId) {
         // 使用两个 UUID 长端和旋转混合，避免只取 hashCode 造成大量碰撞。
         Objects.requireNonNull(entityId, "entityId");
-        long seed = worldSeed ^ entityId.getMostSignificantBits()
+        return worldSeed ^ entityId.getMostSignificantBits()
                 ^ Long.rotateLeft(entityId.getLeastSignificantBits(), SEED_ROTATION_BITS);
-        return new java.util.Random(seed);
     }
 
     private BodyMessages.BodySnapshot buildSnapshot(GenerationRequest request, BodyMessages.BodyTemplate template,
-                                                     RandomGenerator random, BodyMessages.TimeCursor time) {
+                                                     RandomGenerator random, BodyMessages.TimeCursor time,
+                                                     Opening opening) {
         // 模板与生成结果都按 Framework 契约校验，随机抽样顺序固定为开脉、属性、年龄、库存。
         validateTemplate(template);
         HumanoidVariant variant = request.variant();
         BodyMessages.BodyStructure original = template.getStructure();
         HumanoidConfig.SpeciesProfile profile = config.profile(request.species());
-        Set<String> opened = selectOpenedMeridians(original, variant, profile, random);
+        Set<String> opened = openedMeridians(original, variant, profile, random, opening);
         String mainAttribute = variants.sample(request.region().eligibleShares(variants),
                         variant.maximumAttributeTier(), random)
                 .orElse(NONE_ATTRIBUTE);
@@ -269,6 +286,16 @@ public final class HumanoidBodyGenerator {
                 .setCondition(MeridianCondition.INTACT)
                 .setOpening(opening)
                 .build();
+    }
+
+    private Set<String> openedMeridians(BodyMessages.BodyStructure structure, HumanoidVariant variant,
+                                        HumanoidConfig.SpeciesProfile profile, RandomGenerator random,
+                                        Opening opening) {
+        // 不开脉的身体不消耗开脉抽样，直接返回空集合。
+        if (opening == Opening.NONE) {
+            return Set.of();
+        }
+        return selectOpenedMeridians(structure, variant, profile, random);
     }
 
     private Set<String> selectOpenedMeridians(BodyMessages.BodyStructure structure, HumanoidVariant variant,
@@ -481,6 +508,9 @@ public final class HumanoidBodyGenerator {
     }
 
     /** 一次生成所需的实体身份、变体、区域与时钟。 */
+    /** 是否按变体抽取开脉。 */
+    private enum Opening { ROLLED, NONE }
+
     public record GenerationRequest(HumanoidSpecies species, HumanoidVariant variant, UUID entityId,
                                     RegionInventory region, BodyMessages.TimeCursor settledAt) {
     }

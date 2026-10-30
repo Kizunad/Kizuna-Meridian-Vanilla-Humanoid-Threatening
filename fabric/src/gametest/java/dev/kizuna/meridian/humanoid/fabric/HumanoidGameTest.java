@@ -41,6 +41,7 @@ import java.util.concurrent.TimeUnit;
  * 类人宿主的真实 Fabric 服务端回归；测试入口只通过公开字节协议访问健康宿主。
  */
 public final class HumanoidGameTest implements FabricGameTest {
+    private static final double EXCESSIVE_EXERTION_POWER = 1_000_000;
     private static final int SPAWN_X = 2;
     private static final int SPAWN_Y = 2;
     private static final int SPAWN_Z = 2;
@@ -68,6 +69,64 @@ public final class HumanoidGameTest implements FabricGameTest {
             EntityType.EVOKER,
             EntityType.WITCH,
             EntityType.ILLUSIONER);
+
+    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
+    public void exertionChargesOnceRejectsCapacityAndChecksBoundIdentity(TestContext context) {
+        // 生物做功走普通命令，成功重试不重复消耗，业务拒绝也不留下部分疲劳。
+        var entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        disableAi(entity);
+        var initial = inspect(entity).getBody();
+        var request = exertion(entity, initial, 1);
+        var first = exchange(request);
+        context.assertTrue(first.hasBody(), "类人宿主未接受做功：" + first);
+        var exerted = first.getBody();
+        context.assertTrue(exerted.getRevision() == initial.getRevision() + 1, "做功未提交一次");
+        context.assertTrue(!first.hasHealth(), "做功不应返回健康效果回执");
+        context.assertTrue(!exerted.getTissueStatesList().equals(initial.getTissueStatesList()),
+                "做功没有增加疲劳");
+        context.assertTrue(exchange(request).getBody().equals(exerted), "重复请求多扣了疲劳");
+        var rejected = exchange(exertion(entity, exerted, EXCESSIVE_EXERTION_POWER));
+        context.assertTrue(rejected.getFailure().getCode() == MeridianMessages.FailureCode.TISSUE_LOAD_EXCEEDED,
+                "能力不足未返回原始失败码");
+        context.assertTrue(inspect(entity).getBody().equals(exerted), "被拒请求留下了身体改动");
+        var other = exerted.toBuilder().setId("meridian_humanoid:entity/" + UUID.randomUUID()).build();
+        var denied = exchange(exertion(entity, other, 1));
+        context.assertTrue(denied.getFailure().getCode() == MeridianMessages.FailureCode.ACCESS_DENIED,
+                "生物宿主没有检查绑定身体身份");
+        context.complete();
+    }
+
+    private static HealthHostMessages.HealthHostRequest exertion(LivingEntity entity,
+                                                                 BodyMessages.BodySnapshot body, double power) {
+        // 使用实际手臂组织，不允许客户端上报组织、时长或力量。
+        String tissueId = body.getStructure().getTissuesList().stream()
+                .filter(tissue -> tissue.getTagsList().contains("human:arm_muscle"))
+                .findFirst().orElseThrow().getId();
+        var load = MeridianMessages.ExertTissue.newBuilder()
+                .setTissueId(tissueId)
+                .setForceNewtons(1)
+                .setPowerWatts(power)
+                .setDurationSeconds(1)
+                .build();
+        var loads = MeridianMessages.ExertTissues.newBuilder().addLoads(load).build();
+        var command = MeridianMessages.BodyCommand.newBuilder()
+                .setBodyId(body.getId())
+                .setExpectedRevision(body.getRevision())
+                .setExertTissues(loads)
+                .build();
+        String requestId = UUID.randomUUID().toString();
+        var envelope = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(requestId)
+                .setBodyCommand(command)
+                .build();
+        return HealthHostMessages.HealthHostRequest.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(requestId)
+                .setSubjectId(entity.getUuidAsString())
+                .setExertion(envelope)
+                .build();
+    }
 
     @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
     public void claimsSevenHumanoidSpeciesAndLeavesOthersUnbound(TestContext context) {
@@ -284,8 +343,8 @@ public final class HumanoidGameTest implements FabricGameTest {
                 "meridian:earth", 1.0));
         String sourceId = HumanoidFabric.region(entity).sourceId();
         var region = new HumanoidEnvironmentClient.RegionSnapshot(inventory, sourceId);
-        HumanoidBodyState body = HumanoidBodyState.born(HumanoidSpecies.VILLAGER, entityId,
-                PRECISION_WORLD_SEED, region, HumanoidFabric.now());
+        var subject = new HumanoidBodyState.BirthSubject(HumanoidSpecies.VILLAGER, entityId, null);
+        HumanoidBodyState body = HumanoidBodyState.born(subject, PRECISION_WORLD_SEED, region, HumanoidFabric.now());
         ((HumanoidEntityAccess) entity).meridian$humanoidBody(body);
         return entity;
     }
@@ -498,7 +557,7 @@ public final class HumanoidGameTest implements FabricGameTest {
         long worldSeed = ((ServerWorld) villager.getWorld()).getSeed();
         BodyMessages.BodySnapshot snapshot = HumanoidFabric.generator().generate(request, worldSeed);
         var saved = new HumanoidBodyState.SavedBody(entityId, snapshot.toByteArray(), new byte[0][], region.sourceId());
-        HumanoidBodyState body = HumanoidBodyState.restore(entityId, saved, now);
+        HumanoidBodyState body = HumanoidBodyState.restore(entityId, saved, now, HumanoidSpecies.VILLAGER);
         ((HumanoidEntityAccess) villager).meridian$humanoidBody(body);
         return body;
     }

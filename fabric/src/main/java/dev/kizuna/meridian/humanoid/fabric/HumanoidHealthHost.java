@@ -11,10 +11,41 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /** Fabric 健康宿主入口；只认领七种生人实体类型。 */
 public final class HumanoidHealthHost implements BodyHealthHost {
+    /** 调试用途，不进正式玩法：调试附属改写类人真元库存的入口；权限检查留在调用方命令层。 */
+    public static MeridianMessages.FailureCode debugQi(LivingEntity entity, MeridianMessages.DebugQi request) {
+        // 只在服务端主线程进入当前宿主的同一身体事务；未认领或正文未读完按无身体处理。
+        Objects.requireNonNull(entity);
+        Objects.requireNonNull(request);
+        MinecraftServer server = HumanoidFabric.server();
+        if (server == null || !server.isOnThread()) {
+            return MeridianMessages.FailureCode.ACCESS_DENIED;
+        }
+        HumanoidSpeciesBinding binding = HumanoidSpeciesBinding.resolve(entity);
+        if (binding == null) {
+            return MeridianMessages.FailureCode.BODY_NOT_FOUND;
+        }
+        HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
+        if (!HumanoidFabric.isReady() || access.meridian$humanoidLoadFailed()) {
+            return MeridianMessages.FailureCode.INTERNAL_ERROR;
+        }
+        if (access.meridian$humanoidLoading()) {
+            return MeridianMessages.FailureCode.BODY_NOT_FOUND;
+        }
+        BodyMessages.TimeCursor now = HumanoidFabric.now();
+        HumanoidBodyState state = bodyState(entity, binding.species(), now);
+        try {
+            state.debugQi(request, now);
+        } catch (HumanoidBodyState.HumanoidHealthFailure rejected) {
+            return rejected.code();
+        }
+        return MeridianMessages.FailureCode.FAILURE_CODE_UNSPECIFIED;
+    }
+
     @Override
     public byte[] exchange(byte[] payload) {
         // 解析和线程检查都在宿主边界完成，客户端或异步线程不能创建身体。
@@ -70,10 +101,19 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             if (request.hasInspect()) {
                 return HealthHostProtobuf.encodeResponse(response.setBody(state.snapshot()).build());
             }
+            if (request.hasExertion()) {
+                state.exert(request.getExertion(), now);
+                return HealthHostProtobuf.encodeResponse(response.setBody(state.snapshot()).build());
+            }
             if (!request.hasEffect()) {
                 return failure(response, MeridianMessages.FailureCode.INVALID_REQUEST);
             }
+            boolean hadHealthReceipt = state.healthReceipt(request.getRequestId()).isPresent();
+            boolean mayKill = mayKill(request);
             HumanoidFabric.enqueueRelease(entity, state.apply(request.getEffect(), now));
+            if (mayKill && !hadHealthReceipt) {
+                HumanoidTechniqueHost.damaged(entity);
+            }
             var receipt = state.healthReceipt(request.getRequestId());
             if (receipt.isPresent()) {
                 response.setHealth(receipt.get());
@@ -89,7 +129,13 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         }
     }
 
-    private static HumanoidBodyState bodyState(LivingEntity entity, HumanoidSpecies species,
+    private static boolean mayKill(HealthHostRequest request) {
+        // 只有真实伤害或可信死亡确认可能让身体死亡；治疗和疲劳恢复不结束施放。
+        var command = request.getEffect().getBodyCommand();
+        return command.hasDamageBody() || command.hasConfirmBodyDeath();
+    }
+
+    static HumanoidBodyState bodyState(LivingEntity entity, HumanoidSpecies species,
                                                BodyMessages.TimeCursor now) {
         // 已绑定身体直接复用；缓存 NBT 优先恢复，只有没有快照时才查询区域并生成身体。
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
@@ -103,11 +149,12 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         if (saved != null && saved.length > 0) {
             var savedBody = new HumanoidBodyState.SavedBody(access.meridian$humanoidSavedOwner(), saved,
                     access.meridian$humanoidSavedReceipts(), access.meridian$humanoidSavedRegionSource());
-            created = HumanoidBodyState.restore(entityId, savedBody, now);
+            created = HumanoidBodyState.restore(entityId, savedBody, now, species);
         } else {
             var region = HumanoidFabric.region(entity);
             long worldSeed = ((ServerWorld) entity.getWorld()).getSeed();
-            created = HumanoidBodyState.born(species, entityId, worldSeed, region, now);
+            var subject = new HumanoidBodyState.BirthSubject(species, entityId, null);
+            created = HumanoidBodyState.born(subject, worldSeed, region, now);
         }
         access.meridian$humanoidBody(created);
         return created;

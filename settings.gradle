@@ -20,6 +20,12 @@ includeBuild(providers.gradleProperty('meridianFrameworkDir')
 includeBuild(providers.gradleProperty('meridianQiVariantsDir')
         .getOrElse('../Kizuna-Meridian-Qi-Variants-Addon'))
 
+includeBuild('../Kizuna-Meridian-Technique-Framework') {
+    dependencySubstitution {
+        substitute module('local.meridian.technique:server') using project(':server')
+    }
+}
+
 // Human 的 fabric 工程会在配置阶段检查整套外部安装产物，并且反向列出本仓库的
 // Fabric JAR。阶段 1 只需要其已发布的 server/shared API；需要联调 Human 源码时，
 // 显式传入 -PmeridianUseSourceHuman=true 再启用 composite build。
