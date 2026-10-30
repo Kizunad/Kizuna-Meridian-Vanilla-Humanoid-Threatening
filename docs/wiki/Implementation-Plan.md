@@ -22,7 +22,7 @@
 - 已绑定身体的村民（游炁和真炁）雷击时不转女巫，沿用原版和平难度分支的普通雷击处理：仍是同一个村民、保留原身体、照常着火，伤害经过 Damage-Addon 与健康宿主；无身体村民保留原版转化。注入只改变村民雷击入口的难度判断，不修改世界难度。
 - 村民转僵尸村民后不再属于生人，原身体按死亡路径释放。OP 命令 `/meridian humanoid inspect` 输出档位、开拓经脉列表、主属性、密度、装填体积和区域来源。
 
-本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配：Humanoid Threatening Fabric JAR 进入 `modules`，Human/Damage/Healing 的 server JAR 进入 `serverLibraries`，Qi-Variants 的 shared/server JAR 进入 `localRuntime`。本地开发运行额外固定装配 Human 必需的 Technique Fabric 及 shared/server JAR，缺少产物明确报错。纯 Java 编译仍依赖相邻 Human Addon 已构建的 shared/server JAR；Human Fabric 与本仓库的源码联调存在循环依赖，源码联调只作为显式诊断选项使用。真元属性不带被动战斗效果，只在被使用时才有区别。
+本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配，装入范围由 Framework 统一装配清单决定，缺少产物明确报错。Framework、Qi-Variants、功法库、Damage、PA Mobs-Addon 与 Human 的 server/shared 在 settings 中以源码组合，编译和开发运行使用其当前输出；Human Fabric 与破门斩、基础功法等高层附属只在运行时按清单读取已构建的安装 JAR，组合构建不反向依赖本仓库。真元属性不带被动战斗效果，只在被使用时才有区别。
 
 ## 分档刷怪蛋与调试命令
 

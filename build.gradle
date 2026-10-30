@@ -1,6 +1,6 @@
 plugins {
     id 'base'
-    id 'fabric-loom' version '1.6-SNAPSHOT' apply false
+    alias(libs.plugins.fabric.loom) apply false
 }
 
 allprojects {
@@ -16,18 +16,18 @@ subprojects {
     }
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(17)
+            languageVersion = JavaLanguageVersion.of(libs.versions.java.get())
         }
         withSourcesJar()
     }
     base.archivesName = "${rootProject.name}-${project.name}"
     tasks.withType(JavaCompile).configureEach {
-        options.release = 17
+        options.release = libs.versions.java.get().toInteger()
         options.encoding = 'UTF-8'
     }
     tasks.withType(JavaExec).configureEach {
         javaLauncher = javaToolchains.launcherFor {
-            languageVersion = JavaLanguageVersion.of(17)
+            languageVersion = JavaLanguageVersion.of(libs.versions.java.get())
         }
     }
     tasks.withType(Jar).configureEach {
