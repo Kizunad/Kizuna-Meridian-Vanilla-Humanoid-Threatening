@@ -6,11 +6,11 @@ import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.world.level.saveddata.SavedData;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -20,14 +20,19 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 类人实体释放账本；持久交接后只保留待遗忘 ID，直到 Human 持久回收去重项。 */
-final class HumanoidWorldState extends SavedData {
+/**
+ * 类人实体释放账本；持久交接后只保留待遗忘 ID，直到 Human 持久回收去重项。
+ *
+ * <p>账本文件由宿主自己读写：原版存档数据改为异步原位写入，不能保证已确认的交接事实不被截断。
+ */
+final class HumanoidWorldState {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(HumanoidWorldState.class);
     private final List<EnvironmentHostMessages.RegionRelease> pending = new ArrayList<>();
     private final Set<String> pendingForget = new LinkedHashSet<>();
     private final Set<String> durableForget = new HashSet<>();
     private final DurableStateFile.DirectorySync directorySync;
     private Path file;
+    private boolean dirty;
     private boolean handoffDirty;
     private long nextSequence;
 
@@ -41,25 +46,28 @@ final class HumanoidWorldState extends SavedData {
         this.directorySync = directorySync;
     }
 
+    static HumanoidWorldState load(Path file) throws IOException {
+        // 文件外层是带数据版本的压缩 NBT，正文在 data 字段；缺正文时按空正文校验并拒绝加载。
+        CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
+        return read(root.getCompoundOrEmpty("data"));
+    }
+
     static HumanoidWorldState read(CompoundTag nbt) {
         // 世界文件只保存完整 RegionRelease 字节，加载时重新验证协议和库存明细。
         CompoundTag migrated = migrateLegacy(nbt);
-        if (!migrated.contains("next_sequence", Tag.TAG_LONG)
-                || !migrated.contains("pending", Tag.TAG_LIST)
-                || !migrated.contains("pending_forget", Tag.TAG_LIST)) {
+        if (!hasTag(migrated, "next_sequence", Tag.TAG_LONG)
+                || !hasTag(migrated, "pending", Tag.TAG_LIST)
+                || !hasTag(migrated, "pending_forget", Tag.TAG_LIST)) {
             throw new IllegalArgumentException("类人实体释放账本字段缺失");
         }
         HumanoidWorldState state = new HumanoidWorldState();
-        state.nextSequence = migrated.getLong("next_sequence");
+        state.nextSequence = migrated.getLong("next_sequence").orElseThrow();
         if (state.nextSequence < 0) {
             throw new IllegalArgumentException("类人实体释放序号无效");
         }
-        // getList 会把错误元素类型替换成空列表，必须检查原始标签才能拒绝损坏存档。
+        // 按类型取值会把错误元素当作缺失，必须检查原始标签才能拒绝损坏存档；26.2 的列表可混放类型，逐个检查。
         ListTag entries = (ListTag) migrated.get("pending");
-        byte entryType = entries.getElementType();
-        if (entryType != Tag.TAG_END && entryType != Tag.TAG_BYTE_ARRAY) {
-            throw new IllegalArgumentException("类人实体释放账本列表类型无效");
-        }
+        requireElements(entries, Tag.TAG_BYTE_ARRAY, "类人实体释放账本列表类型无效");
         int entryCount = entries.size();
         for (int index = 0; index < entryCount; index++) {
             state.pending.add(readRelease(entries.get(index), state.pending));
@@ -69,6 +77,21 @@ final class HumanoidWorldState extends SavedData {
             state.setDirty();
         }
         return state;
+    }
+
+    private static boolean hasTag(CompoundTag nbt, String key, byte type) {
+        // 26.2 按名取值会跨数值类型转换，先核对原始标签类型，坏档才不会被当作合法字段。
+        Tag value = nbt.get(key);
+        return value != null && value.getId() == type;
+    }
+
+    private static void requireElements(ListTag entries, byte type, String message) {
+        // 任一元素类型不符即拒绝整份账本，与旧版按列表元素类型拒绝的结果一致。
+        for (Tag entry : entries) {
+            if (entry.getId() != type) {
+                throw new IllegalArgumentException(message);
+            }
+        }
     }
 
     private static CompoundTag migrateLegacy(CompoundTag nbt) {
@@ -84,12 +107,9 @@ final class HumanoidWorldState extends SavedData {
     private void readForget(CompoundTag nbt) {
         // 遗忘列表属于已持久删除的证明，损坏或与待释放交叠时必须拒绝整份文件。
         ListTag entries = (ListTag) nbt.get("pending_forget");
-        int type = entries.getElementType();
-        if (type != Tag.TAG_END && type != Tag.TAG_STRING) {
-            throw new IllegalArgumentException("类人实体待遗忘列表类型无效");
-        }
+        requireElements(entries, Tag.TAG_STRING, "类人实体待遗忘列表类型无效");
         for (int index = 0; index < entries.size(); index++) {
-            String releaseId = entries.getString(index);
+            String releaseId = entries.getString(index).orElseThrow();
             if (releaseId.isBlank() || !pendingForget.add(releaseId)
                     || pending.stream().anyMatch(release -> release.getReleaseId().equals(releaseId))) {
                 throw new IllegalArgumentException("类人实体待遗忘记录无效");
@@ -135,7 +155,7 @@ final class HumanoidWorldState extends SavedData {
         }
         String releaseId = "meridian_humanoid:" + entityId + ":" + nextSequence++;
         var position = EnvironmentHostMessages.RegionQuery.newBuilder()
-                .setDimensionId(entity.level().dimension().location().toString())
+                .setDimensionId(entity.level().dimension().identifier().toString())
                 .setBlockX(entity.getBlockX())
                 .setBlockZ(entity.getBlockZ())
                 .build();
@@ -185,8 +205,17 @@ final class HumanoidWorldState extends SavedData {
         }
     }
 
-    @Override
-    public void save(File file) {
+    void setDirty() {
+        // 变化只做标记，写盘集中在世界保存与 tick 末交接。
+        dirty = true;
+    }
+
+    boolean isDirty() {
+        // 写盘失败时标记保留，下次保存继续重试。
+        return dirty;
+    }
+
+    void save(File file) {
         // 删除队列的保存也须原子替换；失败保留旧文件，重启后以原 ID 安全重发。
         if (!isDirty()) {
             return;
@@ -195,19 +224,18 @@ final class HumanoidWorldState extends SavedData {
             var root = new CompoundTag();
             root.put("data", save(new CompoundTag()));
             NbtUtils.addCurrentDataVersion(root);
-            DurableStateFile.write(file.toPath(), temporary -> NbtIo.writeCompressed(root, temporary.toFile()),
+            DurableStateFile.write(file.toPath(), temporary -> NbtIo.writeCompressed(root, temporary),
                     directorySync);
             durableForget.clear();
             durableForget.addAll(pendingForget);
             handoffDirty = false;
-            setDirty(false /* dirty */);
+            dirty = false;
         } catch (IOException failure) {
             LOG.error("类人实体释放账本写入失败，已保留待保存状态", failure);
         }
     }
 
-    @Override
-    public CompoundTag save(CompoundTag nbt) {
+    CompoundTag save(CompoundTag nbt) {
         // 实体移除与服务器停止都保存同一批完整请求，避免释放成功前丢失账。
         nbt.putLong("next_sequence", nextSequence);
         ListTag entries = new ListTag();

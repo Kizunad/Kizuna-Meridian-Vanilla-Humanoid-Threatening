@@ -30,7 +30,7 @@ final class HumanoidTechniquePresentation {
         var direction = new HumanTechniqueAnimations.Direction(entity.getYRot(), input.getX(), input.getZ());
         CastHand hand = effect.getSelectedHand() == Hand.OFF_HAND ? CastHand.OFF : CastHand.MAIN;
         String animation = HumanTechniqueAnimations.resolve(presentation.getId(), direction, hand);
-        long nowMillis = entity.getServer().overworld().getGameTime() * MILLIS_PER_TICK;
+        long nowMillis = entity.level().getServer().overworld().getGameTime() * MILLIS_PER_TICK;
         long lateness = Math.max(0, nowMillis - effect.getScheduledMillis());
         long offsetTicks = (presentation.getStartMillis() + lateness) / MILLIS_PER_TICK;
         long startTick = Math.max(0, entity.level().getGameTime() - offsetTicks);

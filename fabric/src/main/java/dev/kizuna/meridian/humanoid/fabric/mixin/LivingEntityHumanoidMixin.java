@@ -10,12 +10,17 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /** 将身体快照按实体保存；查询宿主前不创建身体。 */
 @Mixin(LivingEntity.class)
@@ -157,24 +162,26 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         }
         CompoundTag stored = new CompoundTag();
         stored.putByteArray("body", body);
-        stored.putUUID("owner_uuid", ownerId);
+        stored.store("owner_uuid", UUIDUtil.CODEC, ownerId);
         stored.putString("region_source", regionSource);
         ListTag receiptList = new ListTag();
         for (byte[] receipt : receipts) {
-            receiptList.add(new net.minecraft.nbt.ByteArrayTag(receipt));
+            receiptList.add(new ByteArrayTag(receipt));
         }
         stored.put("receipts", receiptList);
         nbt.put("meridian_humanoid", stored);
     }
 
     @Inject(method = "readAdditionalSaveData", at = @At("HEAD"))
-    private void meridian$beginRead(CompoundTag nbt, CallbackInfo callback) {
+    private void meridian$beginRead(ValueInput input, CallbackInfo callback) {
         // 先保留独立的原始标签，校验失败只隔离身体功能，不能中断整个实体读档。
         meridian$beginHumanoidLoading();
-        if (!nbt.contains("meridian_humanoid", Tag.TAG_COMPOUND)) {
+        // 26.2 实体存档经 ValueInput 读取；身体仍整体读成复合标签，字段校验沿用标签写法。
+        Optional<CompoundTag> saved = input.read("meridian_humanoid", CompoundTag.CODEC);
+        if (saved.isEmpty()) {
             return;
         }
-        CompoundTag stored = nbt.getCompound("meridian_humanoid");
+        CompoundTag stored = saved.get();
         meridian$preservedBodyNbt = stored.copy();
         try {
             meridian$readBody(stored);
@@ -193,11 +200,11 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique
     private void meridian$readBody(CompoundTag stored) {
         // 身体字段完整通过校验后才更新缓存，不能将坏回执当成合法空窗口。
-        if (!stored.contains("body", Tag.TAG_BYTE_ARRAY)
-                || !stored.contains("receipts", Tag.TAG_LIST)) {
+        if (!meridian$hasTag(stored, "body", Tag.TAG_BYTE_ARRAY)
+                || !meridian$hasTag(stored, "receipts", Tag.TAG_LIST)) {
             throw new IllegalArgumentException("类人实体身体 NBT 字段缺失");
         }
-        byte[] savedBody = stored.getByteArray("body");
+        byte[] savedBody = stored.getByteArray("body").orElseThrow();
         if (savedBody.length == 0) {
             throw new IllegalArgumentException("类人实体身体快照不能为空");
         }
@@ -208,8 +215,8 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         meridian$savedBody = savedBody;
         meridian$savedReceipts = savedReceipts;
         meridian$savedOwner = savedOwner;
-        if (stored.contains("region_source", Tag.TAG_STRING)) {
-            meridian$savedRegionSource = stored.getString("region_source");
+        if (meridian$hasTag(stored, "region_source", Tag.TAG_STRING)) {
+            meridian$savedRegionSource = stored.getString("region_source").orElseThrow();
         } else {
             meridian$savedRegionSource = "";
         }
@@ -217,17 +224,18 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
 
     @Unique
     private byte[][] meridian$readReceipts(CompoundTag stored) {
-        // 原始列表保留真实元素类型，不能用 getList 把错误类型吞成空回执窗口。
+        // 原始列表保留真实元素类型，不能把错误类型吞成空回执窗口；26.2 的列表可混放类型，逐个元素检查。
         ListTag receiptList = (ListTag) stored.get("receipts");
-        byte receiptType = receiptList.getElementType();
         int receiptCount = receiptList.size();
-        if (receiptType != Tag.TAG_END && receiptType != Tag.TAG_BYTE_ARRAY
-                || receiptCount > meridian$MAX_SAVED_RECEIPTS) {
+        if (receiptCount > meridian$MAX_SAVED_RECEIPTS) {
             throw new IllegalArgumentException("类人实体身体回执列表无效");
         }
         byte[][] receipts = new byte[receiptCount][];
         for (int index = 0; index < receiptCount; index++) {
-            receipts[index] = ((net.minecraft.nbt.ByteArrayTag) receiptList.get(index)).getAsByteArray();
+            if (!(receiptList.get(index) instanceof ByteArrayTag receipt)) {
+                throw new IllegalArgumentException("类人实体身体回执列表无效");
+            }
+            receipts[index] = receipt.getAsByteArray();
         }
         return receipts;
     }
@@ -235,25 +243,38 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique
     private UUID meridian$readOwner(CompoundTag stored) {
         // 旧存档缺少 owner_uuid 时补当前实体 UUID，错误类型仍拒绝恢复。
-        boolean uuidPresent = stored.contains("owner_uuid", Tag.TAG_INT_ARRAY);
+        boolean uuidPresent = meridian$hasTag(stored, "owner_uuid", Tag.TAG_INT_ARRAY);
         if (stored.contains("owner_uuid") && !uuidPresent) {
             throw new IllegalArgumentException("类人实体身体 owner_uuid 类型无效");
         }
         if (uuidPresent) {
-            return stored.getUUID("owner_uuid");
+            // 与旧版读取一致，只接受恰好四个整数的数组。
+            return stored.read("owner_uuid", UUIDUtil.CODEC)
+                    .orElseThrow(() -> new IllegalArgumentException("类人实体身体 owner_uuid 类型无效"));
         }
         return ((Entity) (Object) this).getUUID();
     }
 
+    @Unique
+    private static boolean meridian$hasTag(CompoundTag stored, String key, byte type) {
+        // 26.2 按名取值会跨数值类型转换，先核对原始标签类型，坏档才不会被当作合法字段。
+        Tag value = stored.get(key);
+        return value != null && value.getId() == type;
+    }
+
     @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
-    private void meridian$finishRead(CompoundTag nbt, CallbackInfo callback) {
+    private void meridian$finishRead(ValueInput input, CallbackInfo callback) {
         // 未创建实体保持缓存状态；健康宿主会在主线程按实体类型验证后恢复。
         meridian$finishHumanoidLoading();
     }
 
     @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
-    private void meridian$writeBody(CompoundTag nbt, CallbackInfo callback) {
+    private void meridian$writeBody(ValueOutput output, CallbackInfo callback) {
         // 快照与回执同属实体复合标签，确保区块卸载不会只保存一半身体。
-        meridian$writeHumanoidNbt(nbt);
+        // 26.2 实体存档经 ValueOutput 写入；先组成与旧版相同的复合标签，再整体存入同一个键。
+        CompoundTag holder = new CompoundTag();
+        meridian$writeHumanoidNbt(holder);
+        holder.getCompound("meridian_humanoid")
+                .ifPresent(stored -> output.store("meridian_humanoid", CompoundTag.CODEC, stored));
     }
 }

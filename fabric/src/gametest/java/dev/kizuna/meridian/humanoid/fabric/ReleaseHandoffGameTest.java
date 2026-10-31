@@ -9,15 +9,12 @@ import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelea
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.ReleaseResult;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.server.EnvironmentHostEntrypoint;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.gametest.framework.GameTest;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.Tag;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,8 +23,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 
+import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
+
 /** 整体回归：经公开字节入口交接，分别注入响应丢失和两端文件写入失败。 */
-public final class ReleaseHandoffGameTest implements FabricGameTest {
+public final class ReleaseHandoffGameTest {
     private static final double RELEASE_AMOUNT = 4;
     private static final double RELEASE_DENSITY = 0.01;
     private static final int LOST_RESPONSE_COUNT = 2;
@@ -35,7 +34,7 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
     private static final int CREDIT_WINDOW_TICKS = 600;
     private static final int FORGET_TEST_LIMIT = 750;
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-directory-unsupported")
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_directory_unsupported")
     public void unsupportedDirectorySyncPersistsSenderDeletionBeforeForget(GameTestHelper context) throws Exception {
         // 同一 Windows 能力路径也必须保存发送端删除与待遗忘事实。
         RegionRelease release = release(context);
@@ -51,15 +50,15 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         later(context, () -> {
             sender.retry();
             context.assertTrue(!sender.isDirty(), "目录不支持导致发送端保存失败");
-            var saved = NbtIo.readCompressed(file.toFile()).getCompound("data");
-            context.assertTrue(saved.getList("pending", Tag.TAG_BYTE_ARRAY).isEmpty()
-                    && saved.getList("pending_forget", Tag.TAG_STRING).size() == 1,
+            var saved = AuditReproSupport.read(file).getCompoundOrEmpty("data");
+            context.assertTrue(saved.getListOrEmpty("pending").isEmpty()
+                    && saved.getListOrEmpty("pending_forget").size() == 1,
                     "发送端没有持久保存删除与待遗忘 ID");
             context.succeed();
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-memory")
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_memory")
     public void acceptanceAndDuplicateWithoutPersistenceKeepSenderRecord(GameTestHelper context) throws Exception {
         // 明确的内存受理响应不能授权删除，duplicate 也不能替代 persisted。
         RegionRelease release = release(context);
@@ -83,7 +82,7 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-lost-response")
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_lost_response")
     public void lostInitialAndDuplicateResponsesAndUnsavedDeletionRetrySafely(GameTestHelper context) throws Exception {
         // 首次受理响应丢失，tick 末保存后的重复响应也丢失，发送端持续保留原请求。
         RegionRelease release = release(context);
@@ -128,7 +127,7 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-receiver-failure")
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_receiver_failure")
     public void receiverWriteFailureDoesNotConfirmAndKeepsSenderRecord(GameTestHelper context) throws Exception {
         // 临时路径被目录占用时，真实 Human 服务不能确认持久化，旧正式文件保持完整。
         RegionRelease release = release(context);
@@ -158,7 +157,7 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-sender-failure")
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_sender_failure")
     public void senderDeletionWriteFailureKeepsReplayableOldFile(GameTestHelper context) throws Exception {
         // 删除保存失败后保留原始文件；重新加载旧请求也只能得到原释放的持久化确认。
         RegionRelease release = release(context);
@@ -186,7 +185,8 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         } finally {
             Files.delete(blocked);
         }
-        HumanoidWorldState restored = HumanoidWorldState.read(NbtIo.readCompressed(file.toFile()).getCompound("data"));
+        HumanoidWorldState restored = HumanoidWorldState.read(
+                AuditReproSupport.read(file).getCompoundOrEmpty("data"));
         context.assertTrue(AuditReproSupport.pending(restored).equals(List.of(release)), "没有从文件恢复原请求");
         restored.retry();
         context.assertTrue(AuditReproSupport.pending(restored).isEmpty(), "旧请求重放未成功");
@@ -196,8 +196,8 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = "handoff-forget",
-            timeoutTicks = FORGET_TEST_LIMIT)
+    @GameTest(environment = "meridian_humanoid_test:handoff_forget",
+            maxTicks = FORGET_TEST_LIMIT)
     public void durableForgetRetriesLostResponsesAndReclaimsBothFiles(GameTestHelper context) throws Exception {
         // 本地删除及待遗忘先提交，Human 入账后才回收，遗忘响应丢失仍保留重试事实。
         var position = RegionQuery.newBuilder().setDimensionId("minecraft:the_nether").build();
@@ -210,9 +210,9 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         later(context, () -> {
             sender.retry();
             context.assertTrue(AuditReproSupport.pending(sender).isEmpty(), "确认后未转为待遗忘");
-            CompoundTag saved = NbtIo.readCompressed(file.toFile()).getCompound("data");
-            context.assertTrue(saved.getList("pending", Tag.TAG_BYTE_ARRAY).isEmpty()
-                    && saved.getList("pending_forget", Tag.TAG_STRING).size() == 1,
+            CompoundTag saved = AuditReproSupport.read(file).getCompoundOrEmpty("data");
+            context.assertTrue(saved.getListOrEmpty("pending").isEmpty()
+                    && saved.getListOrEmpty("pending_forget").size() == 1,
                     "没有先持久删除原请求并保存待遗忘 ID");
             context.assertTrue(AuditReproSupport.humanHasRelease(AuditReproSupport.human(), release.getReleaseId()),
                     "尚未发送遗忘却删除去重事实");
@@ -257,16 +257,16 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
             context.assertTrue(!AuditReproSupport.humanFileHasRelease(context, release.getReleaseId()),
                     "接收端去重项未持久删除");
             context.assertTrue(sender.save(new CompoundTag())
-                    .getList("pending_forget", Tag.TAG_STRING).size() == 1, "丢响应后丢待遗忘 ID");
+                    .getListOrEmpty("pending_forget").size() == 1, "丢响应后丢待遗忘 ID");
         } finally {
             binding.set(null, delegate);
         }
         HumanoidWorldState restored = HumanoidWorldState.read(
-                NbtIo.readCompressed(file.toFile()).getCompound("data"));
+                AuditReproSupport.read(file).getCompoundOrEmpty("data"));
         restored.bind(file);
         restored.retry();
-        context.assertTrue(NbtIo.readCompressed(file.toFile()).getCompound("data")
-                .getList("pending_forget", Tag.TAG_STRING).isEmpty(), "重启重试未回收发送文件");
+        context.assertTrue(AuditReproSupport.read(file).getCompoundOrEmpty("data")
+                .getListOrEmpty("pending_forget").isEmpty(), "重启重试未回收发送文件");
         context.assertTrue(HumanoidFabric.forgetRelease(release.getReleaseId()), "重复遗忘不幂等");
         context.succeed();
     }
@@ -298,7 +298,7 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
     private static RegionRelease release(GameTestHelper context) {
         // 使用真实维度及独立 ID，不借助实体生命周期生成额外的测试释放。
         var position = RegionQuery.newBuilder()
-                .setDimensionId(context.getLevel().dimension().location().toString())
+                .setDimensionId(context.getLevel().dimension().identifier().toString())
                 .build();
         var qi = new QiInventory(List.of(new Qi(Qi.QiAttribute.of("qi_variants:wither"),
                 RELEASE_AMOUNT, RELEASE_DENSITY)));
@@ -380,11 +380,11 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
 
     private static void assertOneDurableCredit(GameTestHelper context, RegionRelease release) throws Exception {
         // 读取真实正式文件，验证未完成交接的去重事实与待入账数量各只有一笔。
-        CompoundTag saved = NbtIo.readCompressed(AuditReproSupport.worldFile(context,
-                AuditReproSupport.HUMAN_FILE).toFile()).getCompound("data");
-        ListTag ids = saved.getList("release_ids", Tag.TAG_COMPOUND);
+        CompoundTag saved = AuditReproSupport.read(AuditReproSupport.worldFile(context,
+                AuditReproSupport.HUMAN_FILE)).getCompoundOrEmpty("data");
+        ListTag ids = saved.getListOrEmpty("release_ids");
         assertOneSavedRequest(context, release, ids);
-        ListTag credits = saved.getList("pending_credits", Tag.TAG_COMPOUND);
+        ListTag credits = saved.getListOrEmpty("pending_credits");
         assertOneSavedCredit(context, release, credits);
     }
 
@@ -393,7 +393,8 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         // 去重项必须保存完整原请求，重复发送不能扩增相同 ID。
         int matchingIds = 0;
         for (int index = 0; index < ids.size(); index++) {
-            var request = RegionRelease.parseFrom(ids.getCompound(index).getByteArray("request"));
+            var request = RegionRelease.parseFrom(
+                    ids.getCompoundOrEmpty(index).getByteArray("request").orElse(new byte[0]));
             if (request.getReleaseId().equals(release.getReleaseId())) {
                 context.assertTrue(request.equals(release), "保存的原请求内容改变");
                 matchingIds++;
@@ -406,9 +407,10 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
         // 待入账明细必须与原库存完全一致，不能因重复响应丢失再次排队。
         int matchingCredits = 0;
         for (int index = 0; index < credits.size(); index++) {
-            CompoundTag credit = credits.getCompound(index);
-            if (credit.getString("release_id").equals(release.getReleaseId())) {
-                context.assertTrue(Arrays.equals(credit.getByteArray("qi"), release.getReleasedQi().toByteArray()),
+            CompoundTag credit = credits.getCompoundOrEmpty(index);
+            if (credit.getStringOr("release_id", "").equals(release.getReleaseId())) {
+                byte[] qi = credit.getByteArray("qi").orElse(new byte[0]);
+                context.assertTrue(Arrays.equals(qi, release.getReleasedQi().toByteArray()),
                         "待入账库存与原请求不同");
                 matchingCredits++;
             }

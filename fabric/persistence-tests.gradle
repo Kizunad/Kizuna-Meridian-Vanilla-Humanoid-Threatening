@@ -30,7 +30,9 @@ tasks.named('processGametestResources') {
     doLast {
         def metadata = new File(destinationDir, 'fabric.mod.json')
         def document = new groovy.json.JsonSlurper().parse(metadata)
-        document.entrypoints.main = ['dev.kizuna.meridian.humanoid.fabric.AuditReproBootstrap']
+        // 批次环境类型在任何模式都要登记，否则环境数据无法加载。
+        document.entrypoints.main = ['dev.kizuna.meridian.humanoid.fabric.AuditReproBootstrap',
+                                     'dev.kizuna.meridian.humanoid.fabric.HumanoidBrainTestEnvironments']
         document.entrypoints['fabric-gametest'] = reproClasses[reproMode].collect {
             "dev.kizuna.meridian.humanoid.fabric.${it}".toString()
         }

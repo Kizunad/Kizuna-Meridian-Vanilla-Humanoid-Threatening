@@ -9,31 +9,32 @@ import dev.kizuna.meridian.protocol.QiDensity;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQiMode;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.core.BlockPos;
-import net.minecraft.gametest.framework.GameTest;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.phys.Vec3;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
+
 /** 调试入口：真实生成的真炁卫道士补满与覆盖真元都不越过内腔上限。 */
-public final class HumanoidDebugQiGameTest implements FabricGameTest {
+public final class HumanoidDebugQiGameTest {
     private static final int POSITION = 2;
     private static final int SAMPLES = 8;
     private static final double SET_SHARE = 0.5;
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void debugQiFillsAndSetsTrueQiVindicatorsWithinLumens(GameTestHelper context) {
         // 多个新生成的真炁卫道士覆盖生成器的残余与高密度主元组合；连补两次和全身覆盖都必须成功。
         var world = context.getLevel();
         Vec3 position = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(POSITION, POSITION, POSITION)));
         var selection = new HumanoidSpawns.Selection(HumanoidSpecies.VINDICATOR, HumanoidVariant.TRUE_QI);
         for (int index = 0; index < SAMPLES; index++) {
-            Mob mob = HumanoidSpawns.spawn(world, selection, position, MobSpawnType.COMMAND);
+            Mob mob = HumanoidSpawns.spawn(world, selection, position, EntitySpawnReason.COMMAND);
             try {
                 assertAccepted(context, HumanoidHealthHost.debugQi(mob, fill()), "补满被拒");
                 assertAccepted(context, HumanoidHealthHost.debugQi(mob, fill()), "已满后再补被拒");
@@ -47,10 +48,10 @@ public final class HumanoidDebugQiGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void debugQiRejectsUnclaimedEntityAsBodyNotFound(GameTestHelper context) {
         // 非类人实体不由本宿主认领，不能因调试入口凭空创建身体。
-        var cow = context.spawn(EntityType.COW, new BlockPos(POSITION, POSITION, POSITION));
+        var cow = context.spawn(EntityTypes.COW, new BlockPos(POSITION, POSITION, POSITION));
         try {
             context.assertTrue(HumanoidHealthHost.debugQi(cow, fill()) == FailureCode.BODY_NOT_FOUND,
                     "非类人实体没有按无身体拒绝");

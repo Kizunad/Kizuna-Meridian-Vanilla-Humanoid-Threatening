@@ -3,7 +3,7 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.villager.Villager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;

@@ -4,7 +4,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
@@ -25,19 +24,19 @@ public final class AuditReproBootstrap implements ModInitializer {
     }
 
     private static void writeCorruptLedger(MinecraftServer server) {
-        // 在 SERVER_STARTED 加载账本前准备损坏数据，只作用于专用坏档测试世界。
+        // 在 SERVER_STARTED 加载账本前准备损坏数据，只作用于专用坏档测试世界；夹具缺版本时与旧读法一样记 0。
         try {
             var data = server.getWorldPath(LevelResource.ROOT).resolve("data");
             Files.createDirectories(data);
             var fixture = AuditReproSupport.evidence(AuditReproSupport.FIXTURE_HUMAN_FILE);
             Files.copy(fixture, data.resolve(AuditReproSupport.HUMAN_FILE), StandardCopyOption.REPLACE_EXISTING);
-            CompoundTag human = NbtIo.readCompressed(fixture.toFile());
+            CompoundTag human = AuditReproSupport.read(fixture);
             CompoundTag corrupt = new CompoundTag();
             corrupt.putLong("next_sequence", INVALID_SEQUENCE);
             corrupt.put("pending", new ListTag());
             corrupt.put("pending_forget", new ListTag());
             CompoundTag root = new CompoundTag();
-            root.putInt("DataVersion", human.getInt("DataVersion"));
+            root.putInt("DataVersion", human.getIntOr("DataVersion", 0));
             root.put("data", corrupt);
             AuditReproSupport.write(root, data.resolve(AuditReproSupport.SENDER_FILE));
             System.out.println("REPRO-A-04-BOOT corrupt-ledger=" + data.resolve(AuditReproSupport.SENDER_FILE));

@@ -29,12 +29,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.level.storage.DimensionDataStorage;
 import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +71,7 @@ public final class HumanoidFabric implements ModInitializer {
         generator = new HumanoidBodyGenerator(variants, config);
         environment = new HumanoidEnvironmentClient();
         ServerLifecycleEvents.SERVER_STARTED.register(HumanoidFabric::startServer);
+        ServerLifecycleEvents.AFTER_SAVE.register(HumanoidFabric::saveWorld);
         ServerTickEvents.END_SERVER_TICK.register(HumanoidFabric::tick);
         ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
         registerCommands();
@@ -79,22 +81,29 @@ public final class HumanoidFabric implements ModInitializer {
         // 世界释放请求从持久化状态恢复，无法恢复时拒绝已认领实体的健康请求。
         activeServer = server;
         try {
-            DimensionDataStorage persistence = server.overworld().getDataStorage();
-            var file = server.getWorldPath(LevelResource.ROOT).resolve("data/" + STATE_ID + ".dat");
+            Path file = stateFile(server);
             if (Files.exists(file)) {
-                worldState = persistence.get(HumanoidWorldState::read, STATE_ID);
-                if (worldState == null) {
-                    throw new IllegalArgumentException("类人实体释放账本为空");
-                }
+                worldState = HumanoidWorldState.load(file);
             } else {
                 worldState = new HumanoidWorldState();
-                persistence.set(STATE_ID, worldState);
             }
             worldState.bind(file);
-        } catch (RuntimeException failure) {
+        } catch (IOException | RuntimeException failure) {
             worldState = null;
             LOGGER.error("无法加载类人实体释放账本，类人实体健康请求将失败", failure);
         }
+    }
+
+    private static void saveWorld(MinecraftServer server, boolean flush, boolean force) {
+        // 跟随原版世界保存（含停服）；/save-off 后只在强制保存时写入，与原版主世界存档数据一致。
+        if (server == activeServer && worldState != null && (force || !server.overworld().noSave())) {
+            worldState.save(stateFile(server).toFile());
+        }
+    }
+
+    private static Path stateFile(MinecraftServer server) {
+        // 账本沿用原来的世界数据文件位置，世界保存与 tick 末交接写同一个文件。
+        return server.getWorldPath(LevelResource.ROOT).resolve("data/" + STATE_ID + ".dat");
     }
 
     private static void stopServer(MinecraftServer server) {

@@ -59,7 +59,7 @@ Human 和 Humanoid 通过必装的 `meridian_environment_host` 入口（Framewor
 
 ### Minecraft 保存时机与平台差异
 
-已核对 Minecraft 1.20.1 实际字节码：`setDirty()` 只设内存标记，`DimensionDataStorage.save()` 才调用 `SavedData.save(File)`。世界保存经过 `ServerLevel.saveLevelData()`；自动保存每 6000 个 tick（20 TPS 时五分钟），正常关服也保存。`noSave` 跳过普通世界保存。原版直接覆盖，捕获异常后仍清 dirty，没有刷盘确认。
+已核对 Minecraft 26.2 源码：原版存档数据由服务器级 `SavedDataStorage` 管理，普通保存把 `NbtIo.writeCompressed` 原位覆盖排到 IO 线程池异步执行，只有 flush 保存才等待写完，也没有刷盘确认。两端账本因此都不登记为原版存档数据，`setDirty()` 只设各自的内存标记；宿主在 Fabric `ServerLifecycleEvents.AFTER_SAVE`（包住 `MinecraftServer.saveAllChunks`）里写原位置的正式文件。自动保存按当前 tick 速率每 300 秒执行（20 TPS 下 6000 tick），正常关服也保存；主世界 `noSave` 时只在强制保存时写入，与原版主世界存档数据的旧行为一致。账本加载失败时宿主不持有账本，之后的世界保存不会写出新空账本覆盖坏文件。
 
 两端保存均保留原版 `data`、`DataVersion` 封装，写同目录 `.dat.tmp`、关闭压缩流、对文件执行 `FileChannel.force(true)`、使用 `ATOMIC_MOVE + REPLACE_EXISTING` 原子替换正式文件。**文件 force 和原子替换始终必须成功。** Unix 平台还同步目录及其上级目录；Windows 不打开不支持的目录通道，跳过目录同步，采用文件 force 和 NTFS 原子移动的元数据日志保证。支持目录同步的平台上的真实 I/O 错误仍算保存失败，不被吞掉。
 

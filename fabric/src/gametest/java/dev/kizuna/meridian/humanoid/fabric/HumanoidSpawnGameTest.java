@@ -7,25 +7,28 @@ import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.TechniqueScrollItems;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.monster.Vindicator;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.monster.illager.Vindicator;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -39,8 +42,10 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
+
 /** 注册、物品交互、命令解析与唯一身体出生的完整宿主回归。 */
-public final class HumanoidSpawnGameTest implements FabricGameTest {
+public final class HumanoidSpawnGameTest {
     private static final int EGG_COUNT = 14;
     private static final int INITIAL_STACK_SIZE = 2;
     private static final int POSITION = 2;
@@ -49,14 +54,15 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
     private static final String SPAWN = "meridian humanoid spawn ";
     private static final String BODY_STATUS = "meridian body status ";
     private static final String TECHNIQUE_PREFIX = "meridian_door_breaker:";
+    private static final int COMMAND_FAILED = 0;
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void humanoidCreativeGroupContainsFourteenEggsSeparateFromScrolls(GameTestHelper context) {
-        // 注册表、展示栏和搜索栏使用同一集合，原版刷怪蛋映射不能被覆盖。
+        // 注册表、展示栏和搜索栏使用同一集合，原版刷怪蛋映射不能被覆盖；26.2 按刷怪蛋的实体组件反查物品。
         var world = context.getLevel();
         var display = new CreativeModeTab.ItemDisplayParameters(world.enabledFeatures(),
                 true /* hasPermissions */, world.registryAccess());
-        var group = BuiltInRegistries.CREATIVE_MODE_TAB.get(HumanoidSpawnEggs.GROUP_ID);
+        var group = BuiltInRegistries.CREATIVE_MODE_TAB.getValue(HumanoidSpawnEggs.GROUP_ID);
         group.buildContents(display);
         var eggs = HumanoidSpawnEggs.eggs();
         context.assertTrue(eggs.size() == EGG_COUNT, "类人蛋数量不是十四个");
@@ -66,21 +72,22 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         techniqueGroup.buildContents(display);
         context.assertTrue(itemIds(techniqueGroup.getDisplayItems()).stream().noneMatch(eggs::containsKey),
                 "类人蛋混入功法栏");
-        context.assertTrue(SpawnEggItem.byId(EntityType.VINDICATOR) == Items.VINDICATOR_SPAWN_EGG,
-                "分档蛋覆盖了原版卫道士刷怪蛋");
+        context.assertTrue(SpawnEggItem.byId(EntityTypes.VINDICATOR).map(Holder::value)
+                        .filter(Items.VINDICATOR_SPAWN_EGG::equals).isPresent(), "分档蛋覆盖了原版卫道士刷怪蛋");
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void eggsSpawnBothVindicatorRealmsAndInspectTheirLearnedVolumes(GameTestHelper context) {
         // 原版 ItemStack 右键入口生成，验证数量、装备、档位及真实 inspect 反馈。
         var world = context.getLevel();
         BlockPos floor = context.absolutePos(new BlockPos(POSITION, 1, POSITION));
         world.setBlockAndUpdate(floor, Blocks.STONE.defaultBlockState());
-        var player = context.makeMockSurvivalPlayer();
+        var player = context.makeMockPlayer(GameType.SURVIVAL);
         for (HumanoidVariant variant : HumanoidVariant.values()) {
             var selection = new HumanoidSpawns.Selection(HumanoidSpecies.VINDICATOR, variant);
-            var egg = HumanoidSpawnEggs.eggs().get(new ResourceLocation(HumanoidSpawnEggs.NAMESPACE, selection.path()));
+            var egg = HumanoidSpawnEggs.eggs().get(
+                    Identifier.fromNamespaceAndPath(HumanoidSpawnEggs.NAMESPACE, selection.path()));
             var stack = new ItemStack(egg, INITIAL_STACK_SIZE);
             player.setItemInHand(InteractionHand.MAIN_HAND, stack);
             var hit = new BlockHitResult(Vec3.atCenterOf(floor), Direction.UP, floor, false /* insideBlock */);
@@ -99,13 +106,12 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void spawnCommandSpawnsBothRealmsWithDefaultAndRelativePosition(GameTestHelper context) {
         // 两档均从正式命令树执行，并核对成功反馈和相对坐标。
         var output = new RecordedOutput();
         var source = source(context).withSource(output);
         var world = context.getLevel();
-        var commands = world.getServer().getCommands();
         for (HumanoidVariant variant : HumanoidVariant.values()) {
             String baseCommand = SPAWN + "vindicator " + variant.name().toLowerCase(Locale.ROOT);
             Vec3 sourcePosition = source.getPosition();
@@ -118,7 +124,7 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
                 command = baseCommand;
                 expected = sourcePosition;
             }
-            context.assertTrue(commands.performPrefixedCommand(source, command) == 1, "spawn 命令生成失败");
+            context.assertTrue(run(source, command) == 1, "spawn 命令生成失败");
             String feedback = output.messages.get(output.messages.size() - 1);
             String uuid = feedback.substring(feedback.lastIndexOf('：') + 1);
             var mob = (Vindicator) world.getEntity(UUID.fromString(uuid));
@@ -135,15 +141,15 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void naturalBirthStillRollsRealmAndPreservesRandomSequence(GameTestHelper context) {
         // 从真实区域寻找两个可复现 UUID，逐项比较抽档后的原始生成器库存。
         var world = context.getLevel();
         long seed = world.getSeed();
         for (HumanoidVariant desired : HumanoidVariant.values()) {
-            var mob = EntityType.VINDICATOR.create(world);
+            var mob = EntityTypes.VINDICATOR.create(world, EntitySpawnReason.NATURAL);
             Vec3 position = source(context).getPosition();
-            mob.moveTo(position.x, position.y, position.z, 0, 0);
+            mob.snapTo(position.x, position.y, position.z, 0, 0);
             var region = HumanoidFabric.region(mob);
             UUID id = naturalId(seed, region, desired);
             mob.setUUID(id);
@@ -168,7 +174,7 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void commandsCompleteSpeciesRealmsPositionsItemsAndRejectInvalidInput(GameTestHelper context) {
         // 补全通过真实 dispatcher 查询；非法物种、档位和无权限输入都必须报错。
         var source = source(context);
@@ -183,27 +189,26 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         context.assertTrue(suggestions(source, BODY_STATUS).contains("@e"), "body status 缺原版目标补全");
         context.assertTrue(suggestions(source, "give @s meridian_humanoid:").size() == EGG_COUNT, "give 未补全十四个蛋");
         var output = new RecordedOutput();
-        var commands = context.getLevel().getServer().getCommands();
         var observed = source.withSource(output);
         for (String command : List.of(SPAWN + "zombie true_qi", SPAWN + "vindicator invalid")) {
             output.messages.clear();
-            context.assertTrue(commands.performPrefixedCommand(observed, command) == 0 && !output.messages.isEmpty(),
+            context.assertTrue(run(observed, command) == 0 && !output.messages.isEmpty(),
                     "非法命令没有错误反馈");
         }
         output.messages.clear();
-        int lowPermission = commands.performPrefixedCommand(observed.withPermission(1), SPAWN + "vindicator true_qi");
+        int lowPermission = run(observed.withPermission(LevelBasedPermissionSet.MODERATOR),
+                SPAWN + "vindicator true_qi");
         context.assertTrue(lowPermission == 0 && !output.messages.isEmpty(), "低权限命令没有拒绝");
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void spawnCommandRollsOmittedRealmAndBirthsMortalWithoutOpenedMeridians(GameTestHelper context) {
         // 省略档位的内置生人按自然出生抽档；mortal 不开任何经脉；内置物种不接受放置钩子。
         var output = new RecordedOutput();
         var source = source(context).withSource(output);
         var world = context.getLevel();
-        var commands = world.getServer().getCommands();
-        var natural = spawnByCommand(context, commands.performPrefixedCommand(source, SPAWN + "vindicator"), output);
+        var natural = spawnByCommand(context, run(source, SPAWN + "vindicator"), output);
         try {
             var region = HumanoidFabric.region(natural);
             var random = HumanoidBodyGenerator.randomFor(world.getSeed(), natural.getUUID());
@@ -213,8 +218,7 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         } finally {
             natural.discard();
         }
-        var mortal = spawnByCommand(context, commands.performPrefixedCommand(source, SPAWN + "vindicator mortal"),
-                output);
+        var mortal = spawnByCommand(context, run(source, SPAWN + "vindicator mortal"), output);
         try {
             var snapshot = ((HumanoidEntityAccess) mortal).meridian$humanoidBody().snapshot();
             context.assertTrue(HumanoidTier.of(snapshot) == HumanoidTier.MORTAL, "mortal 出生打开了经脉");
@@ -246,9 +250,8 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         context.assertTrue(snapshot.getRealm().name().equals(variant.name()), "指定档位未用于首次身体创建");
         context.assertTrue(mob.getMainHandItem().is(Items.IRON_AXE), "原版卫道士初始化丢失铁斧");
         var output = new RecordedOutput();
-        var commands = context.getLevel().getServer().getCommands();
-        context.assertTrue(commands.performPrefixedCommand(source(context).withSource(output),
-                BODY_STATUS + mob.getStringUUID()) == 1, "body status 未找到已生成身体");
+        context.assertTrue(run(source(context).withSource(output), BODY_STATUS + mob.getStringUUID()) == 1,
+                "body status 未找到已生成身体");
         context.assertTrue(output.messages.stream().anyMatch(message -> message.contains("档位=" + variant.name())),
                 "body status 档位反馈错误");
         var known = TechniqueFabric.service().known(mob.getUUID()).stream()
@@ -283,6 +286,14 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
         return world.getServer().createCommandSourceStack().withLevel(world).withPosition(position);
     }
 
+    private static int run(CommandSourceStack source, String command) {
+        // 与聊天栏执行相同；26.2 的执行入口不再返回结果，改由来源的结果回调取得，解析失败或执行失败都返回 0。
+        int[] result = {COMMAND_FAILED};
+        source.getServer().getCommands().performPrefixedCommand(
+                source.withCallback((success, value) -> result[0] = success ? value : COMMAND_FAILED), command);
+        return result[0];
+    }
+
     private static Set<String> suggestions(CommandSourceStack source, String command) {
         // 仅观察原版补全结果，不从实现枚举伪造命令可发现性。
         var dispatcher = source.getServer().getCommands().getDispatcher();
@@ -294,9 +305,9 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
                 .collect(Collectors.toSet());
     }
 
-    private static Set<ResourceLocation> itemIds(Iterable<ItemStack> stacks) {
+    private static Set<Identifier> itemIds(Iterable<ItemStack> stacks) {
         // 两种创造列表按注册身份比较，不依赖显示顺序。
-        var ids = new HashSet<ResourceLocation>();
+        var ids = new HashSet<Identifier>();
         stacks.forEach(stack -> ids.add(BuiltInRegistries.ITEM.getKey(stack.getItem())));
         return ids;
     }

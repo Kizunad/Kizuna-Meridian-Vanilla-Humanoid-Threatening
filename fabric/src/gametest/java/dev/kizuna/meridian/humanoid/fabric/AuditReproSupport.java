@@ -13,17 +13,19 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,11 +58,12 @@ final class AuditReproSupport {
 
     static Villager villager(GameTestHelper context, UUID id) {
         // UUID 在加入世界前固定，宿主索引与实体身份保持一致；GameTest 世界跨运行保留，上次留下的同 UUID 实体先移除。
+        // 26.2 创建实体须注明来源；测试直接放置，按命令生成处理。
         Entity stale = context.getLevel().getEntity(id);
         if (stale != null) {
             stale.discard();
         }
-        Villager entity = EntityType.VILLAGER.create(context.getLevel());
+        Villager entity = EntityTypes.VILLAGER.create(context.getLevel(), EntitySpawnReason.COMMAND);
         if (entity == null) {
             throw new IllegalStateException("无法创建测试村民");
         }
@@ -70,21 +73,21 @@ final class AuditReproSupport {
     }
 
     static Villager restoredVillager(GameTestHelper context, CompoundTag nbt) {
-        // 真实 load 在加入世界前恢复身份，覆盖 LivingEntity Mixin 的保存边界。
-        Villager entity = EntityType.VILLAGER.create(context.getLevel());
+        // 真实 load 在加入世界前恢复身份，覆盖 LivingEntity Mixin 的保存边界；26.2 创建实体须注明来源，按读档处理。
+        Villager entity = EntityTypes.VILLAGER.create(context.getLevel(), EntitySpawnReason.LOAD);
         if (entity == null) {
             throw new IllegalStateException("无法创建恢复村民");
         }
-        entity.load(nbt);
+        HumanoidEntityNbt.load(entity, nbt);
         spawn(context, entity);
         return entity;
     }
 
     private static void spawn(GameTestHelper context, Villager entity) {
-        // 固定实体位置与 AI，避免寻路和重力影响本次持久化断言。
+        // 固定实体位置与 AI，避免寻路和重力影响本次持久化断言；26.2 的 moveTo 改名 snapTo。
         BlockPos position = context.absolutePos(
                 new BlockPos(SPAWN_COORDINATE, SPAWN_COORDINATE, SPAWN_COORDINATE));
-        entity.moveTo(position.getX(), position.getY(), position.getZ(), 0, 0);
+        entity.snapTo(position.getX(), position.getY(), position.getZ(), 0, 0);
         entity.setNoAi(true /* aiDisabled */);
         entity.setNoGravity(true /* noGravity */);
         context.assertTrue(context.getLevel().addFreshEntity(entity), "测试村民未加入真实世界");
@@ -168,16 +171,16 @@ final class AuditReproSupport {
         throw new IllegalStateException("类人释放账本未初始化");
     }
 
-    static SavedData human() throws ReflectiveOperationException {
-        // Human 服务实例由 Fabric 加载器创建，测试不另建第二个接收端。
+    static HumanLedger human() throws ReflectiveOperationException {
+        // Human 服务实例由 Fabric 加载器创建，测试不另建第二个接收端；26.2 起账本不再是 SavedData，按反射包一层。
         for (ModInitializer initializer : FabricLoader.getInstance().getEntrypoints("main", ModInitializer.class)) {
             Class<?> type = initializer.getClass();
             if (type.getName().equals("dev.kizuna.meridian.human.fabric.HumanFabric")) {
                 Field field = type.getDeclaredField("state");
                 field.setAccessible(true /* allowAccess */);
                 Object value = field.get(initializer);
-                if (value instanceof SavedData state) {
-                    return state;
+                if (value != null) {
+                    return new HumanLedger(value);
                 }
             }
         }
@@ -187,7 +190,7 @@ final class AuditReproSupport {
     static List<EnvironmentHostMessages.RegionRelease> pending(HumanoidWorldState state) throws IOException {
         // 读取生产 save 的结果，避免测试自己维护一份队列。
         CompoundTag saved = state.save(new CompoundTag());
-        ListTag entries = saved.getList("pending", Tag.TAG_BYTE_ARRAY);
+        ListTag entries = saved.getListOrEmpty("pending");
         var releases = new ArrayList<EnvironmentHostMessages.RegionRelease>();
         for (int index = 0; index < entries.size(); index++) {
             var bytes = ((net.minecraft.nbt.ByteArrayTag) entries.get(index)).getAsByteArray();
@@ -196,23 +199,23 @@ final class AuditReproSupport {
         return List.copyOf(releases);
     }
 
-    static boolean humanHasRelease(SavedData state, String releaseId) throws IOException {
+    static boolean humanHasRelease(HumanLedger state, String releaseId) throws IOException {
         // pending 与已受理 ID 都由同一 Human 持久化快照提供。
-        return savedHasRelease(state.save(new CompoundTag()), releaseId);
+        return savedHasRelease(state.snapshot(), releaseId);
     }
 
     static boolean humanFileHasRelease(GameTestHelper context, String releaseId) throws IOException {
         // 直接读取正式文件，排除只在接收端内存受理的假阳性。
-        CompoundTag saved = NbtIo.readCompressed(worldFile(context, HUMAN_FILE).toFile()).getCompound("data");
+        CompoundTag saved = read(worldFile(context, HUMAN_FILE)).getCompoundOrEmpty("data");
         return savedHasRelease(saved, releaseId);
     }
 
     private static boolean savedHasRelease(CompoundTag saved, String releaseId) throws IOException {
         // 内存快照和正式文件使用同一解码，逐项核对实际保存的原请求 ID。
-        ListTag entries = saved.getList("release_ids", Tag.TAG_COMPOUND);
+        ListTag entries = saved.getListOrEmpty("release_ids");
         for (int index = 0; index < entries.size(); index++) {
             var request = EnvironmentHostMessages.RegionRelease.parseFrom(
-                    entries.getCompound(index).getByteArray("request"));
+                    entries.getCompoundOrEmpty(index).getByteArray("request").orElse(new byte[0]));
             if (request.getReleaseId().equals(releaseId)) {
                 return true;
             }
@@ -225,18 +228,33 @@ final class AuditReproSupport {
         return context.getLevel().getServer().getWorldPath(LevelResource.ROOT).resolve("data").resolve(fileName);
     }
 
-    static void save(SavedData state, Path file) throws IOException {
+    static void save(HumanoidWorldState state, Path file) throws IOException {
+        // 发送端账本按原版存档结构直接写出，不经过宿主的 tick 末交接。
+        saveData(state.save(new CompoundTag()), file);
+    }
+
+    static void save(HumanLedger state, Path file) throws IOException {
         // 按原版存档结构直接写出；Human 的 save(File) 同 tick 只写一次，夹具不能依赖它。
+        saveData(state.snapshot(), file);
+    }
+
+    private static void saveData(CompoundTag data, Path file) throws IOException {
+        // 两端账本文件外层相同：data 字段放正文，并带当前数据版本。
         var root = new CompoundTag();
-        root.put("data", state.save(new CompoundTag()));
+        root.put("data", data);
         NbtUtils.addCurrentDataVersion(root);
         write(root, file);
+    }
+
+    static CompoundTag read(Path file) throws IOException {
+        // 读回压缩 NBT 文件；测试证据和世界账本都不设读取上限。
+        return NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
     }
 
     static void write(CompoundTag nbt, Path file) throws IOException {
         // 证据先落盘，再进入进程强制退出窗口。
         Files.createDirectories(file.getParent());
-        NbtIo.writeCompressed(nbt, file.toFile());
+        NbtIo.writeCompressed(nbt, file);
         force(file);
     }
 
@@ -249,7 +267,7 @@ final class AuditReproSupport {
 
     static List<Long> savedRevisions(CompoundTag stored) {
         // 输出按版本排序的实际保留集合，便于核对期望的最新窗口。
-        ListTag entries = stored.getList("receipts", Tag.TAG_BYTE_ARRAY);
+        ListTag entries = stored.getListOrEmpty("receipts");
         var revisions = new ArrayList<Long>();
         for (int index = 0; index < entries.size(); index++) {
             byte[] bytes = ((net.minecraft.nbt.ByteArrayTag) entries.get(index)).getAsByteArray();
@@ -260,4 +278,33 @@ final class AuditReproSupport {
     }
 
     record ReceiptBatch(BodyMessages.BodySnapshot body, List<HealthHostMessages.HealthHostRequest> requests) { }
+
+    /** Human 真实接收账本；类型在 Human 包内不公开，测试只经反射读取它的持久化快照和 dirty 标记。 */
+    record HumanLedger(Object state) {
+        CompoundTag snapshot() {
+            // 调用 Human 自己的 save(CompoundTag)，与写盘内容同源。
+            return (CompoundTag) invoke("save", new Class<?>[] {CompoundTag.class}, new CompoundTag());
+        }
+
+        boolean isDirty() {
+            // 写盘失败时 Human 保留 dirty，测试据此确认没有误清。
+            return (boolean) invoke("isDirty", new Class<?>[0]);
+        }
+
+        private Object invoke(String name, Class<?>[] parameters, Object... arguments) {
+            // 账本方法自身抛出的运行期异常原样上抛，反射失败才包装成测试环境错误。
+            try {
+                Method method = state.getClass().getDeclaredMethod(name, parameters);
+                method.setAccessible(true /* allowAccess */);
+                return method.invoke(state, arguments);
+            } catch (InvocationTargetException failure) {
+                if (failure.getCause() instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new IllegalStateException("Human 账本方法失败：" + name, failure.getCause());
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("无法调用 Human 账本方法：" + name, failure);
+            }
+        }
+    }
 }

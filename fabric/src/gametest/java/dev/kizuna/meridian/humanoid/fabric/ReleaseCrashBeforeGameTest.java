@@ -1,17 +1,18 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
-import net.minecraft.gametest.framework.GameTest;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
 import java.util.UUID;
 
-public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
+import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
+
+public final class ReleaseCrashBeforeGameTest {
     private static final int HANDOFF_TICKS = 4;
     private static final int CRASH_REGION_SPACING_BLOCKS = 16_384;
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void audit05HaltAfterDurableHandoffBeforeWorldSave(GameTestHelper context) throws Exception {
         // 保存旧接收端与发送队列，交接后只显式保存发送端，再跳过正常关服直接强退。
         var entity = AuditReproSupport.villager(context, UUID.randomUUID());
@@ -20,7 +21,7 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         var sender = AuditReproSupport.sender();
         var human = AuditReproSupport.human();
         // GameTest 重启会重置世界时钟；每轮选择新区域，避免旧窗口决定本轮等待时长。
-        long sequence = sender.save(new CompoundTag()).getLong("next_sequence");
+        long sequence = sender.save(new CompoundTag()).getLongOr("next_sequence", 0);
         long blockX = Math.multiplyExact(sequence + 1, CRASH_REGION_SPACING_BLOCKS);
         entity.setPos(blockX, entity.getY(), 0);
         entity.remove(Entity.RemovalReason.DISCARDED);
@@ -57,7 +58,7 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         var senderFile = AuditReproSupport.worldFile(context, AuditReproSupport.SENDER_FILE);
         AuditReproSupport.save(sender, senderFile);
         context.assertTrue(sender.save(new CompoundTag())
-                .getList("pending_forget", net.minecraft.nbt.Tag.TAG_STRING).contains(
+                .getListOrEmpty("pending_forget").contains(
                         net.minecraft.nbt.StringTag.valueOf(releaseId)), "没有持久保留待遗忘 ID");
         writeMarker(context, release);
         int pendingCount = AuditReproSupport.pending(sender).size();
@@ -77,8 +78,8 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         var human = AuditReproSupport.human();
         CompoundTag marker = new CompoundTag();
         marker.putByteArray("release", release.toByteArray());
-        marker.putLong("next_sequence", sender.save(new CompoundTag()).getLong("next_sequence"));
-        marker.putString("human_epoch", human.save(new CompoundTag()).getString("epoch"));
+        marker.putLong("next_sequence", sender.save(new CompoundTag()).getLongOr("next_sequence", 0));
+        marker.putString("human_epoch", human.snapshot().getStringOr("epoch", ""));
         marker.putString("world", context.getLevel().getServer().getWorldPath(
                 net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize().toString());
         AuditReproSupport.write(marker, AuditReproSupport.evidence(AuditReproSupport.RELEASE_MARKER_FILE));

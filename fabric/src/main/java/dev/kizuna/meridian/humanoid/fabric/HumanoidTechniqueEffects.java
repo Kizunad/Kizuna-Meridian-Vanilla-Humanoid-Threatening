@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -114,13 +115,15 @@ final class HumanoidTechniqueEffects {
         if (attribute == null) {
             throw new TechniqueErrors.HostRejected(FailureCode.MODULE_UNAVAILABLE);
         }
-        UUID id = UUID.nameUUIDFromBytes(("meridian_humanoid:technique:" + effect.getCastId())
+        // 26.2 的修饰按 ID 识别、不再有名字；ID 路径沿用按施放派生的 UUID，仍是一次施放一个修饰。
+        UUID castUuid = UUID.nameUUIDFromBytes(("meridian_humanoid:technique:" + effect.getCastId())
                 .getBytes(StandardCharsets.UTF_8));
+        Identifier id = Identifier.fromNamespaceAndPath("meridian_humanoid", "technique/" + castUuid);
         if (effect.getMovement().getAction() == MovementAction.LOCK) {
             if (attribute.getModifier(id) == null) {
-                attribute.addTransientModifier(new AttributeModifier(id, "meridian_humanoid:technique",
+                attribute.addTransientModifier(new AttributeModifier(id,
                         TechniqueMovement.multiplier(effect.getMovement()) - 1,
-                        AttributeModifier.Operation.MULTIPLY_TOTAL));
+                        AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
             }
             castingIds.add(effect.getCastId());
         } else {

@@ -13,12 +13,12 @@ import java.util.stream.Stream;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.commands.arguments.coordinates.Coordinates;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -35,7 +35,7 @@ final class HumanoidSpawnCommands {
 
     static void attach(LiteralArgumentBuilder<CommandSourceStack> spawn) {
         // 物种是实体 ID，补全七种内置生人与全部登记物种；档位是 literal，自带补全并在解析期拒绝非法值。
-        var species = Commands.argument(SPECIES, ResourceLocationArgument.id())
+        var species = Commands.argument(SPECIES, IdentifierArgument.id())
                 .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(speciesIds(), builder))
                 .executes(context -> spawn(context, Optional.empty(), context.getSource().getPosition()))
                 .then(position(Optional.empty()));
@@ -53,17 +53,17 @@ final class HumanoidSpawnCommands {
                 .executes(context -> spawn(context, tier, Vec3Argument.getVec3(context, POSITION)));
     }
 
-    private static Stream<ResourceLocation> speciesIds() {
+    private static Stream<Identifier> speciesIds() {
         // 补全按实体 ID 列出内置物种与运行时登记的物种（如训练假人）。
         return Stream.concat(HumanoidSpecies.values().stream(), HumanoidSpecies.registered().stream())
-                .map(species -> new ResourceLocation(species.entityId()));
+                .map(species -> Identifier.parse(species.entityId()));
     }
 
     private static int spawn(CommandContext<CommandSourceStack> context, Optional<HumanoidTier> realm,
                              Vec3 position) throws CommandSyntaxException {
         // 读取物种，和原版 summon 一样检查世界边界；省略档位时登记物种用物种表默认档位，内置生人按自然出生抽档。
         CommandSourceStack source = context.getSource();
-        ResourceLocation id = ResourceLocationArgument.getId(context, SPECIES);
+        Identifier id = IdentifierArgument.getId(context, SPECIES);
         HumanoidSpecies species = HumanoidSpecies.fromEntityId(id.toString())
                 .orElseThrow(() -> UNKNOWN_SPECIES.create(id));
         var world = source.getLevel();

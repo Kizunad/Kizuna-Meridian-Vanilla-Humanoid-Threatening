@@ -92,7 +92,7 @@ final class HumanoidEnvironmentClient {
     private EnvironmentHostMessages.RegionQuery position(Entity entity) {
         // 环境服务接收方块坐标，区域查找规则由 Human 解释。
         return EnvironmentHostMessages.RegionQuery.newBuilder()
-                .setDimensionId(entity.level().dimension().location().toString())
+                .setDimensionId(entity.level().dimension().identifier().toString())
                 .setBlockX(entity.getBlockX())
                 .setBlockZ(entity.getBlockZ())
                 .build();

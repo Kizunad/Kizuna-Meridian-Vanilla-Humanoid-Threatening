@@ -24,27 +24,24 @@ import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueService;
 import dev.kizuna.meridian.technique.server.TechniqueState;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.AfterBatch;
-import net.minecraft.gametest.framework.BeforeBatch;
-import net.minecraft.gametest.framework.GameTest;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
-import net.minecraft.world.entity.monster.Vindicator;
-import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.monster.illager.Vindicator;
+import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
@@ -54,11 +51,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
+import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
+
 /** 正式功法目录、身体宿主和类人大脑的完整装配回归；破门用例的批次只发破门卷。 */
-public final class HumanoidTechniqueGameTest implements FabricGameTest {
-    private static final String TECHNIQUE_BATCH = "humanoid-technique";
-    private static final String DOOR_ALLOW_BATCH = "humanoid-door-allow";
-    private static final String DOOR_DENY_BATCH = "humanoid-door-deny";
+public final class HumanoidTechniqueGameTest {
+    private static final String TECHNIQUE_BATCH = "meridian_humanoid_test:technique";
+    private static final String DOOR_ALLOW_BATCH = "meridian_humanoid_test:door_allow";
+    private static final String DOOR_DENY_BATCH = "meridian_humanoid_test:door_deny";
     private static final int ORIGIN = 2;
     private static final int TARGET_Z = 4;
     private static final int FLOOR_EDGE = 6;
@@ -94,51 +93,15 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
     private static final int FINISH_MARGIN_TICKS = 2;
     private static final String PREFIX = "meridian_door_breaker:";
 
-    @BeforeBatch(batch = TECHNIQUE_BATCH)
-    public void beforeTechniqueBatch(ServerLevel world) {
-        // 破门用例只看破门式的情境选择。
-        HumanoidBrainTestConfigs.doorBreakerOnly();
-    }
-
-    @AfterBatch(batch = TECHNIQUE_BATCH)
-    public void afterTechniqueBatch(ServerLevel world) {
-        // 后续批次用启动配置。
-        HumanoidBrainTestConfigs.restore();
-    }
-
-    @BeforeBatch(batch = DOOR_ALLOW_BATCH)
-    public void beforeDoorAllowBatch(ServerLevel world) {
-        // 劈门批次同样只发破门卷。
-        HumanoidBrainTestConfigs.doorBreakerOnly();
-    }
-
-    @AfterBatch(batch = DOOR_ALLOW_BATCH)
-    public void afterDoorAllowBatch(ServerLevel world) {
-        // 后续批次用启动配置。
-        HumanoidBrainTestConfigs.restore();
-    }
-
-    @BeforeBatch(batch = DOOR_DENY_BATCH)
-    public void beforeDoorDenyBatch(ServerLevel world) {
-        // 保门批次同样只发破门卷。
-        HumanoidBrainTestConfigs.doorBreakerOnly();
-    }
-
-    @AfterBatch(batch = DOOR_DENY_BATCH)
-    public void afterDoorDenyBatch(ServerLevel world) {
-        // 后续批次用启动配置。
-        HumanoidBrainTestConfigs.restore();
-    }
-
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void brainThrottlesDecisionsAndSkipsMissingThreatAndActiveCast(GameTestHelper context) {
-        // 手动推进原版实体年龄并直接调用大脑入口，数决策记录判断何时读身体决策。
+        // 手动推进原版实体年龄并直接调用大脑入口，数决策记录判断何时读身体决策；26.2 的目标选择器不再带性能分析器。
         Vindicator mob = prepared(context);
         LivingEntity target = target(context);
         mob.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         mob.setNoAi(false /* aiDisabled */);
-        var goals = new GoalSelector(context.getLevel().getProfilerSupplier());
-        var targets = new GoalSelector(context.getLevel().getProfilerSupplier());
+        var goals = new GoalSelector();
+        var targets = new GoalSelector();
         runDecisions(mob, goals, targets);
         context.assertTrue(HumanoidBrain.decisions(mob.getUUID()).isEmpty(), "无威胁时仍进入决策");
         mob.setTarget(target);
@@ -169,7 +132,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         }
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void realAiCastsDamagesAndKeepsAxeDurability(GameTestHelper context) {
         // 只提供原版目标，让 serverAiStep 的真实接线自行选择和施放。
         Vindicator mob = prepared(context);
@@ -197,7 +160,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void castSlowsMovementKeepsNavigationPlaysPaAndBlocksMelee(GameTestHelper context) {
         // 起手保留寻路与正数移速，PA 和原版攻击互斥，收势恢复原速。
         Vindicator mob = prepared(context);
@@ -217,7 +180,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         mob.setNoAi(true /* aiDisabled */);
         context.assertTrue(mob.position().distanceToSqr(position) > EPSILON, "限速期间没有实际移动");
         float health = target.getHealth();
-        context.assertTrue(!mob.doHurtTarget(target) && target.getHealth() == health, "原版近战穿透施放锁");
+        context.assertTrue(!mob.doHurtTarget(context.getLevel(), target) && target.getHealth() == health, "原版近战穿透施放锁");
         context.runAfterDelay(KNOCK_HIT_TICKS + 1, () -> {
             context.assertTrue(mob.swinging, "打击没有触发原版挥手");
             context.assertTrue(target.getHealth() < health, "打击没有实际伤害");
@@ -255,7 +218,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.assertTrue(requested, "功法没有下发对应 PA 请求：" + expected);
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void allDoorAnimationsUseSelectedHandAndServerStartTick(GameTestHelper context) {
         // 六种出招均从正式功法服务进入 Mobs-Addon 的追踪同步状态。
         LivingEntity target = target(context);
@@ -284,19 +247,19 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = DOOR_ALLOW_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = DOOR_ALLOW_BATCH)
     public void cleavesWoodenDoorWhenMobGriefingEnabled(GameTestHelper context) {
         // 世界规则开启时用真实破门式同时移除上下门扇。
         doorCast(context, DoorRule.ALLOW);
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = DOOR_DENY_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = DOOR_DENY_BATCH)
     public void preservesWoodenDoorWhenMobGriefingDisabled(GameTestHelper context) {
         // 世界规则关闭时仍完成施放，但不得破坏木门。
         doorCast(context, DoorRule.DENY);
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void shieldingTargetPrioritizesHook(GameTestHelper context) {
         // 生物目标实际举盾达到原版格挡延迟后，情境选择必须优先破盾。
         Vindicator mob = prepared(context);
@@ -310,18 +273,18 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void surroundedPrioritizesSweepAndBystandersDoNotCount(GameTestHelper context) {
         // 近身的同伴与路人都不算围攻；两个以我为目标的近身敌人才触发横扫优先。
         Vindicator mob = prepared(context);
         LivingEntity target = target(context);
-        var ally = context.spawn(EntityType.PILLAGER, ORIGIN + 1, ORIGIN, ORIGIN);
+        var ally = context.spawn(EntityTypes.PILLAGER, ORIGIN + 1, ORIGIN, ORIGIN);
         ally.setNoAi(true /* aiDisabled */);
-        var bystander = context.spawn(EntityType.COW, ORIGIN - 1, ORIGIN, ORIGIN + 1);
+        var bystander = context.spawn(EntityTypes.COW, ORIGIN - 1, ORIGIN, ORIGIN + 1);
         bystander.setNoAi(true /* aiDisabled */);
         selected(context, mob, target, "cleave");
-        var first = context.spawn(EntityType.ZOMBIE, ORIGIN - 1, ORIGIN, ORIGIN);
-        var second = context.spawn(EntityType.ZOMBIE, ORIGIN + 1, ORIGIN, ORIGIN - 1);
+        var first = context.spawn(EntityTypes.ZOMBIE, ORIGIN - 1, ORIGIN, ORIGIN);
+        var second = context.spawn(EntityTypes.ZOMBIE, ORIGIN + 1, ORIGIN, ORIGIN - 1);
         for (Zombie hunter : new Zombie[]{first, second}) {
             hunter.setNoAi(true /* aiDisabled */);
             hunter.setTarget(mob);
@@ -332,7 +295,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void pursuedPrioritizesCloseAndPressureAvoidsLongWarmup(GameTestHelper context) {
         // 相对运动识别追赶；远目标与当前受伤分别排除长起手。
         Vindicator mob = prepared(context);
@@ -351,7 +314,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void finaleOnlySelectedInsideRealFollowUpWindow(GameTestHelper context) {
         // 万门起手必须承接真实破门记录，窗口前拒绝且窗口内缩短起手。
         Vindicator mob = prepared(context);
@@ -380,12 +343,12 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void cleaveWarmupInterruptedOnlyByStaggeringHit(GameTestHelper context) {
         // 与玩家同一伤害入口：轻击低于僵直门槛不打断破门起手，重击打断、减速并拒绝新式。
         Vindicator mob = prepared(context);
         LivingEntity target = target(context);
-        Zombie attacker = context.spawn(EntityType.ZOMBIE, FLOOR_EDGE, ORIGIN, FLOOR_EDGE);
+        Zombie attacker = context.spawn(EntityTypes.ZOMBIE, FLOOR_EDGE, ORIGIN, FLOOR_EDGE);
         attacker.setNoAi(true /* aiDisabled */);
         double originalSpeed = mob.getAttributeValue(Attributes.MOVEMENT_SPEED);
         try {
@@ -407,7 +370,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void bothArmsExhaustedAvoidsCombatAndRecovers(GameTestHelper context) {
         // 用真实能力曲线模拟两臂虚脱，大脑撤退、禁止原版近战，曲线结束后力量比恢复。
         Vindicator mob = prepared(context);
@@ -422,7 +385,8 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.runAfterDelay(DECISION_TICKS, () -> {
             double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();
             context.assertTrue(armRatio < exhaustedRatio, "双臂曲线未降低有效力量：" + armRatio);
-            context.assertTrue(HumanoidBrain.blocksMelee(mob) && !mob.doHurtTarget(target), "虚脱期间仍可近战");
+            context.assertTrue(HumanoidBrain.blocksMelee(mob) && !mob.doHurtTarget(context.getLevel(), target),
+                    "虚脱期间仍可近战");
             context.assertTrue(!progress(mob).hasActiveCast(), "虚脱期间仍开始功法");
             context.assertTrue(!mob.getNavigation().isDone(), "虚脱没有启动撤退寻路；target=" + mob.getTarget()
                     + "; onGround=" + mob.onGround() + "; pos=" + mob.position());
@@ -436,19 +400,18 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void unloadAndReloadClearsCastWithoutOfflineHit(GameTestHelper context) {
         // 写出仍在起手的 NBT，卸载后恢复旧快照也只能解锁，不能补发伤害。
         Vindicator mob = prepared(context);
         LivingEntity target = target(context);
         float health = target.getHealth();
         start(context, mob, "cleave", target);
-        CompoundTag saved = new CompoundTag();
-        mob.saveWithoutId(saved);
+        CompoundTag saved = HumanoidEntityNbt.save(mob);
         mob.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
         context.assertTrue(!HumanoidTechniqueHost.isCasting(mob) && !mob.isAggressive(), "卸载未清理施放");
-        var restored = EntityType.VINDICATOR.create(context.getLevel());
-        restored.load(saved);
+        var restored = EntityTypes.VINDICATOR.create(context.getLevel(), EntitySpawnReason.LOAD);
+        HumanoidEntityNbt.load(restored, saved);
         context.getLevel().addFreshEntity(restored);
         HumanoidTechniqueHost.prepare(restored);
         context.assertTrue(!progress(restored).hasActiveCast() && !HumanoidTechniqueHost.isCasting(restored),
@@ -461,7 +424,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = TEST_TIMEOUT, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void deathDuringWarmupClearsCastPoseAndMovement(GameTestHelper context) {
         // 使用原版死亡回调贯穿权威死体结算和功法恢复，不仅移除测试缓存。
         Vindicator mob = prepared(context);
@@ -481,7 +444,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void generatedVindicatorsLearnVolumesFromBrainTable(GameTestHelper context) {
         // 游炁只学上卷；真炁按大脑学卷表逐 UUID 分配，分到下卷与未分到的各验一个。
         Vindicator wandering = generated(context, HumanoidVariant.WANDERING_QI, UUID.randomUUID());
@@ -514,7 +477,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
                 .orElseThrow(() -> new AssertionError("学卷表找不到下卷分配为 " + wanted + " 的 UUID"));
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void inspectReportsBothHandsAndBodyIdentity(GameTestHelper context) {
         // 字节入口直接检查当前两手物品与唯一身体 ID，不允许另建功法身体。
         Vindicator mob = prepared(context);
@@ -534,7 +497,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.succeed();
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, batch = TECHNIQUE_BATCH)
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void towardTargetImpulseKeepsHorizontalSpeedAcrossElevationAndReplay(GameTestHelper context) {
         // 限速施放中仍获得足额水平冲量，保留跳跃分量且重试不覆盖之后的速度。
         Vindicator mob = prepared(context);
@@ -584,11 +547,11 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
 
     private static Vindicator generated(GameTestHelper context, HumanoidVariant variant, UUID id) {
         // 固定测试场地并用正式生成器绑定指定境界，避免随机档位漏测。
-        Vindicator mob = EntityType.VINDICATOR.create(context.getLevel());
+        Vindicator mob = EntityTypes.VINDICATOR.create(context.getLevel(), EntitySpawnReason.COMMAND);
         floor(context);
         mob.setUUID(id);
         Vec3 position = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(ORIGIN, ORIGIN, ORIGIN)));
-        mob.moveTo(position.x, position.y, position.z, 0, 0);
+        mob.snapTo(position.x, position.y, position.z, 0, 0);
         mob.setNoAi(true /* aiDisabled */);
         mob.setOnGround(true /* onGround */);
         mob.setPersistenceRequired();
@@ -612,7 +575,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
 
     private static LivingEntity target(GameTestHelper context) {
         // 无权威人体的牛保留原版血量，便于观察世界打击而不与敌对 AI 互相伤害。
-        Mob target = context.spawn(EntityType.COW, ORIGIN, ORIGIN, TARGET_Z);
+        Mob target = context.spawn(EntityTypes.COW, ORIGIN, ORIGIN, TARGET_Z);
         target.setNoAi(true /* aiDisabled */);
         target.setNoGravity(true /* noGravity */);
         target.setSilent(true /* silent */);
@@ -691,10 +654,10 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
         context.setBlock(lower.above(), state.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
         start(context, mob, "cleave", target);
         var world = context.getLevel();
-        var griefing = world.getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        var rules = world.getGameRules();
         context.runAfterDelay(CLEAVE_HIT_TICKS - 1, () -> {
-            boolean previous = griefing.get();
-            griefing.set(rule == DoorRule.ALLOW, world.getServer());
+            boolean previous = rules.get(GameRules.MOB_GRIEFING);
+            rules.set(GameRules.MOB_GRIEFING, rule == DoorRule.ALLOW, world.getServer());
             context.runAfterDelay(DECISION_TICKS, () -> {
                 try {
                     boolean remains = world.getBlockState(context.absolutePos(lower)).is(Blocks.OAK_DOOR);
@@ -702,7 +665,7 @@ public final class HumanoidTechniqueGameTest implements FabricGameTest {
                     context.assertTrue(mob.getMainHandItem().getDamageValue() == 0, "生物劈门磨损铁斧");
                     context.succeed();
                 } finally {
-                    griefing.set(previous, world.getServer());
+                    rules.set(GameRules.MOB_GRIEFING, previous, world.getServer());
                 }
             });
         });

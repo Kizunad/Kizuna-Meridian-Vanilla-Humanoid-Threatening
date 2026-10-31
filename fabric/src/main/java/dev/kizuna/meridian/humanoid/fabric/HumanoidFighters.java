@@ -17,13 +17,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.RangedAttackMob;
-import net.minecraft.world.entity.monster.SpellcasterIllager;
+import net.minecraft.world.entity.monster.illager.SpellcasterIllager;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.ShieldItem;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
 
 /** 战力事实：从身体快照与持物读出境界档、身体状况和手段；没有经脉身体的一方按凡人档计。 */
 final class HumanoidFighters {
@@ -78,7 +81,7 @@ final class HumanoidFighters {
             means.add(Means.VANILLA_OFFENSE);
         }
         var main = entity.getMainHandItem();
-        if (main.getAttributeModifiers(EquipmentSlot.MAINHAND).containsKey(Attributes.ATTACK_DAMAGE)) {
+        if (hasMainHandAttack(main)) {
             means.add(Means.MELEE_WEAPON);
         }
         if (main.getItem() instanceof ProjectileWeaponItem) {
@@ -88,6 +91,13 @@ final class HumanoidFighters {
             means.add(Means.SHIELD);
         }
         return means;
+    }
+
+    private static boolean hasMainHandAttack(ItemStack stack) {
+        // 26.2 的物品属性在组件里；主手生效的修饰里有攻击伤害即算近战武器，与旧版按主手槽取修饰表一致。
+        return stack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY).modifiers().stream()
+                .anyMatch(entry -> entry.slot().test(EquipmentSlot.MAINHAND)
+                        && entry.attribute().is(Attributes.ATTACK_DAMAGE));
     }
 
     static Fighter.Condition condition(BodySnapshot body) {

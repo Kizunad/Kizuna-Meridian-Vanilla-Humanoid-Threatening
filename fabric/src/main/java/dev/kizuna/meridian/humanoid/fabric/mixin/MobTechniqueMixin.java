@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBrain;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -28,13 +29,14 @@ public abstract class MobTechniqueMixin {
     private void meridian$targetChanged(LivingEntity target, CallbackInfo callback) {
         // 原版改目标时同步「以谁为目标」的反查表，只在服务端记。
         Mob self = (Mob) (Object) this;
-        if (!self.level().isClientSide) {
+        if (!self.level().isClientSide()) {
             HumanoidBrain.targetChanged(self, self.getTarget(), target);
         }
     }
 
     @Inject(method = "doHurtTarget", at = @At("HEAD"), cancellable = true)
-    private void meridian$blockVanillaAttack(Entity target, CallbackInfoReturnable<Boolean> callback) {
+    private void meridian$blockVanillaAttack(ServerLevel level, Entity target,
+                                             CallbackInfoReturnable<Boolean> callback) {
         // 功法打击自行结算，原版近战不能在施放或撤退中叠加一次攻击。
         if (HumanoidBrain.blocksMelee((Mob) (Object) this)) {
             callback.setReturnValue(false /* attacked */);

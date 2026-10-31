@@ -8,15 +8,17 @@ import dev.kizuna.meridian.protocol.BodyProtobuf;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.StringTag;
-import net.minecraft.nbt.Tag;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.Assert.*;
 
@@ -38,19 +40,18 @@ public final class HumanoidWorldStateTest {
             var file = directory.newFile().toPath();
             CompoundTag root = new CompoundTag();
             root.put("data", legacy);
-            NbtIo.writeCompressed(root, file.toFile());
+            NbtIo.writeCompressed(root, file);
 
-            CompoundTag saved = NbtIo.readCompressed(file.toFile()).getCompound("data");
+            CompoundTag saved = readData(file);
             HumanoidWorldState restored = HumanoidWorldState.read(saved);
             assertFalse(saved.contains("pending_forget"));
             assertTrue(restored.isDirty());
             restored.save(file.toFile());
 
-            CompoundTag upgraded = NbtIo.readCompressed(file.toFile()).getCompound("data");
-            assertEquals(NEXT_SEQUENCE, upgraded.getLong("next_sequence"));
+            CompoundTag upgraded = readData(file);
+            assertEquals(Optional.of(NEXT_SEQUENCE), upgraded.getLong("next_sequence"));
             assertEquals(legacy.get("pending"), upgraded.get("pending"));
-            assertTrue(upgraded.contains("pending_forget", Tag.TAG_LIST));
-            assertTrue(upgraded.getList("pending_forget", Tag.TAG_STRING).isEmpty());
+            assertTrue(upgraded.get("pending_forget") instanceof ListTag forget && forget.isEmpty());
             HumanoidWorldState reloaded = HumanoidWorldState.read(upgraded);
             assertFalse(reloaded.isDirty());
             assertEquals(upgraded, reloaded.save(new CompoundTag()));
@@ -79,6 +80,11 @@ public final class HumanoidWorldStateTest {
                 wrongEntries, duplicate, wrongForget)) {
             assertThrows(IllegalArgumentException.class, () -> HumanoidWorldState.read(invalid));
         }
+    }
+
+    private static CompoundTag readData(Path file) throws IOException {
+        // 与宿主读取同一外层：压缩 NBT 的 data 字段是账本正文。
+        return NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap()).getCompoundOrEmpty("data");
     }
 
     private static CompoundTag writeLegacy(long nextSequence, List<RegionRelease> pending) {
@@ -116,7 +122,7 @@ public final class HumanoidWorldStateTest {
         state.setDirty();
         state.save(file.toFile());
         assertFalse(state.isDirty());
-        var saved = NbtIo.readCompressed(file.toFile()).getCompound("data");
+        var saved = readData(file);
         assertEquals(saved, HumanoidWorldState.read(saved).save(new CompoundTag()));
     }
 
@@ -135,12 +141,12 @@ public final class HumanoidWorldStateTest {
             var saved = valid.copy();
             saved.put("pending_forget", invalid);
             assertThrows(IllegalArgumentException.class, () -> HumanoidWorldState.read(saved));
-            assertEquals(invalid, saved.getList("pending_forget", invalid.getElementType()));
+            assertEquals(invalid, saved.get("pending_forget"));
         }
         ListTag outstanding = new ListTag();
         outstanding.add(StringTag.valueOf("release:pending-forget"));
         valid.put("pending_forget", outstanding);
         var restored = HumanoidWorldState.read(valid).save(new CompoundTag());
-        assertEquals(outstanding, restored.getList("pending_forget", Tag.TAG_STRING));
+        assertEquals(outstanding, restored.get("pending_forget"));
     }
 }

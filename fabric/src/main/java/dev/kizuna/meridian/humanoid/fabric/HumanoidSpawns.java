@@ -9,12 +9,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.phys.Vec3;
 
 /** 刷怪蛋与管理命令共用的指定档位出生入口；登记物种可以提供自己的放置钩子。 */
@@ -46,7 +46,7 @@ public final class HumanoidSpawns {
         }
     }
 
-    static Mob spawn(ServerLevel world, Selection selection, Vec3 position, MobSpawnType reason) {
+    static Mob spawn(ServerLevel world, Selection selection, Vec3 position, EntitySpawnReason reason) {
         // 刷怪蛋与测试按选定的物种和变体出生。
         return spawnMob(world, selection.species(), Optional.of(HumanoidTier.of(selection.variant())), position,
                 reason);
@@ -61,18 +61,18 @@ public final class HumanoidSpawns {
                     () -> new IllegalStateException("登记物种出生缺少档位：" + species.entityId()));
             return placement.place(world, position, sourceYaw, chosen);
         }
-        return spawnMob(world, species, tier, position, MobSpawnType.COMMAND);
+        return spawnMob(world, species, tier, position, EntitySpawnReason.COMMAND);
     }
 
     private static Mob spawnMob(ServerLevel world, HumanoidSpecies species, Optional<HumanoidTier> tier,
-                                Vec3 position, MobSpawnType reason) {
+                                Vec3 position, EntitySpawnReason reason) {
         // 原版初始化负责装备；指定档位时在入世界前创建身体，否则由技法宿主首次准备时按自然概率抽档。
-        var entity = entityType(species).create(world);
+        var entity = entityType(species).create(world, reason);
         if (!(entity instanceof Mob mob)) {
             throw new IllegalStateException("无法创建类人实体：" + species.entityId());
         }
-        mob.moveTo(position.x, position.y, position.z, 0, 0);
-        mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, null, null);
+        mob.snapTo(position.x, position.y, position.z, 0, 0);
+        mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, null);
         mob.setPersistenceRequired();
         tier.ifPresent(chosen -> HumanoidSpeciesBirths.birth(mob, chosen));
         if (!world.addFreshEntity(mob)) {
@@ -83,8 +83,8 @@ public final class HumanoidSpawns {
     }
 
     private static EntityType<?> entityType(HumanoidSpecies species) {
-        // 实体仍是原版或登记模组自己的类型，不注册平行实体身份。
-        return BuiltInRegistries.ENTITY_TYPE.get(new ResourceLocation(species.entityId()));
+        // 实体仍是原版或登记模组自己的类型，不注册平行实体身份；未注册 ID 与旧版一样取默认类型。
+        return BuiltInRegistries.ENTITY_TYPE.getValue(Identifier.parse(species.entityId()));
     }
 
     public record Selection(HumanoidSpecies species, HumanoidVariant variant) {
@@ -95,7 +95,7 @@ public final class HumanoidSpawns {
 
         public String path() {
             // 物品身份由固定物种与档位组成，原版 give 可直接补全。
-            String speciesPath = new ResourceLocation(species.entityId()).getPath();
+            String speciesPath = Identifier.parse(species.entityId()).getPath();
             return speciesPath + "_" + variant.name().toLowerCase(Locale.ROOT) + "_spawn_egg";
         }
     }

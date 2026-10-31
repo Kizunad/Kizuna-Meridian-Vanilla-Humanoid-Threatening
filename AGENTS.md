@@ -1,6 +1,6 @@
 # 仓库协作约定
 
-- 本仓库只收 Minecraft Java 版 1.20.1 活着的类人生物（生人）；类人亡灵不在职责范围内。身体模板来自 Human，权威身体状态和结算归 Framework，原版伤害接线归 Damage-Addon。
+- 本仓库只收 Minecraft Java 版 26.2 活着的类人生物（生人）；类人亡灵不在职责范围内。身体模板来自 Human，权威身体状态和结算归 Framework，原版伤害接线归 Damage-Addon。
 - Meridian 各附属在各自适用端按完整装配运行；不得添加缺少必需附属时的替代路径、降级或可选依赖判断。运行时必装不意味着让底层规则依赖具体 Fabric 宿主。
 - `server/` 保存与 Minecraft 无关的生成、配置和区域库存规则；`fabric/` 负责实体认领、健康宿主、NBT、生命周期和环境服务接线。本仓库不提供客户端内容，不做粒子。
 - 跨附属通信使用公开 Protobuf 和宿主接口；Human 内容使用公开内容 API，不依赖其内部 Fabric 实现类。身体快照、回执和释放请求遵循 Framework 与 Human 的协议。

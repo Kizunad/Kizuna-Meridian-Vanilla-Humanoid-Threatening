@@ -14,27 +14,26 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefi
 import dev.kizuna.meridian.technique.server.TechniqueAvailability;
 import dev.kizuna.meridian.technique.server.TechniqueBinder;
 import dev.kizuna.meridian.technique.server.TechniqueState;
-import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.GlobalPos;
-import net.minecraft.gametest.framework.AfterBatch;
-import net.minecraft.gametest.framework.BeforeBatch;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
-import net.minecraft.world.entity.animal.Cow;
-import net.minecraft.world.entity.monster.Pillager;
-import net.minecraft.world.entity.monster.Vindicator;
-import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.animal.cow.Cow;
+import net.minecraft.world.entity.monster.illager.Pillager;
+import net.minecraft.world.entity.monster.illager.Vindicator;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.schedule.Activity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.BedBlock;
@@ -54,17 +53,17 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /** 类人大脑整体回归：撤退、对敌、准备、恢复、原版日常与两只真炁卫道士互打，均用正式目录和原版实体。 */
-public final class HumanoidBrainGameTest implements FabricGameTest {
-    private static final String UNARMED_BATCH = "humanoid-brain-unarmed";
-    private static final String ARMED_VILLAGER_BATCH = "humanoid-brain-armed-villager";
-    private static final String LIGHT_STEP_BATCH = "humanoid-brain-light-step";
-    private static final String BREATH_BATCH = "humanoid-brain-breath";
-    private static final String CHARGE_BATCH = "humanoid-brain-charge";
-    private static final String PILLAGER_BATCH = "humanoid-brain-pillager";
-    private static final String SLEEP_BATCH = "humanoid-brain-sleep";
-    private static final String CROWD_BATCH = "humanoid-brain-crowd";
-    private static final String DUEL_BATCH = "humanoid-brain-duel";
-    private static final String EXHAUSTION_BATCH = "humanoid-brain-exhaustion";
+public final class HumanoidBrainGameTest {
+    private static final String UNARMED_BATCH = "meridian_humanoid_test:brain_unarmed";
+    private static final String ARMED_VILLAGER_BATCH = "meridian_humanoid_test:brain_armed_villager";
+    private static final String LIGHT_STEP_BATCH = "meridian_humanoid_test:brain_light_step";
+    private static final String BREATH_BATCH = "meridian_humanoid_test:brain_breath";
+    private static final String CHARGE_BATCH = "meridian_humanoid_test:brain_charge";
+    private static final String PILLAGER_BATCH = "meridian_humanoid_test:brain_pillager";
+    private static final String SLEEP_BATCH = "meridian_humanoid_test:brain_sleep";
+    private static final String CROWD_BATCH = "meridian_humanoid_test:brain_crowd";
+    private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
+    private static final String EXHAUSTION_BATCH = "meridian_humanoid_test:brain_exhaustion";
     private static final String BASIC_PREFIX = "meridian_basic_techniques:";
     private static final String DOOR_BREAKER_PREFIX = "meridian_door_breaker:";
     private static final String CHARGE = BASIC_PREFIX + "charge";
@@ -104,36 +103,12 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
     private static final Set<Decision.Action> RESPONSES = EnumSet.of(Decision.Action.INTERRUPT,
             Decision.Action.DODGE, Decision.Action.ABSORB);
 
-    @BeforeBatch(batch = UNARMED_BATCH)
-    public void beforeUnarmedBatch(ServerLevel world) {
-        // 村民学卷表清空，验证无功法时的撤退。
-        HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.VILLAGER.entityId(), List.of());
-    }
-
-    @AfterBatch(batch = UNARMED_BATCH)
-    public void afterUnarmedBatch(ServerLevel world) {
-        // 后续批次用启动配置。
-        HumanoidBrainTestConfigs.restore();
-    }
-
-    @BeforeBatch(batch = PILLAGER_BATCH)
-    public void beforePillagerBatch(ServerLevel world) {
-        // 掠夺者学卷表清空，验证被接管后仍用原版射击。
-        HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.PILLAGER.entityId(), List.of());
-    }
-
-    @AfterBatch(batch = PILLAGER_BATCH)
-    public void afterPillagerBatch(ServerLevel world) {
-        // 后续批次用启动配置。
-        HumanoidBrainTestConfigs.restore();
-    }
-
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = LONG_TIMEOUT, batch = UNARMED_BATCH)
+    @GameTest(maxTicks = LONG_TIMEOUT, environment = UNARMED_BATCH)
     public void unarmedVillagerRetreatsFromVindicatorAndResumesRoutine(GameTestHelper context) {
         // 无功法的游炁村民被卫道士盯上时由大脑撤退而非原版恐慌；卫道士消失后交还原版日常。
         var arena = new Arena(context);
-        Villager villager = arena.spawn(EntityType.VILLAGER, HumanoidTier.WANDERING_QI, "unarmed", SUBJECT_POS);
-        Vindicator hunter = arena.spawn(EntityType.VINDICATOR, HumanoidTier.WANDERING_QI, "unarmed-hunter",
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "unarmed", SUBJECT_POS);
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "unarmed-hunter",
                 NEAR_POS);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
@@ -149,16 +124,16 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = LONG_TIMEOUT,
-            batch = ARMED_VILLAGER_BATCH)
+    @GameTest(maxTicks = LONG_TIMEOUT,
+            environment = ARMED_VILLAGER_BATCH)
     public void trueQiVillagerWithUpperVolumeEngagesAndKnocks(GameTestHelper context) {
         // 学了破门上卷、持斧的真炁村民对游炁卫道士对敌，施放叩门并打伤对方。
         var arena = new Arena(context);
-        Villager villager = arena.spawn(EntityType.VILLAGER, HumanoidTier.TRUE_QI, "armed", SUBJECT_POS);
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, "armed", SUBJECT_POS);
         villager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         HumanoidTechniqueHost.prepare(villager);
         TechniqueFabric.service().learn(villager.getUUID(), DOOR_BREAKER_PREFIX + "upper");
-        Vindicator hunter = arena.spawn(EntityType.VINDICATOR, HumanoidTier.WANDERING_QI, "armed-hunter",
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "armed-hunter",
                 NEAR_POS);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
@@ -172,13 +147,13 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = SHORT_TIMEOUT, batch = LIGHT_STEP_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = LIGHT_STEP_BATCH)
     public void retreatingVillagerLightStepsAndLeapsAway(GameTestHelper context) {
         // 只会基础三卷的游炁村民撤退时先放轻步，再背向跃步拉开。
         var arena = new Arena(context);
-        Villager villager = arena.spawn(EntityType.VILLAGER, HumanoidTier.WANDERING_QI, "light-step",
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "light-step",
                 SUBJECT_POS);
-        Vindicator hunter = arena.spawn(EntityType.VINDICATOR, HumanoidTier.WANDERING_QI, "light-step-hunter",
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "light-step-hunter",
                 MIDDLE_POS);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
@@ -188,15 +163,15 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 () -> "撤退村民没有轻步后跃步：" + watch + " / " + decisions(villager), arena::finish);
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = SHORT_TIMEOUT, batch = EXHAUSTION_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = EXHAUSTION_BATCH)
     public void exhaustedVindicatorLeapsAwayInsteadOfTrading(GameTestHelper context) {
         // 双臂虚脱的持斧真炁卫道士被盯上时不原地对打，先轻步再背向跃步拉开。
         var arena = new Arena(context);
-        Vindicator exhausted = arena.spawn(EntityType.VINDICATOR, HumanoidTier.TRUE_QI, "exhausted",
+        Vindicator exhausted = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "exhausted",
                 SUBJECT_POS);
         exhausted.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         fatigue(exhausted, HumanoidSpecies.VINDICATOR, ARM_MUSCLES);
-        Vindicator hunter = arena.spawn(EntityType.VINDICATOR, HumanoidTier.WANDERING_QI, "exhausted-hunter",
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "exhausted-hunter",
                 NEAR_POS);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(exhausted);
@@ -209,11 +184,11 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = SHORT_TIMEOUT, batch = BREATH_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = BREATH_BATCH)
     public void idleFatiguedVillagerBreathes(GameTestHelper context) {
         // 无威胁时四肢疲劳达到调息门槛，村民自行调息。
         var arena = new Arena(context);
-        Villager villager = arena.spawn(EntityType.VILLAGER, HumanoidTier.WANDERING_QI, "breath", SUBJECT_POS);
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "breath", SUBJECT_POS);
         fatigue(villager, HumanoidSpecies.VILLAGER, LIMB_MUSCLES);
         var watch = new Watch(villager);
         arena.await(BREATH_TICKS, () -> watch.observe().cast(BREATH),
@@ -224,11 +199,11 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = SHORT_TIMEOUT, batch = CHARGE_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = CHARGE_BATCH)
     public void axeVindicatorChargesBeforeStriking(GameTestHelper context) {
         // 持斧真炁卫道士在打击距离外先放蓄力，之后才出破门打击式。
         var arena = new Arena(context);
-        Vindicator vindicator = arena.spawn(EntityType.VINDICATOR, HumanoidTier.TRUE_QI, "charge",
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "charge",
                 SUBJECT_POS);
         vindicator.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         Cow target = arena.target(FAR_POS);
@@ -241,11 +216,11 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = SHORT_TIMEOUT, batch = PILLAGER_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = PILLAGER_BATCH)
     public void emptyTablePillagerStillShoots(GameTestHelper context) {
         // 空学卷表的掠夺者被接管后仍交还原版弩射击，不会呆住。
         var arena = new Arena(context);
-        Pillager pillager = arena.spawn(EntityType.PILLAGER, HumanoidTier.WANDERING_QI, "pillager",
+        Pillager pillager = arena.spawn(EntityTypes.PILLAGER, HumanoidTier.WANDERING_QI, "pillager",
                 SUBJECT_POS);
         pillager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.CROSSBOW));
         Cow target = arena.target(FAR_POS);
@@ -255,24 +230,26 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
                 () -> "空表掠夺者没有射中目标：" + decisions(pillager), arena::finish);
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = LONG_TIMEOUT, batch = SLEEP_BATCH)
+    @GameTest(maxTicks = LONG_TIMEOUT, environment = SLEEP_BATCH)
     public void idleVillagerStillSleepsAtNight(GameTestHelper context) {
-        // 夜里无威胁的村民照原版作息上床，大脑不记决策。
+        // 夜里无威胁的村民照原版作息上床，大脑不记决策；26.2 的昼夜由维度默认时钟推进，改设该时钟。
         var arena = new Arena(context);
         var world = context.getLevel();
-        long previousTime = world.getDayTime();
-        arena.onFinish(() -> world.setDayTime(previousTime));
+        var clock = world.dimensionType().defaultClock().orElseThrow();
+        var clocks = world.getServer().clockManager();
+        long previousTime = clocks.getTotalTicks(clock);
+        arena.onFinish(() -> clocks.setTotalTicks(clock, previousTime));
         BlockPos head = bed(context);
-        Villager villager = arena.spawnUnborn(EntityType.VILLAGER, "sleep", SUBJECT_POS);
+        Villager villager = arena.spawnUnborn(EntityTypes.VILLAGER, "sleep", SUBJECT_POS);
         villager.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(world.dimension(), head));
-        world.setDayTime(NIGHT_TIME);
+        clocks.setTotalTicks(clock, NIGHT_TIME);
         arena.await(SLEEP_TICKS, villager::isSleeping, () -> "无威胁村民夜里没有上床：" + decisions(villager), () -> {
             context.assertTrue(HumanoidBrain.decisions(villager.getUUID()).isEmpty(), "无威胁村民留下了大脑决策");
             arena.finish();
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = CROWD_TIMEOUT, batch = CROWD_BATCH)
+    @GameTest(maxTicks = CROWD_TIMEOUT, environment = CROWD_BATCH)
     public void hundredIdleVillagersPrepareNoBodiesForAMinute(GameTestHelper context) {
         // 一百个无威胁村民跑满一分钟；健康宿主照常惰性出生身体，大脑不准备身体会话，也不记决策。
         var arena = new Arena(context);
@@ -281,7 +258,7 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
         for (int x = 0; x < CROWD_SIDE; x++) {
             for (int z = 0; z < CROWD_SIDE; z++) {
                 String name = "crowd-" + x + "-" + z;
-                villagers.add(arena.spawnUnborn(EntityType.VILLAGER, name, new BlockPos(x, 0, z)));
+                villagers.add(arena.spawnUnborn(EntityTypes.VILLAGER, name, new BlockPos(x, 0, z)));
             }
         }
         arena.later(CROWD_TICKS, () -> {
@@ -297,12 +274,12 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
         });
     }
 
-    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = DUEL_TIMEOUT, batch = DUEL_BATCH)
+    @GameTest(maxTicks = DUEL_TIMEOUT, environment = DUEL_BATCH)
     public void trueQiVindicatorsDuelForThreeMinutes(GameTestHelper context) {
         // 两只持斧真炁卫道士互设目标打三分钟或打到一方倒下，检查应对、准备与失败上限；虚脱后拉开另有确定性用例。
         var arena = new Arena(context);
-        Vindicator first = arena.spawn(EntityType.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", SUBJECT_POS);
-        Vindicator second = arena.spawn(EntityType.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
+        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", SUBJECT_POS);
+        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
         for (Vindicator fighter : List.of(first, second)) {
             fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         }
@@ -388,7 +365,7 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
 
     private static BlockPos bed(GameTestHelper context) {
         // 在村民旁放一张朝东的床，返回床头的世界坐标。
-        var state = Blocks.RED_BED.defaultBlockState().setValue(BedBlock.FACING, Direction.EAST);
+        var state = Blocks.BED.pick(DyeColor.RED).defaultBlockState().setValue(BedBlock.FACING, Direction.EAST);
         BlockPos headPos = BED_FOOT_POS.east();
         context.setBlock(BED_FOOT_POS, state.setValue(BedBlock.PART, BedPart.FOOT));
         context.setBlock(headPos, state.setValue(BedBlock.PART, BedPart.HEAD));
@@ -504,10 +481,10 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
             if (stale != null) {
                 stale.discard();
             }
-            T mob = type.create(context.getLevel());
+            T mob = type.create(context.getLevel(), EntitySpawnReason.COMMAND);
             Vec3 position = Vec3.atBottomCenterOf(context.absolutePos(relative));
             mob.setUUID(id);
-            mob.moveTo(position.x, position.y, position.z, 0, 0);
+            mob.snapTo(position.x, position.y, position.z, 0, 0);
             mob.setPersistenceRequired();
             return mob;
         }
@@ -543,7 +520,7 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
 
         Cow target(BlockPos relative) {
             // 不动、不出声的高血量牛，便于观察原版血量变化。
-            Cow cow = context.spawn(EntityType.COW, relative);
+            Cow cow = context.spawn(EntityTypes.COW, relative);
             cow.setNoAi(true /* aiDisabled */);
             cow.setSilent(true /* silent */);
             cow.getAttribute(Attributes.MAX_HEALTH).setBaseValue(TARGET_HEALTH);
@@ -565,7 +542,7 @@ public final class HumanoidBrainGameTest implements FabricGameTest {
         void await(int ticks, BooleanSupplier condition, Supplier<String> failure, Runnable next) {
             // 条件在期限内满足就继续，到期仍不满足即失败。
             poll(ticks, condition, () -> {
-                throw new GameTestAssertException(failure.get());
+                throw context.assertionException(Component.literal(failure.get()));
             }, next);
         }
 
