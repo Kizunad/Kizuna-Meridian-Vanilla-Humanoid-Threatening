@@ -8,7 +8,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationA
 import dev.kizuna.playeranimation.mobs.MobAnimationServer;
 import java.util.HashMap;
 import java.util.Map;
-import net.minecraft.entity.LivingEntity;
+import net.minecraft.world.entity.LivingEntity;
 
 /** 类人功法通过 Mobs-Addon 同步 PA 表现，与玩家共用公开的人体片段映射。 */
 final class HumanoidTechniquePresentation {
@@ -27,13 +27,13 @@ final class HumanoidTechniquePresentation {
             return;
         }
         var input = effect.getDirection();
-        var direction = new HumanTechniqueAnimations.Direction(entity.getYaw(), input.getX(), input.getZ());
+        var direction = new HumanTechniqueAnimations.Direction(entity.getYRot(), input.getX(), input.getZ());
         CastHand hand = effect.getSelectedHand() == Hand.OFF_HAND ? CastHand.OFF : CastHand.MAIN;
         String animation = HumanTechniqueAnimations.resolve(presentation.getId(), direction, hand);
-        long nowMillis = entity.getServer().getOverworld().getTime() * MILLIS_PER_TICK;
+        long nowMillis = entity.getServer().overworld().getGameTime() * MILLIS_PER_TICK;
         long lateness = Math.max(0, nowMillis - effect.getScheduledMillis());
         long offsetTicks = (presentation.getStartMillis() + lateness) / MILLIS_PER_TICK;
-        long startTick = Math.max(0, entity.getWorld().getTime() - offsetTicks);
+        long startTick = Math.max(0, entity.level().getGameTime() - offsetTicks);
         MobAnimationServer.playFrom(entity, animation, startTick);
         playing.put(key, animation);
     }

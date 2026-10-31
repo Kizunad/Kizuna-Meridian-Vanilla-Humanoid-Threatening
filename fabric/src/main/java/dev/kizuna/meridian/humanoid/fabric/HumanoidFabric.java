@@ -22,15 +22,15 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.command.argument.EntityArgumentType;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
-import net.minecraft.world.PersistentStateManager;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,8 +78,8 @@ public final class HumanoidFabric implements ModInitializer {
         // 世界释放请求从持久化状态恢复，无法恢复时拒绝已认领实体的健康请求。
         activeServer = server;
         try {
-            PersistentStateManager persistence = server.getOverworld().getPersistentStateManager();
-            var file = server.getSavePath(WorldSavePath.ROOT).resolve("data/" + STATE_ID + ".dat");
+            DimensionDataStorage persistence = server.overworld().getDataStorage();
+            var file = server.getWorldPath(LevelResource.ROOT).resolve("data/" + STATE_ID + ".dat");
             if (Files.exists(file)) {
                 worldState = persistence.get(HumanoidWorldState::read, STATE_ID);
                 if (worldState == null) {
@@ -180,7 +180,7 @@ public final class HumanoidFabric implements ModInitializer {
         if (worldState == null || qi == null || qi.entries().isEmpty()) {
             return;
         }
-        worldState.enqueue(entity.getUuid(), entity, qi);
+        worldState.enqueue(entity.getUUID(), entity, qi);
     }
 
     static void enqueueRelease(Entity entity, BodyMessages.QiInventory qi) {
@@ -188,7 +188,7 @@ public final class HumanoidFabric implements ModInitializer {
         if (worldState == null || qi == null || qi.getEntriesCount() == 0) {
             return;
         }
-        worldState.enqueue(entity.getUuid(), entity, qi);
+        worldState.enqueue(entity.getUUID(), entity, qi);
     }
 
     static LivingEntity findEntity(UUID id) {
@@ -196,7 +196,7 @@ public final class HumanoidFabric implements ModInitializer {
         if (activeServer == null || id == null) {
             return null;
         }
-        for (var world : activeServer.getWorlds()) {
+        for (var world : activeServer.getAllLevels()) {
             Entity entity = world.getEntity(id);
             if (entity instanceof LivingEntity living && !living.isRemoved()) {
                 return living;
@@ -207,8 +207,8 @@ public final class HumanoidFabric implements ModInitializer {
 
     static boolean isClaimed(LivingEntity entity) {
         // 认领范围只由固定实体类型 ID 决定。
-        return HumanoidSpecies.fromEntityId(net.minecraft.registry.Registries.ENTITY_TYPE
-                .getId(entity.getType()).toString()).isPresent();
+        return HumanoidSpecies.fromEntityId(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                .getKey(entity.getType()).toString()).isPresent();
     }
 
     public static void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
@@ -240,7 +240,7 @@ public final class HumanoidFabric implements ModInitializer {
             QiInventory released = QiInventory.combine(List.of(settledLoss, body.releaseInventory()));
             enqueueRelease(entity, released);
         } catch (RuntimeException failure) {
-            LOGGER.error("类人实体移除释放失败 subject={}", entity.getUuidAsString(), failure);
+            LOGGER.error("类人实体移除释放失败 subject={}", entity.getStringUUID(), failure);
         }
     }
 
@@ -251,9 +251,9 @@ public final class HumanoidFabric implements ModInitializer {
             QiInventory settled = BodyProtobuf.fromInventory(body.settle(now()));
             return QiInventory.combine(List.of(empty, settled));
         } catch (HumanoidEnvironmentClient.Unavailable unavailable) {
-            LOGGER.debug("移除时无法结算类人实体时间 subject={}", entity.getUuidAsString());
+            LOGGER.debug("移除时无法结算类人实体时间 subject={}", entity.getStringUUID());
         } catch (RuntimeException failure) {
-            LOGGER.error("移除时结算类人实体时间失败 subject={}", entity.getUuidAsString(), failure);
+            LOGGER.error("移除时结算类人实体时间失败 subject={}", entity.getStringUUID(), failure);
         }
         return empty;
     }
@@ -273,38 +273,38 @@ public final class HumanoidFabric implements ModInitializer {
                 .orElse("meridian:none");
     }
 
-    private static void registerCommands(com.mojang.brigadier.CommandDispatcher<ServerCommandSource> dispatcher) {
+    private static void registerCommands(com.mojang.brigadier.CommandDispatcher<CommandSourceStack> dispatcher) {
         // 只有具备权限的调用方可以读取身体快照，可省略目标以检查执行实体。
-        var target = CommandManager.argument("target", EntityArgumentType.entity())
-                .executes(context -> inspect(context, EntityArgumentType.getEntity(context, "target")));
-        var inspect = CommandManager.literal("inspect")
-                .requires(source -> source.hasPermissionLevel(INSPECT_PERMISSION_LEVEL))
+        var target = Commands.argument("target", EntityArgument.entity())
+                .executes(context -> inspect(context, EntityArgument.getEntity(context, "target")));
+        var inspect = Commands.literal("inspect")
+                .requires(source -> source.hasPermission(INSPECT_PERMISSION_LEVEL))
                 .executes(context -> inspect(context, context.getSource().getEntity()))
                 .then(target);
-        var humanoid = CommandManager.literal("humanoid")
+        var humanoid = Commands.literal("humanoid")
                 .then(inspect)
                 .then(HumanoidSpawnCommands.command());
-        dispatcher.register(CommandManager.literal("meridian").then(humanoid));
+        dispatcher.register(Commands.literal("meridian").then(humanoid));
     }
 
-    private static int inspect(CommandContext<ServerCommandSource> context, Entity entity) {
+    private static int inspect(CommandContext<CommandSourceStack> context, Entity entity) {
         // 调试命令只读取已绑定状态，不触发身体创建。
-        ServerCommandSource source = context.getSource();
+        CommandSourceStack source = context.getSource();
         if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
-            source.sendError(Text.literal("目标不是类人实体"));
+            source.sendFailure(Component.literal("目标不是类人实体"));
             return 0;
         }
         HumanoidBodyState body;
         if (!(living instanceof HumanoidEntityAccess access) || (body = access.meridian$humanoidBody()) == null) {
-            source.sendError(Text.literal("目标尚未创建身体"));
+            source.sendFailure(Component.literal("目标尚未创建身体"));
             return 0;
         }
-        Text message = inspectMessage(body);
-        source.sendFeedback(() -> message, false /* broadcastToOps */);
+        Component message = inspectMessage(body);
+        source.sendSuccess(() -> message, false /* broadcastToOps */);
         return 1;
     }
 
-    private static Text inspectMessage(HumanoidBodyState body) {
+    private static Component inspectMessage(HumanoidBodyState body) {
         // 检查信息保留主属性和体积加权密度，库存读取只用于显示。
         var snapshot = body.snapshot();
         var meridianStates = snapshot.getMeridianStatesList();
@@ -324,7 +324,7 @@ public final class HumanoidFabric implements ModInitializer {
             averageDensity = amount / volume;
         }
         String source = body.regionSource();
-        return Text.literal("档位=" + snapshot.getRealm().name()
+        return Component.literal("档位=" + snapshot.getRealm().name()
                 + " 开拓列表=" + opened + " 主属性=" + mainAttribute(snapshot)
                 + " 密度=" + averageDensity + " 装填体积=" + volume
                 + " 区域=" + (source.isBlank() ? "无" : source));
@@ -356,6 +356,6 @@ public final class HumanoidFabric implements ModInitializer {
 
     static void report(Entity entity, RuntimeException failure) {
         // 单个实体的接线失败只记录并拒绝当前请求，保留原有身体状态。
-        LOGGER.error("类人实体身体宿主失败 subject={}", entity.getUuidAsString(), failure);
+        LOGGER.error("类人实体身体宿主失败 subject={}", entity.getStringUUID(), failure);
     }
 }

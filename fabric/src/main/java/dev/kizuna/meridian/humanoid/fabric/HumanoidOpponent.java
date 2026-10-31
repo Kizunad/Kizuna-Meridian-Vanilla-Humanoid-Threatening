@@ -2,10 +2,9 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.technique.server.TechniqueForecasts;
 import dev.kizuna.meridian.technique.server.TechniqueService;
-import net.minecraft.entity.LivingEntity;
-
 import java.util.Objects;
 import java.util.Optional;
+import net.minecraft.world.entity.LivingEntity;
 
 /** 本次决策的对手：实体与一次只读观察；没有功法宿主的对手观察为空。 */
 record HumanoidOpponent(LivingEntity entity, Optional<TechniqueService.Observation> observation) {

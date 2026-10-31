@@ -12,18 +12,17 @@ import dev.kizuna.meridian.technique.server.TechniqueErrors;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.vanilla.fabric.VanillaStrikeContext;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttributeModifier;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.util.math.Vec3d;
-
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.phys.Vec3;
 
 /** 一个已加载实体的效果回执与 PA 表现；身体状态始终归 Framework。 */
 final class HumanoidTechniqueEffects {
@@ -101,7 +100,7 @@ final class HumanoidTechniqueEffects {
         } else if (effect.hasImpulse()) {
             double speed = effect.getImpulse().getSpeed().getValue() / TICKS_PER_SECOND;
             TechniqueWorldImpulses.apply(entity, effect.getImpulse().getDirection(),
-                    direction(effect).multiply(speed));
+                    direction(effect).scale(speed));
         } else if (effect.hasPresentation()) {
             presentation.apply(entity, effect);
         } else {
@@ -111,7 +110,7 @@ final class HumanoidTechniqueEffects {
 
     private void movement(EffectIntent effect) {
         // 属性身份按施放区分，承接移除旧倍率不会删掉新式的限速。
-        var attribute = entity.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
+        var attribute = entity.getAttribute(Attributes.MOVEMENT_SPEED);
         if (attribute == null) {
             throw new TechniqueErrors.HostRejected(FailureCode.MODULE_UNAVAILABLE);
         }
@@ -119,9 +118,9 @@ final class HumanoidTechniqueEffects {
                 .getBytes(StandardCharsets.UTF_8));
         if (effect.getMovement().getAction() == MovementAction.LOCK) {
             if (attribute.getModifier(id) == null) {
-                attribute.addTemporaryModifier(new EntityAttributeModifier(id, "meridian_humanoid:technique",
+                attribute.addTransientModifier(new AttributeModifier(id, "meridian_humanoid:technique",
                         TechniqueMovement.multiplier(effect.getMovement()) - 1,
-                        EntityAttributeModifier.Operation.MULTIPLY_TOTAL));
+                        AttributeModifier.Operation.MULTIPLY_TOTAL));
             }
             castingIds.add(effect.getCastId());
         } else {
@@ -129,8 +128,8 @@ final class HumanoidTechniqueEffects {
             castingIds.remove(effect.getCastId());
             world.finish(effect.getCastId());
         }
-        if (entity instanceof MobEntity mob) {
-            mob.setAttacking(!castingIds.isEmpty());
+        if (entity instanceof Mob mob) {
+            mob.setAggressive(!castingIds.isEmpty());
         }
     }
 
@@ -139,40 +138,40 @@ final class HumanoidTechniqueEffects {
         return !castingIds.isEmpty();
     }
 
-    private Vec3d direction(EffectIntent effect) {
+    private Vec3 direction(EffectIntent effect) {
         // 输入是世界水平向量，目标冲量使用当前实体位置。
-        Vec3d forward = Vec3d.fromPolar(0, entity.getYaw());
+        Vec3 forward = Vec3.directionFromRotation(0, entity.getYRot());
         return switch (effect.getImpulse().getDirection()) {
-            case UP -> new Vec3d(0, 1, 0);
+            case UP -> new Vec3(0, 1, 0);
             case FORWARD -> forward;
-            case BACKWARD -> forward.negate();
+            case BACKWARD -> forward.reverse();
             case INPUT -> inputDirection(effect, forward);
             case TOWARD_TARGET -> towardTarget(effect.getTargetId());
             default -> throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
         };
     }
 
-    private Vec3d inputDirection(EffectIntent effect, Vec3d forward) {
+    private Vec3 inputDirection(EffectIntent effect, Vec3 forward) {
         // 无移动输入按算子声明退后或前进。
         var input = effect.getDirection();
         double scale = Math.max(Math.abs(input.getX()), Math.abs(input.getZ()));
         if (scale == 0) {
             if (effect.getImpulse().getInputDefaultDirection() == ImpulseDirection.BACKWARD) {
-                return forward.negate();
+                return forward.reverse();
             }
             return forward;
         }
-        return new Vec3d(input.getX() / scale, 0, input.getZ() / scale).normalize();
+        return new Vec3(input.getX() / scale, 0, input.getZ() / scale).normalize();
     }
 
-    private Vec3d towardTarget(String targetId) {
+    private Vec3 towardTarget(String targetId) {
         // 目标必须仍在同世界，失效时保留原效果供服务重试或取消。
         LivingEntity target = HumanoidFabric.findEntity(UUID.fromString(targetId));
-        if (target == null || target.getWorld() != entity.getWorld()) {
+        if (target == null || target.level() != entity.level()) {
             throw new TechniqueErrors.HostRejected(FailureCode.MODULE_UNAVAILABLE);
         }
-        Vec3d direction = target.getPos().subtract(entity.getPos()).multiply(1, 0, 1);
-        if (direction.lengthSquared() == 0) {
+        Vec3 direction = target.position().subtract(entity.position()).multiply(1, 0, 1);
+        if (direction.lengthSqr() == 0) {
             throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
         }
         return direction.normalize();

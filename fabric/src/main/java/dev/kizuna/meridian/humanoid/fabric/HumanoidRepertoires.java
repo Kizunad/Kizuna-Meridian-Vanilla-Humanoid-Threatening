@@ -26,10 +26,6 @@ import dev.kizuna.meridian.technique.server.TechniqueHeldItems;
 import dev.kizuna.meridian.technique.server.TechniqueRegistry;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import dev.kizuna.meridian.technique.server.TechniqueState;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.mob.MobEntity;
-
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -39,6 +35,9 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 
 /** 本次决策的候选式与时机：绑定、费用、冷却与持物都通过的打击式和辅助式，以及轻身、下一击与走出范围的毫秒。 */
 final class HumanoidRepertoires {
@@ -50,7 +49,7 @@ final class HumanoidRepertoires {
                    List<KnownTechnique> strikes, List<KnownTechnique> known) { }
 
     /** 一次决策读的实体、身体、目录与功法进度。 */
-    private record Source(MobEntity mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress) { }
+    private record Source(Mob mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress) { }
 
     /** 绑定、费用与持物都通过的一式；书没有持物规则时选定手为空。 */
     private record Ready(KnownTechnique known, TechniqueDefinition definition, BindingOutcome binding,
@@ -65,7 +64,7 @@ final class HumanoidRepertoires {
         // 每次决策重新读身体，不缓存绑定。
     }
 
-    static Readout read(MobEntity mob, BodySnapshot body, Optional<HumanoidOpponent> opponent,
+    static Readout read(Mob mob, BodySnapshot body, Optional<HumanoidOpponent> opponent,
                         Predicate<String> blocked) {
         // 被失败屏蔽的式不参与；冷却未过的打击式仍算「会打」，只是本次不进候选。
         var source = new Source(mob, body, TechniqueFabric.service().registry(), TechniqueState.read(body));
@@ -101,7 +100,7 @@ final class HumanoidRepertoires {
                                                      List<Ready> ready) {
         // 情境、可用性与战斗事实；打击式抽样与辅助式筛选共用同一份。
         BodySnapshot body = source.body();
-        MobEntity mob = source.mob();
+        Mob mob = source.mob();
         double distance = opponent.map(target -> HumanoidMotion.distance(mob, target.entity())).orElse(0.0);
         var situation = new TechniqueSelector.Situation(body.settledAt().elapsedMillis(),
                 Math.min(1, body.partHpRatio()), HumanoidFighters.qiRatio(body), distance,
@@ -116,7 +115,7 @@ final class HumanoidRepertoires {
         return new TechniqueSelector.Context(source.registry(), situation, availability, combat);
     }
 
-    private static Set<TechniqueSelector.CombatFact> facts(MobEntity mob, LivingEntity target) {
+    private static Set<TechniqueSelector.CombatFact> facts(Mob mob, LivingEntity target) {
         // 举盾、被围、受击与被追直接读当前世界事实。
         var facts = EnumSet.noneOf(TechniqueSelector.CombatFact.class);
         if (target.isBlocking()) {
@@ -128,8 +127,8 @@ final class HumanoidRepertoires {
         if (mob.hurtTime > 0) {
             facts.add(TechniqueSelector.CombatFact.UNDER_ATTACK);
         }
-        var towardMob = mob.getPos().subtract(target.getPos());
-        if (target.getVelocity().dotProduct(towardMob) > 0 && mob.getVelocity().dotProduct(towardMob) > 0) {
+        var towardMob = mob.position().subtract(target.position());
+        if (target.getDeltaMovement().dot(towardMob) > 0 && mob.getDeltaMovement().dot(towardMob) > 0) {
             facts.add(TechniqueSelector.CombatFact.PURSUED);
         }
         return facts;
@@ -236,10 +235,10 @@ final class HumanoidRepertoires {
 
     private static Repertoire.Timing timing(Source source, Optional<HumanoidOpponent> opponent) {
         // 轻身剩余读状态效果；下一击读自己的施放预报；走出范围按走路与跃步取快者。
-        MobEntity mob = source.mob();
+        Mob mob = source.mob();
         long now = source.body().settledAt().elapsedMillis();
         var benefit = TechniqueStatusBenefits.active(mob);
-        long lightBody = benefit.map(registered -> mob.getStatusEffect(registered.effect()))
+        long lightBody = benefit.map(registered -> mob.getEffect(registered.effect()))
                 .map(effect -> effect.getDuration() * MILLIS_PER_TICK)
                 .orElse(0L);
         double leapMinimum = benefit.map(registered -> registered.benefit().getLeap().getAiMinimumDistance())
@@ -255,9 +254,9 @@ final class HumanoidRepertoires {
         return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum);
     }
 
-    private static long exitMillis(MobEntity mob, HumanoidStrikeEstimates.Exit exit) {
+    private static long exitMillis(Mob mob, HumanoidStrikeEstimates.Exit exit) {
         // 走路速度按移动属性换算；能起跳时比较跃步飞行时间。
-        double walk = mob.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED) * WALK_BLOCKS_PER_SECOND_PER_SPEED;
+        double walk = mob.getAttributeValue(Attributes.MOVEMENT_SPEED) * WALK_BLOCKS_PER_SECOND_PER_SPEED;
         OptionalLong leap = TechniqueLeaps.preview(mob, exit.point())
                 .map(preview -> OptionalLong.of(preview.flightMillis()))
                 .orElse(OptionalLong.empty());

@@ -10,14 +10,6 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.server.TechniqueRegistry;
 import dev.kizuna.meridian.technique.server.TechniqueService;
 import dev.kizuna.meridian.technique.server.TechniqueState;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.RangedAttackMob;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.mob.SpellcastingIllagerEntity;
-import net.minecraft.item.RangedWeaponItem;
-import net.minecraft.item.ShieldItem;
-
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +17,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.entity.monster.SpellcasterIllager;
+import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.ShieldItem;
 
 /** 战力事实：从身体快照与持物读出境界档、身体状况和手段；没有经脉身体的一方按凡人档计。 */
 final class HumanoidFighters {
@@ -74,18 +73,18 @@ final class HumanoidFighters {
     static EnumSet<Means> vanillaMeans(LivingEntity entity) {
         // 原版攻击属性、远程或施法能力算进攻手段；主手攻击加成算近战武器。
         var means = EnumSet.noneOf(Means.class);
-        if (entity.getAttributes().hasAttribute(EntityAttributes.GENERIC_ATTACK_DAMAGE)
-                || entity instanceof RangedAttackMob || entity instanceof SpellcastingIllagerEntity) {
+        if (entity.getAttributes().hasAttribute(Attributes.ATTACK_DAMAGE)
+                || entity instanceof RangedAttackMob || entity instanceof SpellcasterIllager) {
             means.add(Means.VANILLA_OFFENSE);
         }
-        var main = entity.getMainHandStack();
-        if (main.getAttributeModifiers(EquipmentSlot.MAINHAND).containsKey(EntityAttributes.GENERIC_ATTACK_DAMAGE)) {
+        var main = entity.getMainHandItem();
+        if (main.getAttributeModifiers(EquipmentSlot.MAINHAND).containsKey(Attributes.ATTACK_DAMAGE)) {
             means.add(Means.MELEE_WEAPON);
         }
-        if (main.getItem() instanceof RangedWeaponItem) {
+        if (main.getItem() instanceof ProjectileWeaponItem) {
             means.add(Means.RANGED_WEAPON);
         }
-        if (entity.getOffHandStack().getItem() instanceof ShieldItem) {
+        if (entity.getOffhandItem().getItem() instanceof ShieldItem) {
             means.add(Means.SHIELD);
         }
         return means;

@@ -1,8 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import net.minecraft.nbt.NbtCompound;
-
 import java.util.UUID;
+import net.minecraft.nbt.CompoundTag;
 
 /** LivingEntity mixin 暴露的类人实体身体存档边界；不把 Minecraft 类型带入 server 纯 Java 层。 */
 public interface HumanoidEntityAccess {
@@ -30,5 +29,5 @@ public interface HumanoidEntityAccess {
 
     void meridian$markHumanoidReleaseQueued();
 
-    void meridian$writeHumanoidNbt(NbtCompound nbt);
+    void meridian$writeHumanoidNbt(CompoundTag nbt);
 }

@@ -23,13 +23,12 @@ import dev.kizuna.meridian.technique.server.TechniqueHostEntrypoint;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueRecoveryHost;
 import dev.kizuna.meridian.technique.server.TechniqueState;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.registry.Registries;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.LivingEntity;
 
 /** 类人生物的可信功法入口，活动、知识和冷却均随原身体保存。 */
 public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
@@ -44,7 +43,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         if (server == null) {
             return encode(response.setUnbound(true /* unbound */));
         }
-        if (!server.isOnThread()) {
+        if (!server.isSameThread()) {
             return failure(response, FailureCode.ACCESS_DENIED);
         }
         LivingEntity entity = HumanoidFabric.findEntity(UUID.fromString(request.getEntityUuid()));
@@ -104,18 +103,18 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     static Session prepare(LivingEntity entity) {
         // 首次绑定先恢复再发布会话，学卷递归查询只读取已发布的同一会话。
         var now = HumanoidFabric.now();
-        HumanoidSpecies species = HumanoidSpecies.fromEntityId(Registries.ENTITY_TYPE
-                .getId(entity.getType()).toString()).orElseThrow();
+        HumanoidSpecies species = HumanoidSpecies.fromEntityId(BuiltInRegistries.ENTITY_TYPE
+                .getKey(entity.getType()).toString()).orElseThrow();
         HumanoidBodyState body = HumanoidHealthHost.bodyState(entity, species, now);
         HumanoidFabric.enqueueRelease(entity, body.settle(now));
-        Session existing = sessions.get(entity.getUuid());
+        Session existing = sessions.get(entity.getUUID());
         if (existing != null && existing.body() == body) {
             assignVolumes(entity, existing);
             return existing;
         }
         var created = new Session(body, new HumanoidTechniqueEffects(entity));
         recover(entity, created);
-        sessions.put(entity.getUuid(), created);
+        sessions.put(entity.getUUID(), created);
         assignVolumes(entity, created);
         return created;
     }
@@ -138,10 +137,10 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     private static void learnVolumes(LivingEntity entity, HumanoidBodyState body) {
         // 按大脑配置的学卷表分配，概率按 UUID 分桶，不改变身体生成器原有随机调用序列；已学的卷再学不变。
         var service = TechniqueFabric.service();
-        String entityId = Registries.ENTITY_TYPE.getId(entity.getType()).toString();
+        String entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
         Realm realm = Realm.valueOf(body.snapshot().getRealm().name());
-        for (String volume : HumanoidBrain.config().volumes().volumes(entityId, realm, entity.getUuid())) {
-            service.learn(entity.getUuid(), volume);
+        for (String volume : HumanoidBrain.config().volumes().volumes(entityId, realm, entity.getUUID())) {
+            service.learn(entity.getUUID(), volume);
         }
     }
 
@@ -161,7 +160,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static Optional<TechniqueProgress> publishedProgress(LivingEntity entity) {
         // 已发布会话快照里的功法进度；没有会话或没有进度时为空。
-        Session session = sessions.get(entity.getUuid());
+        Session session = sessions.get(entity.getUUID());
         if (session == null) {
             return Optional.empty();
         }
@@ -174,18 +173,18 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     static boolean hasSession(LivingEntity entity) {
         // 是否已为该实体准备过身体会话，GameTest 与排查用。
-        return sessions.containsKey(entity.getUuid());
+        return sessions.containsKey(entity.getUUID());
     }
 
     static boolean isCasting(LivingEntity entity) {
         // 限速施放（有移动倍率的式从起手到收势）：原版近战互斥与举武器姿态用，不触发身体生成。
-        Session session = sessions.get(entity.getUuid());
+        Session session = sessions.get(entity.getUUID());
         return session != null && session.effects().isCasting();
     }
 
     static void damaged(LivingEntity entity) {
         // 健康结算后只处理死亡，用可信恢复入口结束残留活动；受击打断由伤害附属按僵直统一判定。
-        Session session = sessions.get(entity.getUuid());
+        Session session = sessions.get(entity.getUUID());
         if (session != null && session.body().snapshot().getVitality().getDead()) {
             recover(entity, session);
         }
@@ -193,15 +192,15 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     static void removed(LivingEntity entity) {
         // 卸载前清理当前对象；已写出的旧 NBT 也会在下次绑定时恢复清理。
-        Session session = sessions.get(entity.getUuid());
-        HumanoidBrain.forget(entity.getUuid());
+        Session session = sessions.get(entity.getUUID());
+        HumanoidBrain.forget(entity.getUUID());
         if (session != null) {
             try {
                 if (HumanoidFabric.isReady()) {
                     recover(entity, session);
                 }
             } finally {
-                sessions.remove(entity.getUuid());
+                sessions.remove(entity.getUUID());
             }
         }
     }
@@ -214,7 +213,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static void recover(LivingEntity entity, Session session) {
         // 恢复直连原身体，避免通过 inspect 重入同一恢复流程。
-        TechniqueFabric.service().recoverOnLoad(entity.getUuid(), new TechniqueRecoveryHost() {
+        TechniqueFabric.service().recoverOnLoad(entity.getUUID(), new TechniqueRecoveryHost() {
             @Override
             public BodySnapshot snapshot() {
                 // 转换当前权威快照，不建立平行状态。

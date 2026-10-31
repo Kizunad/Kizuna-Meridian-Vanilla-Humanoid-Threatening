@@ -5,8 +5,8 @@ import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry;
-import net.minecraft.entity.EntityType;
-import net.minecraft.item.SpawnEggItem;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.SpawnEggItem;
 
 /** 沿用原版蛋的双色遮罩，真炁档混入白色以便创造栏辨识。 */
 public final class HumanoidSpawnEggClient implements ClientModInitializer {
@@ -22,7 +22,7 @@ public final class HumanoidSpawnEggClient implements ClientModInitializer {
             if (selection.species() == HumanoidSpecies.ILLUSIONER) {
                 paletteType = EntityType.EVOKER;
             }
-            SpawnEggItem palette = SpawnEggItem.forEntity(paletteType);
+            SpawnEggItem palette = SpawnEggItem.byId(paletteType);
             ColorProviderRegistry.ITEM.register((stack, tint) -> {
                 // 两层都使用相同明度规则，保持原版底色与斑点关系。
                 int base = palette.getColor(tint);

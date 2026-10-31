@@ -2,12 +2,11 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtList;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.WorldSavePath;
-
+import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -28,16 +27,16 @@ public final class AuditReproBootstrap implements ModInitializer {
     private static void writeCorruptLedger(MinecraftServer server) {
         // 在 SERVER_STARTED 加载账本前准备损坏数据，只作用于专用坏档测试世界。
         try {
-            var data = server.getSavePath(WorldSavePath.ROOT).resolve("data");
+            var data = server.getWorldPath(LevelResource.ROOT).resolve("data");
             Files.createDirectories(data);
             var fixture = AuditReproSupport.evidence(AuditReproSupport.FIXTURE_HUMAN_FILE);
             Files.copy(fixture, data.resolve(AuditReproSupport.HUMAN_FILE), StandardCopyOption.REPLACE_EXISTING);
-            NbtCompound human = NbtIo.readCompressed(fixture.toFile());
-            NbtCompound corrupt = new NbtCompound();
+            CompoundTag human = NbtIo.readCompressed(fixture.toFile());
+            CompoundTag corrupt = new CompoundTag();
             corrupt.putLong("next_sequence", INVALID_SEQUENCE);
-            corrupt.put("pending", new NbtList());
-            corrupt.put("pending_forget", new NbtList());
-            NbtCompound root = new NbtCompound();
+            corrupt.put("pending", new ListTag());
+            corrupt.put("pending_forget", new ListTag());
+            CompoundTag root = new CompoundTag();
             root.putInt("DataVersion", human.getInt("DataVersion"));
             root.put("data", corrupt);
             AuditReproSupport.write(root, data.resolve(AuditReproSupport.SENDER_FILE));

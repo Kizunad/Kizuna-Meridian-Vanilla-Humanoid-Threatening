@@ -3,15 +3,14 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtByteArray;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.nbt.NbtString;
-import net.minecraft.nbt.NbtHelper;
+import net.minecraft.nbt.ByteArrayTag;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.world.PersistentState;
-
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.world.level.saveddata.SavedData;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,7 +21,7 @@ import java.util.List;
 import java.util.Set;
 
 /** 类人实体释放账本；持久交接后只保留待遗忘 ID，直到 Human 持久回收去重项。 */
-final class HumanoidWorldState extends PersistentState {
+final class HumanoidWorldState extends SavedData {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(HumanoidWorldState.class);
     private final List<EnvironmentHostMessages.RegionRelease> pending = new ArrayList<>();
     private final Set<String> pendingForget = new LinkedHashSet<>();
@@ -42,12 +41,12 @@ final class HumanoidWorldState extends PersistentState {
         this.directorySync = directorySync;
     }
 
-    static HumanoidWorldState read(NbtCompound nbt) {
+    static HumanoidWorldState read(CompoundTag nbt) {
         // 世界文件只保存完整 RegionRelease 字节，加载时重新验证协议和库存明细。
-        NbtCompound migrated = migrateLegacy(nbt);
-        if (!migrated.contains("next_sequence", NbtElement.LONG_TYPE)
-                || !migrated.contains("pending", NbtElement.LIST_TYPE)
-                || !migrated.contains("pending_forget", NbtElement.LIST_TYPE)) {
+        CompoundTag migrated = migrateLegacy(nbt);
+        if (!migrated.contains("next_sequence", Tag.TAG_LONG)
+                || !migrated.contains("pending", Tag.TAG_LIST)
+                || !migrated.contains("pending_forget", Tag.TAG_LIST)) {
             throw new IllegalArgumentException("类人实体释放账本字段缺失");
         }
         HumanoidWorldState state = new HumanoidWorldState();
@@ -56,9 +55,9 @@ final class HumanoidWorldState extends PersistentState {
             throw new IllegalArgumentException("类人实体释放序号无效");
         }
         // getList 会把错误元素类型替换成空列表，必须检查原始标签才能拒绝损坏存档。
-        NbtList entries = (NbtList) migrated.get("pending");
-        byte entryType = entries.getHeldType();
-        if (entryType != NbtElement.END_TYPE && entryType != NbtElement.BYTE_ARRAY_TYPE) {
+        ListTag entries = (ListTag) migrated.get("pending");
+        byte entryType = entries.getElementType();
+        if (entryType != Tag.TAG_END && entryType != Tag.TAG_BYTE_ARRAY) {
             throw new IllegalArgumentException("类人实体释放账本列表类型无效");
         }
         int entryCount = entries.size();
@@ -67,26 +66,26 @@ final class HumanoidWorldState extends PersistentState {
         }
         state.readForget(migrated);
         if (migrated != nbt) {
-            state.markDirty();
+            state.setDirty();
         }
         return state;
     }
 
-    private static NbtCompound migrateLegacy(NbtCompound nbt) {
+    private static CompoundTag migrateLegacy(CompoundTag nbt) {
         // 旧账本没有待遗忘字段；仅补缺失字段，已有的错误类型仍交给完整校验拒绝。
         if (nbt.contains("pending_forget")) {
             return nbt;
         }
-        NbtCompound migrated = nbt.copy();
-        migrated.put("pending_forget", new NbtList());
+        CompoundTag migrated = nbt.copy();
+        migrated.put("pending_forget", new ListTag());
         return migrated;
     }
 
-    private void readForget(NbtCompound nbt) {
+    private void readForget(CompoundTag nbt) {
         // 遗忘列表属于已持久删除的证明，损坏或与待释放交叠时必须拒绝整份文件。
-        NbtList entries = (NbtList) nbt.get("pending_forget");
-        int type = entries.getHeldType();
-        if (type != NbtElement.END_TYPE && type != NbtElement.STRING_TYPE) {
+        ListTag entries = (ListTag) nbt.get("pending_forget");
+        int type = entries.getElementType();
+        if (type != Tag.TAG_END && type != Tag.TAG_STRING) {
             throw new IllegalArgumentException("类人实体待遗忘列表类型无效");
         }
         for (int index = 0; index < entries.size(); index++) {
@@ -105,10 +104,10 @@ final class HumanoidWorldState extends PersistentState {
     }
 
     private static EnvironmentHostMessages.RegionRelease readRelease(
-            NbtElement entry, List<EnvironmentHostMessages.RegionRelease> pending) {
+            Tag entry, List<EnvironmentHostMessages.RegionRelease> pending) {
         // 每条请求先校验库存和身份，再检查序列内是否重复，损坏记录使整份存档加载失败。
         try {
-            var release = EnvironmentHostMessages.RegionRelease.parseFrom(((NbtByteArray) entry).getByteArray());
+            var release = EnvironmentHostMessages.RegionRelease.parseFrom(((ByteArrayTag) entry).getAsByteArray());
             var releasedQi = release.getReleasedQi();
             // 这里只校验库存，非法属性、密度或元数会抛出协议校验异常。
             BodyProtobuf.fromInventory(releasedQi);
@@ -126,7 +125,7 @@ final class HumanoidWorldState extends PersistentState {
         }
     }
 
-    void enqueue(java.util.UUID entityId, net.minecraft.entity.Entity entity, dev.kizuna.meridian.core.QiInventory qi) {
+    void enqueue(java.util.UUID entityId, net.minecraft.world.entity.Entity entity, dev.kizuna.meridian.core.QiInventory qi) {
         // 释放 ID 在世界账本内递增；完整请求相同则只保留一条，重启后仍可安全重试。
         if (qi.entries().isEmpty()) {
             return;
@@ -136,7 +135,7 @@ final class HumanoidWorldState extends PersistentState {
         }
         String releaseId = "meridian_humanoid:" + entityId + ":" + nextSequence++;
         var position = EnvironmentHostMessages.RegionQuery.newBuilder()
-                .setDimensionId(entity.getWorld().getRegistryKey().getValue().toString())
+                .setDimensionId(entity.level().dimension().location().toString())
                 .setBlockX(entity.getBlockX())
                 .setBlockZ(entity.getBlockZ())
                 .build();
@@ -146,10 +145,10 @@ final class HumanoidWorldState extends PersistentState {
                 .setReleasedQi(BodyProtobuf.toInventory(qi))
                 .build();
         pending.add(release);
-        markDirty();
+        setDirty();
     }
 
-    void enqueue(java.util.UUID entityId, net.minecraft.entity.Entity entity, BodyMessages.QiInventory qi) {
+    void enqueue(java.util.UUID entityId, net.minecraft.world.entity.Entity entity, BodyMessages.QiInventory qi) {
         // 健康死亡回执已经是协议库存，先解码后复用同一个 ID 和入账路径。
         enqueue(entityId, entity, BodyProtobuf.fromInventory(qi));
     }
@@ -163,7 +162,7 @@ final class HumanoidWorldState extends PersistentState {
                 iterator.remove();
                 pendingForget.add(release.getReleaseId());
                 handoffDirty = true;
-                markDirty();
+                setDirty();
             }
         }
         retryForget();
@@ -181,7 +180,7 @@ final class HumanoidWorldState extends PersistentState {
                 iterator.remove();
                 durableForget.remove(releaseId);
                 handoffDirty = true;
-                markDirty();
+                setDirty();
             }
         }
     }
@@ -193,9 +192,9 @@ final class HumanoidWorldState extends PersistentState {
             return;
         }
         try {
-            var root = new NbtCompound();
-            root.put("data", writeNbt(new NbtCompound()));
-            NbtHelper.putDataVersion(root);
+            var root = new CompoundTag();
+            root.put("data", save(new CompoundTag()));
+            NbtUtils.addCurrentDataVersion(root);
             DurableStateFile.write(file.toPath(), temporary -> NbtIo.writeCompressed(root, temporary.toFile()),
                     directorySync);
             durableForget.clear();
@@ -208,17 +207,17 @@ final class HumanoidWorldState extends PersistentState {
     }
 
     @Override
-    public NbtCompound writeNbt(NbtCompound nbt) {
+    public CompoundTag save(CompoundTag nbt) {
         // 实体移除与服务器停止都保存同一批完整请求，避免释放成功前丢失账。
         nbt.putLong("next_sequence", nextSequence);
-        NbtList entries = new NbtList();
+        ListTag entries = new ListTag();
         for (var release : pending) {
-            entries.add(new net.minecraft.nbt.NbtByteArray(release.toByteArray()));
+            entries.add(new net.minecraft.nbt.ByteArrayTag(release.toByteArray()));
         }
         nbt.put("pending", entries);
-        NbtList forgetIds = new NbtList();
+        ListTag forgetIds = new ListTag();
         for (String releaseId : pendingForget) {
-            forgetIds.add(NbtString.of(releaseId));
+            forgetIds.add(StringTag.valueOf(releaseId));
         }
         nbt.put("pending_forget", forgetIds);
         return nbt;

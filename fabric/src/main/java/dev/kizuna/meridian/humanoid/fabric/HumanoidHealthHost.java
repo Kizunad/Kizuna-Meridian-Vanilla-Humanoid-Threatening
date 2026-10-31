@@ -7,10 +7,9 @@ import dev.kizuna.meridian.protocol.pb.HealthHostMessages.HealthHostResponse;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.server.BodyHealthHost;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -22,7 +21,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         Objects.requireNonNull(entity);
         Objects.requireNonNull(request);
         MinecraftServer server = HumanoidFabric.server();
-        if (server == null || !server.isOnThread()) {
+        if (server == null || !server.isSameThread()) {
             return MeridianMessages.FailureCode.ACCESS_DENIED;
         }
         HumanoidSpeciesBinding binding = HumanoidSpeciesBinding.resolve(entity);
@@ -57,7 +56,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         if (server == null) {
             return unbound(response);
         }
-        if (!server.isOnThread()) {
+        if (!server.isSameThread()) {
             return failure(response, MeridianMessages.FailureCode.ACCESS_DENIED);
         }
         LivingEntity entity = findSubject(request.getSubjectId());
@@ -144,7 +143,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             return existing;
         }
         byte[] saved = access.meridian$humanoidSavedBody();
-        UUID entityId = entity.getUuid();
+        UUID entityId = entity.getUUID();
         HumanoidBodyState created;
         if (saved != null && saved.length > 0) {
             var savedBody = new HumanoidBodyState.SavedBody(access.meridian$humanoidSavedOwner(), saved,
@@ -152,7 +151,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             created = HumanoidBodyState.restore(entityId, savedBody, now, species);
         } else {
             var region = HumanoidFabric.region(entity);
-            long worldSeed = ((ServerWorld) entity.getWorld()).getSeed();
+            long worldSeed = ((ServerLevel) entity.level()).getSeed();
             var subject = new HumanoidBodyState.BirthSubject(species, entityId, null);
             created = HumanoidBodyState.born(subject, worldSeed, region, now);
         }
@@ -174,9 +173,9 @@ public final class HumanoidHealthHost implements BodyHealthHost {
     }
 
     private record HumanoidSpeciesBinding(dev.kizuna.meridian.humanoid.server.HumanoidSpecies species) {
-        static HumanoidSpeciesBinding resolve(net.minecraft.entity.LivingEntity entity) {
+        static HumanoidSpeciesBinding resolve(net.minecraft.world.entity.LivingEntity entity) {
             // 实体类型 ID 是唯一认领条件，未知来源的同类实体仍按类型进入同一规则。
-            String id = net.minecraft.registry.Registries.ENTITY_TYPE.getId(entity.getType()).toString();
+            String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
             return dev.kizuna.meridian.humanoid.server.HumanoidSpecies.fromEntityId(id)
                     .map(HumanoidSpeciesBinding::new).orElse(null);
         }

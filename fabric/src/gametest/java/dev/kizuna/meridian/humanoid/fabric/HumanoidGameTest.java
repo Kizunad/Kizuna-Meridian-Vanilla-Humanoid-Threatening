@@ -12,21 +12,20 @@ import dev.kizuna.meridian.protocol.pb.HealthMessages;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LightningEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.mob.WitchEntity;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.test.GameTest;
-import net.minecraft.test.TestContext;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Difficulty;
-
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.npc.Villager;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -70,10 +69,10 @@ public final class HumanoidGameTest implements FabricGameTest {
             EntityType.WITCH,
             EntityType.ILLUSIONER);
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void exertionChargesOnceRejectsCapacityAndChecksBoundIdentity(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void exertionChargesOnceRejectsCapacityAndChecksBoundIdentity(GameTestHelper context) {
         // 生物做功走普通命令，成功重试不重复消耗，业务拒绝也不留下部分疲劳。
-        var entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        var entity = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(entity);
         var initial = inspect(entity).getBody();
         var request = exertion(entity, initial, 1);
@@ -93,7 +92,7 @@ public final class HumanoidGameTest implements FabricGameTest {
         var denied = exchange(exertion(entity, other, 1));
         context.assertTrue(denied.getFailure().getCode() == MeridianMessages.FailureCode.ACCESS_DENIED,
                 "生物宿主没有检查绑定身体身份");
-        context.complete();
+        context.succeed();
     }
 
     private static HealthHostMessages.HealthHostRequest exertion(LivingEntity entity,
@@ -123,19 +122,19 @@ public final class HumanoidGameTest implements FabricGameTest {
         return HealthHostMessages.HealthHostRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(requestId)
-                .setSubjectId(entity.getUuidAsString())
+                .setSubjectId(entity.getStringUUID())
                 .setExertion(envelope)
                 .build();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void claimsSevenHumanoidSpeciesAndLeavesOthersUnbound(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void claimsSevenHumanoidSpeciesAndLeavesOthersUnbound(GameTestHelper context) {
         // 每种生人创建独立身体，其他实体保持 unbound。
         Set<String> bodyIds = new HashSet<>();
         int speciesCount = CLAIMED_TYPES.size();
         for (int index = 0; index < speciesCount; index++) {
             EntityType<? extends LivingEntity> type = CLAIMED_TYPES.get(index);
-            LivingEntity entity = context.spawnEntity(type, SPAWN_X + index, SPAWN_Y, SPAWN_Z);
+            LivingEntity entity = context.spawn(type, SPAWN_X + index, SPAWN_Y, SPAWN_Z);
             disableAi(entity);
             HealthHostMessages.HealthHostResponse response = inspect(entity);
             context.assertTrue(response.hasBody(), "生人类型未认领：" + type
@@ -145,18 +144,18 @@ public final class HumanoidGameTest implements FabricGameTest {
                     "首次查询后未绑定实体身体");
         }
 
-        LivingEntity cow = context.spawnEntity(EntityType.COW, SPAWN_X, SPAWN_Y, UNCLAIMED_SPAWN_Z);
+        LivingEntity cow = context.spawn(EntityType.COW, SPAWN_X, SPAWN_Y, UNCLAIMED_SPAWN_Z);
         HealthHostMessages.HealthHostResponse unbound = inspect(cow);
         context.assertTrue(unbound.getUnbound(), "非生人实体不应被类人宿主认领");
         context.assertTrue(((HumanoidEntityAccess) cow).meridian$humanoidBody() == null,
                 "非生人实体被创建了身体");
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void firstQueryCreatesBodyAndHumanUnboundDoesNotCreateOne(TestContext context) throws Exception {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void firstQueryCreatesBodyAndHumanUnboundDoesNotCreateOne(GameTestHelper context) throws Exception {
         // 首次查询负责创建，缺少区域服务时不能留下半创建状态。
-        LivingEntity fresh = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity fresh = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(fresh);
         context.assertTrue(((HumanoidEntityAccess) fresh).meridian$humanoidBody() == null,
                 "健康查询前不应预先创建身体");
@@ -164,7 +163,7 @@ public final class HumanoidGameTest implements FabricGameTest {
         context.assertTrue(created.hasBody(), "首次健康查询未创建身体 response=" + created
                 + " ready=" + HumanoidFabric.isReady());
 
-        LivingEntity blocked = context.spawnEntity(EntityType.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity blocked = context.spawn(EntityType.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(blocked);
         Object delegate = setHumanDelegate(null);
         try {
@@ -177,13 +176,13 @@ public final class HumanoidGameTest implements FabricGameTest {
         } finally {
             restoreHumanDelegate(delegate);
         }
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void healthHostRejectsOffThreadAccess(TestContext context) throws Exception {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void healthHostRejectsOffThreadAccess(GameTestHelper context) throws Exception {
         // 先在主线程创建，再从线程池查询同一个实体。
-        LivingEntity entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity entity = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(entity);
         inspect(entity);
         HealthHostMessages.HealthHostResponse response = CompletableFuture
@@ -192,24 +191,24 @@ public final class HumanoidGameTest implements FabricGameTest {
         context.assertTrue(response.hasFailure()
                         && response.getFailure().getCode() == MeridianMessages.FailureCode.ACCESS_DENIED,
                 "非主线程健康查询未返回 ACCESS_DENIED");
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void nbtRoundTripPreservesSnapshotAndThirtyTwoReceipts(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void nbtRoundTripPreservesSnapshotAndThirtyTwoReceipts(GameTestHelper context) {
         // 保存完整回执窗口，清空实体缓存后验证快照和最后一条请求的幂等重放。
-        LivingEntity entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity entity = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(entity);
         ReceiptBatch batch = commitReceipts(context, entity);
 
-        NbtCompound saved = entity.writeNbt(new NbtCompound());
-        NbtCompound stored = saved.getCompound("meridian_humanoid");
-        context.assertTrue(stored.getList("receipts", NbtElement.BYTE_ARRAY_TYPE).size() == RECEIPT_COUNT,
+        CompoundTag saved = entity.saveWithoutId(new CompoundTag());
+        CompoundTag stored = saved.getCompound("meridian_humanoid");
+        context.assertTrue(stored.getList("receipts", Tag.TAG_BYTE_ARRAY).size() == RECEIPT_COUNT,
                 "实体 NBT 未保存完整 32 条回执");
         BodyMessages.BodySnapshot beforeRoundTrip = batch.body();
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
         access.meridian$humanoidBody(null);
-        entity.readNbt(saved);
+        entity.load(saved);
 
         HealthHostMessages.HealthHostResponse restored = inspect(entity);
         context.assertTrue(restored.hasBody() && restored.getBody().equals(beforeRoundTrip),
@@ -218,10 +217,10 @@ public final class HumanoidGameTest implements FabricGameTest {
         context.assertTrue(replay.hasBody() && replay.hasHealth()
                         && replay.getBody().equals(beforeRoundTrip),
                 "恢复后的 32 条回执不能按原 request_id 幂等重放");
-        context.complete();
+        context.succeed();
     }
 
-    private static ReceiptBatch commitReceipts(TestContext context, LivingEntity entity) {
+    private static ReceiptBatch commitReceipts(GameTestHelper context, LivingEntity entity) {
         // 每次命令使用上次提交返回的修订号，填满实体的回执窗口。
         BodyMessages.BodySnapshot currentBody = inspect(entity).getBody();
         String partId = currentBody.getPartStates(0).getId();
@@ -237,102 +236,102 @@ public final class HumanoidGameTest implements FabricGameTest {
         return new ReceiptBatch(currentBody, requests);
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void damageAndDeathUseTheSameBodyChain(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void damageAndDeathUseTheSameBodyChain(GameTestHelper context) {
         // 受伤和死亡都应更新首次查询创建的权威身体。
-        LivingEntity entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity entity = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(entity);
         BodyMessages.BodySnapshot before = inspect(entity).getBody();
-        var damageSources = entity.getDamageSources();
-        entity.damage(damageSources.generic(), 1.0F);
+        var damageSources = entity.damageSources();
+        entity.hurt(damageSources.generic(), 1.0F);
         HumanoidBodyState afterHit = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
         context.assertTrue(afterHit != null && afterHit.snapshot().getRevision() > before.getRevision(),
                 "原版伤害没有进入类人身体事务");
 
         // 原版死亡回调是可信的外部事实，沿 Damage Addon 的确认路径完成身体死亡清账。
-        entity.onDeath(damageSources.genericKill());
+        entity.die(damageSources.genericKill());
         HumanoidBodyState afterDeath = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
         context.assertTrue(afterDeath != null && afterDeath.snapshot().getVitality().getDead(),
                 "致死伤害没有标记身体死亡");
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void clockAdvancesTwiceOnTheSameBody(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void clockAdvancesTwiceOnTheSameBody(GameTestHelper context) {
         // 连续跨服务器 tick 查询，时间计划必须读取同一身体的最新目标。
         LivingEntity entity = spawnBoundClockVillager(context, CLOCK_ENTITY_ID);
         HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
         BodyMessages.BodySnapshot initial = body.snapshot();
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
             BodyMessages.BodySnapshot first = inspectAdvancedBody(context, entity, body, initial);
-            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
                 inspectAdvancedBody(context, entity, body, first);
-                context.complete();
+                context.succeed();
             });
         });
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void restoredBodyClockKeepsAdvancingAfterNbtRoundTrip(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void restoredBodyClockKeepsAdvancingAfterNbtRoundTrip(GameTestHelper context) {
         // 实体 NBT 恢复创建新的事务包装，随后两次推进都须使用新的世界时钟。
         LivingEntity entity = spawnBoundClockVillager(context, RESTORED_CLOCK_ENTITY_ID);
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
         HumanoidBodyState original = access.meridian$humanoidBody();
         BodyMessages.BodySnapshot initial = original.snapshot();
-        NbtCompound saved = entity.writeNbt(new NbtCompound());
+        CompoundTag saved = entity.saveWithoutId(new CompoundTag());
         access.meridian$humanoidBody(null);
-        entity.readNbt(saved);
+        entity.load(saved);
         HealthHostMessages.HealthHostResponse response = inspect(entity);
         context.assertTrue(response.hasBody() && response.getBody().equals(initial),
                 "NBT 恢复改变了身体快照：" + response);
         HumanoidBodyState restored = access.meridian$humanoidBody();
         context.assertTrue(restored != null && restored != original, "NBT 恢复没有创建新的身体事务包装");
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
             BodyMessages.BodySnapshot first = inspectAdvancedBody(context, entity, restored, initial);
-            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+            context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
                 inspectAdvancedBody(context, entity, restored, first);
-                context.complete();
+                context.succeed();
             });
         });
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void villagerTakesVanillaDamageAfterSeveralTicks(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void villagerTakesVanillaDamageAfterSeveralTicks(GameTestHelper context) {
         // 身体创建后延迟受伤，覆盖 Damage 查询、时间结算和健康事务整条路径。
         LivingEntity entity = spawnBoundClockVillager(context, VANILLA_DAMAGE_ENTITY_ID);
         HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
             verifyDelayedDamage(context, entity, body,
-                    () -> entity.damage(entity.getDamageSources().generic(), 1.0F));
-            context.complete();
+                    () -> entity.hurt(entity.damageSources().generic(), 1.0F));
+            context.succeed();
         });
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void villagerTakesPlayerAttackAfterSeveralTicks(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void villagerTakesPlayerAttackAfterSeveralTicks(GameTestHelper context) {
         // 从原版玩家攻击入口触发伤害，不能仅用健康协议代替一次真实攻击。
         LivingEntity entity = spawnBoundClockVillager(context, PLAYER_ATTACK_ENTITY_ID);
         HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
-        var player = context.createMockSurvivalPlayer();
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+        var player = context.makeMockSurvivalPlayer();
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
             verifyDelayedDamage(context, entity, body, () -> player.attack(entity));
-            context.complete();
+            context.succeed();
         });
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void mixedAttributeBodiesKeepHealthDamageAndNbtWorking(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void mixedAttributeBodiesKeepHealthDamageAndNbtWorking(GameTestHelper context) {
         // 固定两个已知混属性边界，延迟查询、存档和伤害均走真实宿主。
         List<LivingEntity> entities = PRECISION_ENTITY_IDS.stream()
                 .map(id -> spawnMixedVillager(context, id))
                 .toList();
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
             inspectAndReloadMixedBodies(context, entities);
-            context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> verifyMixedDamage(context, entities));
+            context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> verifyMixedDamage(context, entities));
         });
     }
 
-    private static LivingEntity spawnMixedVillager(TestContext context, UUID entityId) {
+    private static LivingEntity spawnMixedVillager(GameTestHelper context, UUID entityId) {
         // 出生使用五行等量区域和种子 0，变体与库存沿用生产出生方法的同一随机流。
         LivingEntity entity = spawnBoundClockVillager(context, entityId);
         RegionInventory inventory = RegionInventory.fromShares(1, Map.of(
@@ -349,57 +348,57 @@ public final class HumanoidGameTest implements FabricGameTest {
         return entity;
     }
 
-    private static void inspectAndReloadMixedBodies(TestContext context, List<LivingEntity> entities) {
+    private static void inspectAndReloadMixedBodies(GameTestHelper context, List<LivingEntity> entities) {
         // 健康查询先结时；真实实体 NBT 往返必须保留已扣源、在途及当前游标。
         for (LivingEntity entity : entities) {
             HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
             HumanoidBodyState body = access.meridian$humanoidBody();
             BodyMessages.BodySnapshot advanced = inspectAdvancedBody(context, entity, body, body.snapshot());
-            NbtCompound saved = entity.writeNbt(new NbtCompound());
+            CompoundTag saved = entity.saveWithoutId(new CompoundTag());
             access.meridian$humanoidBody(null);
-            entity.readNbt(saved);
+            entity.load(saved);
             HealthHostMessages.HealthHostResponse restored = inspect(entity);
             context.assertTrue(restored.hasBody() && restored.getBody().equals(advanced),
-                    "混属性身体 NBT 恢复失败：" + entity.getUuid() + " response=" + restored);
+                    "混属性身体 NBT 恢复失败：" + entity.getUUID() + " response=" + restored);
         }
     }
 
-    private static void verifyMixedDamage(TestContext context, List<LivingEntity> entities) {
+    private static void verifyMixedDamage(GameTestHelper context, List<LivingEntity> entities) {
         // 两种伤害分别在新的时刻触发结算，不能用前置查询提前消除扩散事件。
         for (LivingEntity entity : entities) {
             HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
             verifyDelayedDamage(context, entity, body,
-                    () -> entity.damage(entity.getDamageSources().generic(), 1.0F));
+                    () -> entity.hurt(entity.damageSources().generic(), 1.0F));
         }
-        context.waitAndRun(CLOCK_ADVANCE_TICKS, () -> {
-            var player = context.createMockSurvivalPlayer();
+        context.runAfterDelay(CLOCK_ADVANCE_TICKS, () -> {
+            var player = context.makeMockSurvivalPlayer();
             for (LivingEntity entity : entities) {
                 // 两次命中独立验证结时与扣血，清除首击留下的原版无敌帧。
-                entity.timeUntilRegen = 0;
+                entity.invulnerableTime = 0;
                 HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();
                 verifyDelayedDamage(context, entity, body, () -> player.attack(entity));
             }
-            context.complete();
+            context.succeed();
         });
     }
 
-    private static LivingEntity spawnBoundClockVillager(TestContext context, UUID entityId) {
+    private static LivingEntity spawnBoundClockVillager(GameTestHelper context, UUID entityId) {
         // 入世界前固定 UUID，使真实生成器产生可复现的身体；等待时禁用寻路和重力。
-        ServerWorld world = context.getWorld();
-        VillagerEntity entity = EntityType.VILLAGER.create(world);
+        ServerLevel world = context.getLevel();
+        Villager entity = EntityType.VILLAGER.create(world);
         context.assertTrue(entity != null, "无法创建测试村民");
-        entity.setUuid(entityId);
-        BlockPos position = context.getAbsolutePos(new BlockPos(SPAWN_X, SPAWN_Y, SPAWN_Z));
-        entity.refreshPositionAndAngles(position.getX(), position.getY(), position.getZ(), 0, 0);
+        entity.setUUID(entityId);
+        BlockPos position = context.absolutePos(new BlockPos(SPAWN_X, SPAWN_Y, SPAWN_Z));
+        entity.moveTo(position.getX(), position.getY(), position.getZ(), 0, 0);
         disableAi(entity);
         entity.setNoGravity(true /* noGravity */);
-        context.assertTrue(world.spawnEntity(entity), "测试村民未加入真实世界");
+        context.assertTrue(world.addFreshEntity(entity), "测试村民未加入真实世界");
         HealthHostMessages.HealthHostResponse response = inspect(entity);
         context.assertTrue(response.hasBody(), "初始身体未创建：" + response);
         return entity;
     }
 
-    private static BodyMessages.BodySnapshot inspectAdvancedBody(TestContext context, LivingEntity entity,
+    private static BodyMessages.BodySnapshot inspectAdvancedBody(GameTestHelper context, LivingEntity entity,
                                                                  HumanoidBodyState expectedBody,
                                                                  BodyMessages.BodySnapshot previous) {
         // 检查公开响应和已提交游标，失败文案保留实际目标、旧值与协议失败码。
@@ -422,7 +421,7 @@ public final class HumanoidGameTest implements FabricGameTest {
         return actual;
     }
 
-    private static void verifyDelayedDamage(TestContext context, LivingEntity entity,
+    private static void verifyDelayedDamage(GameTestHelper context, LivingEntity entity,
                                              HumanoidBodyState body, Runnable damage) {
         // 伤害前不查询宿主，让原版伤害调用负责触发延迟结算。
         BodyMessages.BodySnapshot before = body.snapshot();
@@ -440,12 +439,12 @@ public final class HumanoidGameTest implements FabricGameTest {
                 "非致死伤害不应替换身体或杀死村民");
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void killedAndDiscardedReleasesRetryUntilPersisted(TestContext context) throws Exception {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void killedAndDiscardedReleasesRetryUntilPersisted(GameTestHelper context) throws Exception {
         // 服务不可用时保留释放记录，恢复后在下一 tick 收到写盘确认才删除。
         int before = pendingCount();
-        LivingEntity killed = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
-        LivingEntity discarded = context.spawnEntity(EntityType.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity killed = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity discarded = context.spawn(EntityType.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(killed);
         disableAi(discarded);
         inspect(killed);
@@ -480,63 +479,63 @@ public final class HumanoidGameTest implements FabricGameTest {
         return releaseIds;
     }
 
-    private static void verifyReleasesAfterRecovery(TestContext context,
+    private static void verifyReleasesAfterRecovery(GameTestHelper context,
                                                     EnvironmentHostMessages.RegionRelease first,
                                                     List<String> releaseIds, Object delegate) throws Exception {
         // 预提交制造内存 duplicate；tick 末合并保存后，重试才允许删除队列。
         restoreHumanDelegate(delegate);
         context.assertTrue(!HumanoidFabric.release(first), "预提交释放不应同步写盘");
         context.assertTrue(!HumanoidFabric.release(first), "内存 duplicate 不应确认写盘");
-        context.waitAndRun(4 /* recoveryTicks */, () -> {
+        context.runAfterDelay(4 /* recoveryTicks */, () -> {
             context.assertTrue(!containsPending(releaseIds),
                     "已确认持久化的释放应从账本删除，剩余=" + pendingCount());
-            context.complete();
+            context.succeed();
         });
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void chunkUnloadDoesNotReleaseBody(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void chunkUnloadDoesNotReleaseBody(GameTestHelper context) {
         // 区块卸载只保存实体，不把身体库存释放回环境。
         int before = pendingCount();
-        LivingEntity entity = context.spawnEntity(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity entity = context.spawn(EntityType.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(entity);
         inspect(entity);
         entity.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
         context.assertTrue(pendingCount() == before,
                 "区块卸载不应把实体身体写入释放账本");
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void lightningKeepsBoundVillagersAndConvertsUnboundVillager(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void lightningKeepsBoundVillagersAndConvertsUnboundVillager(GameTestHelper context) {
         // 两档身体都保留村民身份；没有身体的村民仍由原版转化为女巫。
-        ServerWorld world = context.getWorld();
+        ServerLevel world = context.getLevel();
         world.getServer().setDifficulty(Difficulty.NORMAL, true /* forceDifficulty */);
         List<LightningSurvivor> survivors = new ArrayList<>();
         for (HumanoidVariant variant : HumanoidVariant.values()) {
             survivors.add(strikeBoundVillager(context, variant));
         }
-        VillagerEntity unbound = strikeUnboundVillager(context);
-        context.waitAndRun(1, () -> {
+        Villager unbound = strikeUnboundVillager(context);
+        context.runAfterDelay(1, () -> {
             for (LightningSurvivor survivor : survivors) {
                 verifyLightningSurvivor(context, survivor);
             }
-            List<WitchEntity> witches = world.getEntitiesByType(EntityType.WITCH,
+            List<Witch> witches = world.getEntities(EntityType.WITCH,
                     unbound.getBoundingBox(), entity -> true);
             context.assertTrue(witches.size() == 1, "无身体村民雷击后没有按原版生成一名女巫");
             context.assertTrue(world.getDifficulty() == Difficulty.NORMAL, "雷击接线改变了世界难度");
-            context.complete();
+            context.succeed();
         });
     }
 
-    private static LightningSurvivor strikeBoundVillager(TestContext context, HumanoidVariant variant) {
+    private static LightningSurvivor strikeBoundVillager(GameTestHelper context, HumanoidVariant variant) {
         // 显式生成指定档位，雷击后检查着火和真实身体损伤，不能只取消整个雷击方法。
-        VillagerEntity villager = (VillagerEntity) context.spawnEntity(EntityType.VILLAGER,
+        Villager villager = (Villager) context.spawn(EntityType.VILLAGER,
                 SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(villager);
         HumanoidBodyState body = bindVillagerBody(villager, variant);
         BodyMessages.BodySnapshot before = body.snapshot();
-        villager.setFireTicks(0);
+        villager.setRemainingFireTicks(0);
         strikeByLightning(context, villager);
         BodyMessages.BodySnapshot after = body.snapshot();
         double beforeHp = before.getPartStatesList().stream().mapToDouble(part -> part.getHp()).sum();
@@ -547,14 +546,14 @@ public final class HumanoidGameTest implements FabricGameTest {
         return new LightningSurvivor(villager, body, before.getId());
     }
 
-    private static HumanoidBodyState bindVillagerBody(VillagerEntity villager, HumanoidVariant variant) {
+    private static HumanoidBodyState bindVillagerBody(Villager villager, HumanoidVariant variant) {
         // 用真实生成器和存档恢复入口绑定指定档位，避免随机抽样漏掉某一档。
         var region = HumanoidFabric.region(villager);
         BodyMessages.TimeCursor now = HumanoidFabric.now();
-        var entityId = villager.getUuid();
+        var entityId = villager.getUUID();
         var request = new HumanoidBodyGenerator.GenerationRequest(
                 HumanoidSpecies.VILLAGER, variant, entityId, region.inventory(), now);
-        long worldSeed = ((ServerWorld) villager.getWorld()).getSeed();
+        long worldSeed = ((ServerLevel) villager.level()).getSeed();
         BodyMessages.BodySnapshot snapshot = HumanoidFabric.generator().generate(request, worldSeed);
         var saved = new HumanoidBodyState.SavedBody(entityId, snapshot.toByteArray(), new byte[0][], region.sourceId());
         HumanoidBodyState body = HumanoidBodyState.restore(entityId, saved, now, HumanoidSpecies.VILLAGER);
@@ -562,9 +561,9 @@ public final class HumanoidGameTest implements FabricGameTest {
         return body;
     }
 
-    private static VillagerEntity strikeUnboundVillager(TestContext context) {
+    private static Villager strikeUnboundVillager(GameTestHelper context) {
         // 不查询健康宿主，确保无身体村民仍能执行原版女巫转化。
-        VillagerEntity villager = (VillagerEntity) context.spawnEntity(EntityType.VILLAGER,
+        Villager villager = (Villager) context.spawn(EntityType.VILLAGER,
                 SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(villager);
         HumanoidEntityAccess access = (HumanoidEntityAccess) villager;
@@ -576,56 +575,56 @@ public final class HumanoidGameTest implements FabricGameTest {
         return villager;
     }
 
-    private static void strikeByLightning(TestContext context, VillagerEntity villager) {
+    private static void strikeByLightning(GameTestHelper context, Villager villager) {
         // 直接触发实体雷击入口，避免闪电实体的范围伤害波及同批测试的其他实体。
-        ServerWorld world = context.getWorld();
-        LightningEntity lightning = EntityType.LIGHTNING_BOLT.create(world);
+        ServerLevel world = context.getLevel();
+        LightningBolt lightning = EntityType.LIGHTNING_BOLT.create(world);
         context.assertTrue(lightning != null, "无法创建测试闪电");
-        lightning.refreshPositionAndAngles(villager.getX(), villager.getY(), villager.getZ(), 0, 0);
-        villager.onStruckByLightning(world, lightning);
+        lightning.moveTo(villager.getX(), villager.getY(), villager.getZ(), 0, 0);
+        villager.thunderHit(world, lightning);
     }
 
-    private static void verifyLightningSurvivor(TestContext context, LightningSurvivor survivor) {
+    private static void verifyLightningSurvivor(GameTestHelper context, LightningSurvivor survivor) {
         // 下一 tick 仍须是同一实体、同一身体，且没有转化女巫或登记移除释放。
-        VillagerEntity villager = survivor.entity();
-        ServerWorld world = context.getWorld();
-        context.assertTrue(villager.isAlive() && world.getEntity(villager.getUuid()) == villager,
+        Villager villager = survivor.entity();
+        ServerLevel world = context.getLevel();
+        context.assertTrue(villager.isAlive() && world.getEntity(villager.getUUID()) == villager,
                 "有身体村民雷击后没有保留同一个村民");
         HumanoidEntityAccess access = (HumanoidEntityAccess) villager;
         context.assertTrue(access.meridian$humanoidBody() == survivor.body()
                         && survivor.body().snapshot().getId().equals(survivor.bodyId()),
                 "有身体村民雷击后没有保留原身体");
         context.assertTrue(!access.meridian$humanoidReleaseQueued(), "有身体村民雷击后错误释放了身体");
-        context.assertTrue(world.getEntitiesByType(EntityType.WITCH,
+        context.assertTrue(world.getEntities(EntityType.WITCH,
                 villager.getBoundingBox(), entity -> true).isEmpty(), "有身体村民雷击后错误生成了女巫");
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void zombieVillagerConversionReleasesOriginalBody(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void zombieVillagerConversionReleasesOriginalBody(GameTestHelper context) {
         // 转为亡灵后不再认领，原有生人身体按死亡路径释放。
         int before = pendingCount();
-        VillagerEntity villager = (VillagerEntity) context.spawnEntity(EntityType.VILLAGER,
+        Villager villager = (Villager) context.spawn(EntityType.VILLAGER,
                 SPAWN_X, SPAWN_Y, SPAWN_Z);
         disableAi(villager);
         inspect(villager);
-        MobEntity converted = villager.convertTo(EntityType.ZOMBIE_VILLAGER, true /* keepEquipment */);
+        Mob converted = villager.convertTo(EntityType.ZOMBIE_VILLAGER, true /* keepEquipment */);
         context.assertTrue(converted != null && converted.getType() == EntityType.ZOMBIE_VILLAGER,
                 "村民没有转成僵尸村民");
         context.assertTrue(pendingCount() == before + 1,
                 "村民转僵尸村民没有按死亡路径写释放账本");
         context.assertTrue(((HumanoidEntityAccess) converted).meridian$humanoidBody() == null,
                 "僵尸村民错误迁移了生人身体");
-        context.complete();
+        context.succeed();
     }
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void raidBatchCreatesBodiesForManyClaimedEntities(TestContext context) {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void raidBatchCreatesBodiesForManyClaimedEntities(GameTestHelper context) {
         // 按网格连续生成多种生人，检查批量创建不会共享身体 ID。
         Set<String> ids = new HashSet<>();
         int speciesCount = CLAIMED_TYPES.size();
         for (int index = 0; index < RAID_ENTITY_COUNT; index++) {
             EntityType<? extends LivingEntity> type = CLAIMED_TYPES.get(index % speciesCount);
-            LivingEntity raider = context.spawnEntity(type,
+            LivingEntity raider = context.spawn(type,
                     1 + index % RAID_GRID_WIDTH, SPAWN_Y, 1 + index / RAID_GRID_WIDTH);
             disableAi(raider);
             HealthHostMessages.HealthHostResponse response = inspect(raider);
@@ -633,12 +632,12 @@ public final class HumanoidGameTest implements FabricGameTest {
             context.assertTrue(ids.add(response.getBody().getId()), "袭击批量实体身体 ID 重复");
         }
         context.assertTrue(ids.size() == RAID_ENTITY_COUNT, "袭击压力测试没有处理全部实体");
-        context.complete();
+        context.succeed();
     }
 
     private static HealthHostMessages.HealthHostResponse inspect(LivingEntity entity) {
         // 使用公开字节协议触发只读健康查询。
-        String subjectId = entity.getUuidAsString();
+        String subjectId = entity.getStringUUID();
         return exchange(HealthHostMessages.HealthHostRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId("gametest:inspect/" + subjectId)
@@ -683,15 +682,15 @@ public final class HumanoidGameTest implements FabricGameTest {
         return HealthHostMessages.HealthHostRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(requestId)
-                .setSubjectId(entity.getUuidAsString())
+                .setSubjectId(entity.getStringUUID())
                 .setEffect(effect)
                 .build();
     }
 
     private static void disableAi(LivingEntity entity) {
         // 固定实体位置，避免原版寻路干扰生命周期断言。
-        if (entity instanceof MobEntity mob) {
-            mob.setAiDisabled(true /* aiDisabled */);
+        if (entity instanceof Mob mob) {
+            mob.setNoAi(true /* aiDisabled */);
         }
     }
 
@@ -786,6 +785,6 @@ public final class HumanoidGameTest implements FabricGameTest {
                                 List<HealthHostMessages.HealthHostRequest> requests) {
     }
 
-    private record LightningSurvivor(VillagerEntity entity, HumanoidBodyState body, String bodyId) {
+    private record LightningSurvivor(Villager entity, HumanoidBodyState body, String bodyId) {
     }
 }

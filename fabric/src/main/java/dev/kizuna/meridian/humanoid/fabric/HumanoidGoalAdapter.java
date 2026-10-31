@@ -1,12 +1,11 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.ai.goal.GoalSelector;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.VillagerEntity;
-
 import java.util.EnumSet;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.npc.Villager;
 
 /** 非村民接入：在原版 GoalSelector 里装最高优先级的移动/朝向 Goal 与目标 Goal，大脑指挥时压过原版 Goal。 */
 final class HumanoidGoalAdapter {
@@ -17,40 +16,40 @@ final class HumanoidGoalAdapter {
         // 只负责装 Goal，状态在 HumanoidMind。
     }
 
-    static void install(MobEntity mob, HumanoidMind mind, GoalSelector goals, GoalSelector targets) {
+    static void install(Mob mob, HumanoidMind mind, GoalSelector goals, GoalSelector targets) {
         // 每个实体对象只装一次；村民走大脑重定向，不装 Goal。
-        if (mind.adapted() || mob instanceof VillagerEntity) {
+        if (mind.adapted() || mob instanceof Villager) {
             return;
         }
-        goals.add(CONTROL_PRIORITY, new CombatGoal(mob));
-        targets.add(CONTROL_PRIORITY, new TargetGoal(mob));
+        goals.addGoal(CONTROL_PRIORITY, new CombatGoal(mob));
+        targets.addGoal(CONTROL_PRIORITY, new TargetGoal(mob));
         mind.markAdapted();
     }
 
     /** 大脑指挥期间占住移动与朝向，每 tick 执行当前指令。 */
     private static final class CombatGoal extends Goal {
-        private final MobEntity mob;
+        private final Mob mob;
 
-        private CombatGoal(MobEntity mob) {
+        private CombatGoal(Mob mob) {
             // 与原版移动类 Goal 争同一组控制。
             this.mob = mob;
-            setControls(EnumSet.of(Control.MOVE, Control.LOOK));
+            setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
         }
 
         @Override
-        public boolean canStart() {
+        public boolean canUse() {
             // 大脑给了非原版指令或施放中仍有对手。
             return HumanoidBrain.directing(mob);
         }
 
         @Override
-        public boolean shouldContinue() {
+        public boolean canContinueToUse() {
             // 与开始条件相同，交还原版时立即让出。
             return HumanoidBrain.directing(mob);
         }
 
         @Override
-        public boolean shouldRunEveryTick() {
+        public boolean requiresUpdateEveryTick() {
             // 朝向与路径刷新跟随每个实体 tick。
             return true;
         }
@@ -58,36 +57,36 @@ final class HumanoidGoalAdapter {
         @Override
         public void tick() {
             // 施放中举起武器姿态，随后执行指令。
-            mob.setAttacking(HumanoidTechniqueHost.isCasting(mob));
+            mob.setAggressive(HumanoidTechniqueHost.isCasting(mob));
             HumanoidBrain.move(mob, SPEEDS);
         }
 
         @Override
         public void stop() {
             // 让出控制时收起姿态并停下导航。
-            mob.setAttacking(false /* attacking */);
+            mob.setAggressive(false /* attacking */);
             mob.getNavigation().stop();
         }
     }
 
     /** 有对手时占住目标控制，把原版目标对齐到大脑选的对手。 */
     private static final class TargetGoal extends Goal {
-        private final MobEntity mob;
+        private final Mob mob;
 
-        private TargetGoal(MobEntity mob) {
+        private TargetGoal(Mob mob) {
             // 与原版选敌 Goal 争目标控制。
             this.mob = mob;
-            setControls(EnumSet.of(Control.TARGET));
+            setFlags(EnumSet.of(Flag.TARGET));
         }
 
         @Override
-        public boolean canStart() {
+        public boolean canUse() {
             // 大脑有对手时开始。
             return HumanoidBrain.hasOpponent(mob);
         }
 
         @Override
-        public boolean shouldContinue() {
+        public boolean canContinueToUse() {
             // 对手消失时让原版选敌接手。
             return HumanoidBrain.hasOpponent(mob);
         }

@@ -16,12 +16,6 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import dev.kizuna.meridian.technique.server.TechniqueService;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.GoalSelector;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.world.ServerWorld;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +29,12 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
 
 /** 类人大脑：被接管实体按错相周期读敌意、评估、选战术，再由接入适配器落到原版控制上。 */
 public final class HumanoidBrain {
@@ -66,25 +66,25 @@ public final class HumanoidBrain {
 
     public static boolean managed(LivingEntity entity) {
         // 已认领且物种由大脑接管的原版生物，AI 未关闭且存活。
-        if (!(entity instanceof MobEntity mob) || mob.isAiDisabled() || !mob.isAlive()) {
+        if (!(entity instanceof Mob mob) || mob.isNoAi() || !mob.isAlive()) {
             return false;
         }
         return managedTypes.computeIfAbsent(entity.getType(), type -> HumanoidSpecies
-                .fromEntityId(Registries.ENTITY_TYPE.getId(type).toString())
+                .fromEntityId(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString())
                 .map(HumanoidSpecies::brainManaged)
                 .orElse(false));
     }
 
-    public static void tick(MobEntity mob, GoalSelector goals, GoalSelector targets) {
+    public static void tick(Mob mob, GoalSelector goals, GoalSelector targets) {
         // 每 tick 只装接入；到错相决策时刻才读敌意与身体，飞行中不改主意。
         if (config == null || !HumanoidFabric.isReady() || !managed(mob)) {
             return;
         }
-        HumanoidMind mind = minds.computeIfAbsent(mob.getUuid(), ignored -> new HumanoidMind());
+        HumanoidMind mind = minds.computeIfAbsent(mob.getUUID(), ignored -> new HumanoidMind());
         HumanoidGoalAdapter.install(mob, mind, goals, targets);
         int interval = config.schedule().decisionIntervalTicks();
         if (((TechniqueLeapAccess) mob).meridian$getLeap() != null
-                || Math.floorMod((long) mob.age + mob.getId(), interval) != 0) {
+                || Math.floorMod((long) mob.tickCount + mob.getId(), interval) != 0) {
             return;
         }
         try {
@@ -95,7 +95,7 @@ public final class HumanoidBrain {
         }
     }
 
-    private static void decide(MobEntity mob, HumanoidMind mind) {
+    private static void decide(Mob mob, HumanoidMind mind) {
         // 先找威胁再读身体；自己施放中而对方没有来袭时不必准备身体。
         Optional<LivingEntity> threat = HumanoidThreats.nearest(mob, config.threat(), mind.opponent());
         if (threat.isEmpty()) {
@@ -125,7 +125,7 @@ public final class HumanoidBrain {
                 decision);
     }
 
-    private static void idle(MobEntity mob, HumanoidMind mind) {
+    private static void idle(Mob mob, HumanoidMind mind) {
         // 无威胁：已有会话且会恢复式的才读身体评估恢复；其余只交还原版控制、不记决策。
         mind.disengage();
         if (HumanoidTechniqueHost.hasActiveCast(mob)) {
@@ -148,28 +148,28 @@ public final class HumanoidBrain {
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.empty()), decision);
     }
 
-    private static BodySnapshot body(MobEntity mob) {
+    private static BodySnapshot body(Mob mob) {
         // 经可信宿主结清时间后的当前快照，学卷也在此补发。
         return BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(mob).body().snapshot());
     }
 
     private static Optional<TechniqueService.Observation> observe(LivingEntity entity) {
         // 同一服务器 tick 内同一对手只观察一次。
-        long tick = HumanoidFabric.server().getTicks();
+        long tick = HumanoidFabric.server().getTickCount();
         if (tick != observedTick) {
             observed.clear();
             observedTick = tick;
         }
-        return observed.computeIfAbsent(entity.getUuid(), uuid -> TechniqueFabric.service().observe(uuid));
+        return observed.computeIfAbsent(entity.getUUID(), uuid -> TechniqueFabric.service().observe(uuid));
     }
 
-    private static Set<Encounter.Circumstance> circumstances(MobEntity mob) {
+    private static Set<Encounter.Circumstance> circumstances(Mob mob) {
         // 飞行、着地与刚受击直接读实体状态。
         var circumstances = EnumSet.noneOf(Encounter.Circumstance.class);
         if (((TechniqueLeapAccess) mob).meridian$getLeap() != null) {
             circumstances.add(Encounter.Circumstance.LEAPING);
         }
-        if (mob.isOnGround()) {
+        if (mob.onGround()) {
             circumstances.add(Encounter.Circumstance.ON_GROUND);
         }
         if (mob.hurtTime > 0) {
@@ -178,19 +178,19 @@ public final class HumanoidBrain {
         return circumstances;
     }
 
-    private static void record(MobEntity mob, HumanoidMind mind, HumanoidAssessment.Stance stance,
+    private static void record(Mob mob, HumanoidMind mind, HumanoidAssessment.Stance stance,
                                Decision decision) {
         // 写进环形记录；开日志时每条决策一行。
-        mind.decided(mob.getWorld().getTime(), stance, decision);
+        mind.decided(mob.level().getGameTime(), stance, decision);
         if (config.schedule().log() == HumanoidBrainConfig.DecisionLog.VERBOSE) {
-            LOGGER.info("类人决策 subject={} action={} technique={} reason={}", mob.getUuidAsString(),
+            LOGGER.info("类人决策 subject={} action={} technique={} reason={}", mob.getStringUUID(),
                     decision.action(), decision.technique().orElse("-"), decision.reason());
         }
     }
 
-    static Optional<TechniqueReference> topStrike(MobEntity mob, LivingEntity target, BodySnapshot body) {
+    static Optional<TechniqueReference> topStrike(Mob mob, LivingEntity target, BodySnapshot body) {
         // 与决策同一份候选与情境，取情境评分最高的打击式；决策本身按权重抽样，GameTest 据此检查情境权重。
-        HumanoidMind mind = minds.computeIfAbsent(mob.getUuid(), ignored -> new HumanoidMind());
+        HumanoidMind mind = minds.computeIfAbsent(mob.getUUID(), ignored -> new HumanoidMind());
         var opponent = new HumanoidOpponent(target, observe(target));
         long now = body.settledAt().elapsedMillis();
         var readout = HumanoidRepertoires.read(mob, body, Optional.of(opponent),
@@ -202,16 +202,16 @@ public final class HumanoidBrain {
                 .map(Scored::reference);
     }
 
-    static Random seed(MobEntity mob, HumanoidMind mind) {
+    static Random seed(Mob mob, HumanoidMind mind) {
         // 每实体种子：世界种子与 UUID 定实体，决策序号乘散布常数后混入；
         // 只差低位的种子首个随机数几乎相同，同一实体每次决策会抽中同一式。
-        long worldSeed = ((ServerWorld) mob.getWorld()).getSeed();
-        return new Random(HumanoidBodyGenerator.seedFor(worldSeed ^ mind.sequence() * SEQUENCE_SPREAD, mob.getUuid()));
+        long worldSeed = ((ServerLevel) mob.level()).getSeed();
+        return new Random(HumanoidBodyGenerator.seedFor(worldSeed ^ mind.sequence() * SEQUENCE_SPREAD, mob.getUUID()));
     }
 
-    static boolean directing(MobEntity mob) {
+    static boolean directing(Mob mob) {
         // 大脑给了非原版指令，或施放中仍有对手要盯。
-        HumanoidMind mind = minds.get(mob.getUuid());
+        HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null || !managed(mob)) {
             return false;
         }
@@ -219,9 +219,9 @@ public final class HumanoidBrain {
                 || HumanoidTechniqueHost.hasActiveCast(mob) && mind.opponent().isPresent();
     }
 
-    static void move(MobEntity mob, HumanoidMotion.Speeds speeds) {
+    static void move(Mob mob, HumanoidMotion.Speeds speeds) {
         // 施放打击时面向对手缓行；其余执行当前指令。
-        HumanoidMind mind = minds.get(mob.getUuid());
+        HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null) {
             return;
         }
@@ -233,24 +233,24 @@ public final class HumanoidBrain {
         HumanoidMotion.apply(mob, directive, mind.opponent(), speeds);
     }
 
-    static Optional<LivingEntity> opponent(MobEntity mob) {
+    static Optional<LivingEntity> opponent(Mob mob) {
         // 当前对手；未被接管或无威胁时为空。
-        return Optional.ofNullable(minds.get(mob.getUuid())).flatMap(HumanoidMind::opponent);
+        return Optional.ofNullable(minds.get(mob.getUUID())).flatMap(HumanoidMind::opponent);
     }
 
-    static boolean hasOpponent(MobEntity mob) {
+    static boolean hasOpponent(Mob mob) {
         // 跃步指挥与原版撤退判定共用。
         return opponent(mob).isPresent();
     }
 
-    public static void targetChanged(MobEntity mob, LivingEntity previous, LivingEntity next) {
+    public static void targetChanged(Mob mob, LivingEntity previous, LivingEntity next) {
         // 原版改目标时同步敌意反查表。
         HumanoidThreats.targeted(mob, previous, next);
     }
 
-    public static boolean blocksMelee(MobEntity mob) {
+    public static boolean blocksMelee(Mob mob) {
         // 施放中或撤退中不叠原版近战。
-        HumanoidMind mind = minds.get(mob.getUuid());
+        HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null) {
             return HumanoidTechniqueHost.isCasting(mob);
         }

@@ -17,12 +17,11 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.WeaponStrike;
 import dev.kizuna.meridian.technique.server.TechniqueForecasts;
 import dev.kizuna.meridian.vanilla.MuscleRules;
 import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Optional;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.Vec3;
 
 /** 按 Damage 同一规则估算打击：护甲前剂量乘肌力系数换成身体 HP，再求僵直；以及来袭打击是否覆盖我、往哪走出。 */
 final class HumanoidStrikeEstimates {
@@ -33,7 +32,7 @@ final class HumanoidStrikeEstimates {
     record Dose(double hp, InjuryKind injury) { }
 
     /** 走出来袭范围的距离与落脚点。 */
-    record Exit(double distance, Vec3d point) { }
+    record Exit(double distance, Vec3 point) { }
 
     private HumanoidStrikeEstimates() {
         // 纯估算，不提交做功或伤害。
@@ -126,10 +125,10 @@ final class HumanoidStrikeEstimates {
         // 单体打击只覆盖它瞄准的人（没写目标时覆盖锥内任何人）；扇形按水平几何。
         String targetId = active.getRequest().getTargetId();
         if (strike.getShape() == StrikeShape.SINGLE_TARGET && !targetId.isEmpty()
-                && !targetId.equals(self.getUuidAsString())) {
+                && !targetId.equals(self.getStringUUID())) {
             return false;
         }
-        return StrikeGeometry.covers(sector(caster, strike), point(self.getPos()));
+        return StrikeGeometry.covers(sector(caster, strike), point(self.position()));
     }
 
     static Optional<Exit> exit(LivingEntity self, HumanoidOpponent opponent) {
@@ -144,15 +143,15 @@ final class HumanoidStrikeEstimates {
             return Optional.empty();
         }
         var sector = sector(opponent.entity(), strike);
-        double distance = StrikeGeometry.exitDistance(sector, point(self.getPos()));
-        Vec3d away = HumanoidMotion.away(self, opponent.entity());
-        return Optional.of(new Exit(distance, self.getPos().add(away.multiply(distance))));
+        double distance = StrikeGeometry.exitDistance(sector, point(self.position()));
+        Vec3 away = HumanoidMotion.away(self, opponent.entity());
+        return Optional.of(new Exit(distance, self.position().add(away.scale(distance))));
     }
 
     private static StrikeGeometry.Sector sector(LivingEntity caster, WeaponStrike strike) {
         // 朝向为施放者 yaw 加目录朝向偏移。
-        double facing = caster.getYaw() + strike.getFacingOffset().getValue();
-        return new StrikeGeometry.Sector(point(caster.getPos()), facing, strike.getDistance().getValue(),
+        double facing = caster.getYRot() + strike.getFacingOffset().getValue();
+        return new StrikeGeometry.Sector(point(caster.position()), facing, strike.getDistance().getValue(),
                 halfAngle(strike));
     }
 
@@ -164,7 +163,7 @@ final class HumanoidStrikeEstimates {
         return SINGLE_TARGET_HALF_ANGLE_DEGREES;
     }
 
-    private static StrikeGeometry.Point point(Vec3d position) {
+    private static StrikeGeometry.Point point(Vec3 position) {
         // 水平面坐标。
         return new StrikeGeometry.Point(position.x, position.z);
     }

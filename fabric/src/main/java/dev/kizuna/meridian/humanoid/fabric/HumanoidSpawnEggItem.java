@@ -1,13 +1,13 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import net.minecraft.entity.SpawnReason;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemUsageContext;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.stat.Stats;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.stats.Stats;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.MobSpawnType;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.phys.Vec3;
 
 /** 分档调试蛋使用原版蛋模型，身份与出生选择固定在物品上。 */
 public final class HumanoidSpawnEggItem extends Item {
@@ -15,7 +15,7 @@ public final class HumanoidSpawnEggItem extends Item {
 
     HumanoidSpawnEggItem(HumanoidSpawns.Selection selection) {
         // 独立物品不覆盖原版 SpawnEggItem 的实体到蛋映射。
-        super(new Settings());
+        super(new Properties());
         this.selection = selection;
     }
 
@@ -25,28 +25,28 @@ public final class HumanoidSpawnEggItem extends Item {
     }
 
     @Override
-    public ActionResult useOnBlock(ItemUsageContext context) {
+    public InteractionResult useOn(UseOnContext context) {
         // 仅服务端生成实体；可替代空间用点击格，实体方块用点击面相邻格。
-        var world = context.getWorld();
-        if (world.isClient()) {
-            return ActionResult.SUCCESS;
+        var world = context.getLevel();
+        if (world.isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
-        BlockPos clicked = context.getBlockPos();
+        BlockPos clicked = context.getClickedPos();
         BlockPos spawnPos = clicked;
         if (!world.getBlockState(clicked).getCollisionShape(world, clicked).isEmpty()) {
-            spawnPos = clicked.offset(context.getSide());
+            spawnPos = clicked.relative(context.getClickedFace());
         }
         var player = context.getPlayer();
-        if (player != null && !world.canPlayerModifyAt(player, spawnPos)) {
-            return ActionResult.FAIL;
+        if (player != null && !world.mayInteract(player, spawnPos)) {
+            return InteractionResult.FAIL;
         }
-        HumanoidSpawns.spawn((ServerWorld) world, selection, Vec3d.ofBottomCenter(spawnPos), SpawnReason.SPAWN_EGG);
-        if (player == null || !player.getAbilities().creativeMode) {
-            context.getStack().decrement(1);
+        HumanoidSpawns.spawn((ServerLevel) world, selection, Vec3.atBottomCenterOf(spawnPos), MobSpawnType.SPAWN_EGG);
+        if (player == null || !player.getAbilities().instabuild) {
+            context.getItemInHand().shrink(1);
         }
         if (player != null) {
-            player.incrementStat(Stats.USED.getOrCreateStat(this));
+            player.awardStat(Stats.ITEM_USED.get(this));
         }
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 }

@@ -1,19 +1,18 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
-import net.minecraft.entity.Entity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.test.GameTest;
-import net.minecraft.test.TestContext;
-
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.Entity;
 import java.util.UUID;
 
 public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
     private static final int HANDOFF_TICKS = 4;
     private static final int CRASH_REGION_SPACING_BLOCKS = 16_384;
 
-    @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE)
-    public void audit05HaltAfterDurableHandoffBeforeWorldSave(TestContext context) throws Exception {
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void audit05HaltAfterDurableHandoffBeforeWorldSave(GameTestHelper context) throws Exception {
         // 保存旧接收端与发送队列，交接后只显式保存发送端，再跳过正常关服直接强退。
         var entity = AuditReproSupport.villager(context, UUID.randomUUID());
         var response = AuditReproSupport.inspect(entity);
@@ -21,9 +20,9 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         var sender = AuditReproSupport.sender();
         var human = AuditReproSupport.human();
         // GameTest 重启会重置世界时钟；每轮选择新区域，避免旧窗口决定本轮等待时长。
-        long sequence = sender.writeNbt(new NbtCompound()).getLong("next_sequence");
+        long sequence = sender.save(new CompoundTag()).getLong("next_sequence");
         long blockX = Math.multiplyExact(sequence + 1, CRASH_REGION_SPACING_BLOCKS);
-        entity.setPosition(blockX, entity.getY(), 0);
+        entity.setPos(blockX, entity.getY(), 0);
         entity.remove(Entity.RemovalReason.DISCARDED);
         var releases = AuditReproSupport.pending(sender);
         int releaseCount = releases.size();
@@ -34,7 +33,7 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         AuditReproSupport.save(sender, senderFile);
         sender.retry();
         context.assertTrue(!AuditReproSupport.pending(sender).isEmpty(), "首次受理不应即时确认");
-        context.waitAndRun(HANDOFF_TICKS, () -> {
+        context.runAfterDelay(HANDOFF_TICKS, () -> {
             try {
                 haltAfterHandoff(context, release);
             } catch (Exception failure) {
@@ -43,7 +42,7 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         });
     }
 
-    private static void haltAfterHandoff(TestContext context,
+    private static void haltAfterHandoff(GameTestHelper context,
             dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelease release) throws Exception {
         // tick 末接收端已提交，发送端再持久保存删除和待遗忘 ID，然后跳过关服保存。
         var sender = AuditReproSupport.sender();
@@ -57,9 +56,9 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         context.assertTrue(AuditReproSupport.pending(sender).isEmpty(), "持久化确认后发送端没有删除队列");
         var senderFile = AuditReproSupport.worldFile(context, AuditReproSupport.SENDER_FILE);
         AuditReproSupport.save(sender, senderFile);
-        context.assertTrue(sender.writeNbt(new NbtCompound())
-                .getList("pending_forget", net.minecraft.nbt.NbtElement.STRING_TYPE).contains(
-                        net.minecraft.nbt.NbtString.of(releaseId)), "没有持久保留待遗忘 ID");
+        context.assertTrue(sender.save(new CompoundTag())
+                .getList("pending_forget", net.minecraft.nbt.Tag.TAG_STRING).contains(
+                        net.minecraft.nbt.StringTag.valueOf(releaseId)), "没有持久保留待遗忘 ID");
         writeMarker(context, release);
         int pendingCount = AuditReproSupport.pending(sender).size();
         System.out.println("REPRO-A-05-HALT release=" + releaseId
@@ -70,18 +69,18 @@ public final class ReleaseCrashBeforeGameTest implements FabricGameTest {
         Runtime.getRuntime().halt(AuditReproSupport.CRASH_EXIT_CODE);
     }
 
-    private static void writeMarker(TestContext context,
+    private static void writeMarker(GameTestHelper context,
                                     dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelease release)
             throws Exception {
         // 保存世界身份和请求原文，使重启测试能排除错误世界或新建账本的假阳性。
         var sender = AuditReproSupport.sender();
         var human = AuditReproSupport.human();
-        NbtCompound marker = new NbtCompound();
+        CompoundTag marker = new CompoundTag();
         marker.putByteArray("release", release.toByteArray());
-        marker.putLong("next_sequence", sender.writeNbt(new NbtCompound()).getLong("next_sequence"));
-        marker.putString("human_epoch", human.writeNbt(new NbtCompound()).getString("epoch"));
-        marker.putString("world", context.getWorld().getServer().getSavePath(
-                net.minecraft.util.WorldSavePath.ROOT).toAbsolutePath().normalize().toString());
+        marker.putLong("next_sequence", sender.save(new CompoundTag()).getLong("next_sequence"));
+        marker.putString("human_epoch", human.save(new CompoundTag()).getString("epoch"));
+        marker.putString("world", context.getLevel().getServer().getWorldPath(
+                net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize().toString());
         AuditReproSupport.write(marker, AuditReproSupport.evidence(AuditReproSupport.RELEASE_MARKER_FILE));
     }
 }

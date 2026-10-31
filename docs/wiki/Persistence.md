@@ -24,7 +24,7 @@
 | 问题 | 根因 | 修改 | 整体回归 |
 |---|---|---|---|
 | 最新成功回执遗漏 | Store 从 HashMap 提供回执，截取尾部不代表最新提交 | 按 `committed.revision` 升序排列后保留最高的 32 条 | `audit02NewestReceiptSurvivesEntityNbtRoundTrip`：提交 100 笔、核对完整 69–100 窗口、实体 NBT 往返并重放最后一笔 |
-| 错误类型列表被吞空 | `getList(key, BYTE_ARRAY_TYPE)` 先返回空列表，之后检查已经失去原始类型 | 世界队列与实体回执直接检查原始 `NbtList`；实体全部字段校验后才更新缓存，失败时隔离身体功能并原样保存标签 | `audit03WorldQueueRejectsWrongElementType`、`audit03EntityReceiptsRejectWrongElementType`；另保留合法空列表往返 |
+| 错误类型列表被吞空 | `getList(key, TAG_BYTE_ARRAY)` 先返回空列表，之后检查已经失去原始类型 | 世界队列与实体回执直接检查原始 `ListTag`；实体全部字段校验后才更新缓存，失败时隔离身体功能并原样保存标签 | `audit03WorldQueueRejectsWrongElementType`、`audit03EntityReceiptsRejectWrongElementType`；另保留合法空列表往返 |
 | 坏账本使身体退回原版 HP | `isReady` 失败被当成不归本宿主管理 | 先检查活动世界、线程及实体认领，再将已认领实体的装配失败映射为 `INTERNAL_ERROR` | `audit04CorruptLedgerMustNotBecomeUnbound`：真实坏档启动、恢复已绑定实体、拒绝伤害且原版 HP 不变；未认领牛仍为 `unbound`，随后保存不覆盖坏文件 |
 | 释放交接强退丢真元 | 把内存受理或 `duplicate` 当作写盘确认，发送端先删除且保存 | Human tick 末合并保存后确认；Humanoid 持久删除后发送遗忘，完成历史被回收 | 两端释放持久化 GameTest，以及 `release-before` → `release-after` 真实强退重启 |
 
@@ -32,7 +32,7 @@
 测试放在正常 `fabric/src/gametest` 源集，默认 GameTest 包含原有整体回归和新增存档回归。
 坏档与强退测试必须选择独立模式；`release-before` 预期以 87 强退，随后同世界的 `release-after` 必须成功恢复。
 
-实体读取 `meridian_humanoid` 前先保存完整 `NbtCompound.copy()`。
+实体读取 `meridian_humanoid` 前先保存完整 `CompoundTag.copy()`。
 字段校验失败时清除运行中的身体引用、标记加载失败，并保留原始复合标签；
 异常仅在身体标签边界处理，实体其余 NBT 仍正常加载。
 后续实体、区块和服务器保存都写回原始标签的独立副本，不能因身体坏档而抛保存异常。
@@ -59,7 +59,7 @@ Human 和 Humanoid 通过必装的 `meridian_environment_host.exchange(byte[])` 
 
 ### Minecraft 保存时机与平台差异
 
-已核对 Minecraft 1.20.1 Yarn 映射 JAR 的实际字节码：`markDirty()` 只设内存标记，`PersistentStateManager.save()` 才调用 `PersistentState.save(File)`。世界保存经过 `ServerWorld.saveLevel()`；自动保存每 6000 个 tick（20 TPS 时五分钟），正常关服也保存。`savingDisabled` 跳过普通世界保存。原版直接覆盖，捕获异常后仍清 dirty，没有刷盘确认。
+已核对 Minecraft 1.20.1 实际字节码：`setDirty()` 只设内存标记，`DimensionDataStorage.save()` 才调用 `SavedData.save(File)`。世界保存经过 `ServerLevel.saveLevelData()`；自动保存每 6000 个 tick（20 TPS 时五分钟），正常关服也保存。`noSave` 跳过普通世界保存。原版直接覆盖，捕获异常后仍清 dirty，没有刷盘确认。
 
 两端保存均保留原版 `data`、`DataVersion` 封装，写同目录 `.dat.tmp`、关闭压缩流、对文件执行 `FileChannel.force(true)`、使用 `ATOMIC_MOVE + REPLACE_EXISTING` 原子替换正式文件。**文件 force 和原子替换始终必须成功。** Unix 平台还同步目录及其上级目录；Windows 不打开不支持的目录通道，跳过目录同步，采用文件 force 和 NTFS 原子移动的元数据日志保证。支持目录同步的平台上的真实 I/O 错误仍算保存失败，不被吞掉。
 
@@ -212,7 +212,7 @@ git diff --check
 
 日志及结果记录位于各仓 `fabric/build/persistence-logs/`，命令及退出码存于 `review-final-results.json`；本轮 GameTest XML 位于 Human `fabric/build/gametest/build/gametest-results.xml` 与 Humanoid `fabric/build/repro-<模式>.xml`。Human 上一级旧报告不是本轮结果。before 的成功证据为强退前断言、`senderForgetSaved=true`、JVM 87 和 after 恢复，不会生成通过 XML。after 继续正常 tick，最终要求 `REPRO-A-05-RECLAIM` 显示两端历史均回收。
 
-首轮新单元夹具曾因未初始化 Minecraft 版本而失败，定位为 `NbtHelper.putDataVersion` 的 `Game version not set`；补充 `SharedConstants.createGameVersion()` 后重跑通过。故障注入产生预期 I/O 日志；原 mock 玩家缺少 UI 频道及坏身体夹具的错误日志不代表真实客户端已受测试。
+首轮新单元夹具曾因未初始化 Minecraft 版本而失败，定位为 `NbtUtils.addDataVersion` 的 `Game version not set`；补充 `SharedConstants.tryDetectVersion()` 后重跑通过。故障注入产生预期 I/O 日志；原 mock 玩家缺少 UI 频道及坏身体夹具的错误日志不代表真实客户端已受测试。
 
 增强遗忘丢包后，复用 GameTest 世界曾因旧区域窗口晚于测试服务器重启后的时钟而未能在 600 tick 内回收，诊断见 `review-debug-full-2.log`。遗忘丢包夹具改用无区域账户的明确时间边界，强退夹具每轮选择新区域；仍使用生产协议、实际文件、正常 tick 和同一重启世界。生产强退也可能回滚尚未保存的世界时钟，延后旧窗口入账；期间继续保留未决记录，不能提前回收。
 

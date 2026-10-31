@@ -14,16 +14,16 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechniqu
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueFailure;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.item.ShieldItem;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.item.ShieldItem;
+import net.minecraft.world.phys.Vec3;
 
 /** 把一次战术决策落到施放请求与移动指令上；施放失败按式累计，连续失败后暂停该式。 */
 final class HumanoidActions {
@@ -31,7 +31,7 @@ final class HumanoidActions {
     private static final double FLEE_ARRIVED_DISTANCE = 2;
 
     /** 一次决策执行所需的实体、大脑状态、身体、候选与对手。 */
-    record Turn(MobEntity mob, HumanoidMind mind, BodySnapshot body, HumanoidRepertoires.Readout readout,
+    record Turn(Mob mob, HumanoidMind mind, BodySnapshot body, HumanoidRepertoires.Readout readout,
                 Optional<HumanoidOpponent> opponent) { }
 
     private HumanoidActions() {
@@ -95,7 +95,7 @@ final class HumanoidActions {
 
     private static void dodge(Turn turn) {
         // 副手持盾时举盾原地格挡；否则能跃步就跃出范围，同时走向出口。
-        MobEntity mob = turn.mob();
+        Mob mob = turn.mob();
         if (HumanoidFighters.vanillaMeans(mob).contains(Fighter.Means.SHIELD)) {
             raiseShield(mob);
             turn.mind().direct(HumanoidMotion.Directive.STAYING);
@@ -106,7 +106,7 @@ final class HumanoidActions {
             turn.mind().direct(HumanoidMotion.Directive.STAYING);
             return;
         }
-        Vec3d point = exit.get().point();
+        Vec3 point = exit.get().point();
         if (TechniqueLeaps.preview(mob, point).isPresent()) {
             TechniqueLeaps.leapToward(mob, point);
         }
@@ -117,14 +117,14 @@ final class HumanoidActions {
         // 跃向对手身前、隔开配置的距离，落地后贴住。
         LivingEntity opponent = opponentEntity(turn);
         double standOff = HumanoidBrain.config().response().assaultStandOff();
-        Vec3d landing = opponent.getPos().add(HumanoidMotion.away(turn.mob(), opponent).multiply(standOff));
+        Vec3 landing = opponent.position().add(HumanoidMotion.away(turn.mob(), opponent).scale(standOff));
         TechniqueLeaps.leapToward(turn.mob(), landing);
         turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
     }
 
     private static void kite(Turn turn) {
         // 背向对手跃步，再沿同一方向走开。
-        Vec3d destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
+        Vec3 destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
         TechniqueLeaps.leapToward(turn.mob(), destination);
         turn.mind().direct(HumanoidMotion.Directive.moveTo(destination, HumanoidMotion.Pace.FLEE));
     }
@@ -143,7 +143,7 @@ final class HumanoidActions {
         if (stillFleeing(turn)) {
             return;
         }
-        Vec3d destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
+        Vec3 destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
         turn.mind().direct(HumanoidMotion.Directive.moveTo(destination, HumanoidMotion.Pace.FLEE));
     }
 
@@ -154,11 +154,11 @@ final class HumanoidActions {
                 || directive.pace() != HumanoidMotion.Pace.FLEE) {
             return false;
         }
-        Vec3d destination = directive.destination().orElseThrow();
-        Vec3d threat = opponentEntity(turn).getPos();
-        Vec3d position = turn.mob().getPos();
+        Vec3 destination = directive.destination().orElseThrow();
+        Vec3 threat = opponentEntity(turn).position();
+        Vec3 position = turn.mob().position();
         return position.distanceTo(destination) > FLEE_ARRIVED_DISTANCE
-                && destination.squaredDistanceTo(threat) > position.squaredDistanceTo(threat);
+                && destination.distanceToSqr(threat) > position.distanceToSqr(threat);
     }
 
     private static void hold(Turn turn) {
@@ -171,17 +171,17 @@ final class HumanoidActions {
 
     private static void cast(Turn turn, String technique) {
         // 僵直中不发请求；有对手时以它为目标，失败按式累计。
-        MobEntity mob = turn.mob();
+        Mob mob = turn.mob();
         var service = TechniqueFabric.service();
-        if (service.staggerRemainingMillis(mob.getUuid()) > 0) {
+        if (service.staggerRemainingMillis(mob.getUUID()) > 0) {
             return;
         }
         var request = CastRequest.newBuilder()
                 .setBodyId(turn.body().id().value())
                 .setTechnique(reference(turn, technique))
                 .setCastId(UUID.randomUUID().toString());
-        turn.opponent().ifPresent(opponent -> request.setTargetId(opponent.entity().getUuidAsString()));
-        CastOutcome outcome = service.cast(mob.getUuid(), request.build());
+        turn.opponent().ifPresent(opponent -> request.setTargetId(opponent.entity().getStringUUID()));
+        CastOutcome outcome = service.cast(mob.getUUID(), request.build());
         if (failed(outcome)) {
             HumanoidBrainConfig.ResponseRules rules = HumanoidBrain.config().response();
             long now = turn.body().settledAt().elapsedMillis();
@@ -198,13 +198,13 @@ final class HumanoidActions {
                 || outcome.getFrameworkFailure() != FailureCode.FAILURE_CODE_UNSPECIFIED;
     }
 
-    private static void logFailure(MobEntity mob, String technique, CastOutcome outcome) {
+    private static void logFailure(Mob mob, String technique, CastOutcome outcome) {
         // 只在逐条决策日志打开时记下失败原因。
         if (HumanoidBrain.config().schedule().log() != HumanoidBrainConfig.DecisionLog.VERBOSE) {
             return;
         }
         LOGGER.info("类人施放失败 subject={} technique={} failure={} framework={} reason={}",
-                mob.getUuidAsString(), technique, outcome.getFailure(), outcome.getFrameworkFailure(),
+                mob.getStringUUID(), technique, outcome.getFailure(), outcome.getFrameworkFailure(),
                 outcome.getReason());
     }
 
@@ -222,19 +222,19 @@ final class HumanoidActions {
         return turn.opponent().orElseThrow().entity();
     }
 
-    private static void raiseShield(MobEntity mob) {
+    private static void raiseShield(Mob mob) {
         // 已在举盾时不重举，免得格挡计时清零。
-        if (mob.isUsingItem() && mob.getActiveHand() == Hand.OFF_HAND) {
+        if (mob.isUsingItem() && mob.getUsedItemHand() == InteractionHand.OFF_HAND) {
             return;
         }
-        mob.setCurrentHand(Hand.OFF_HAND);
+        mob.startUsingItem(InteractionHand.OFF_HAND);
     }
 
-    private static void lowerShield(MobEntity mob) {
+    private static void lowerShield(Mob mob) {
         // 只放下副手的盾，不打断别的物品使用。
-        if (mob.isUsingItem() && mob.getActiveHand() == Hand.OFF_HAND
-                && mob.getActiveItem().getItem() instanceof ShieldItem) {
-            mob.clearActiveItem();
+        if (mob.isUsingItem() && mob.getUsedItemHand() == InteractionHand.OFF_HAND
+                && mob.getUseItem().getItem() instanceof ShieldItem) {
+            mob.stopUsingItem();
         }
     }
 }

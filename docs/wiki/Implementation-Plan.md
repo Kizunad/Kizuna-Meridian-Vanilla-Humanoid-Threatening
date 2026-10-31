@@ -16,7 +16,7 @@
 
 - `HumanoidHealthHost` 只认领七种实体；首次健康查询从 Human `meridian_environment_host` 取得区域库存和世界时钟，生成失败时不创建临时身体。
 - 健康宿主接受 `exertion`，核对命令身体 ID 与实体实际绑定，使用环境宿主提供的可信时钟，保留请求 ID 和预期 revision，经 Framework 普通命令入口原子做功。成功只返回身体，不附带健康效果回执；能力不足返回原始失败码，不记宿主错误。`HumanoidGameTest.exertionChargesOnceRejectsCapacityAndChecksBoundIdentity` 覆盖扣账、重放不重复、容量拒绝不改身体及跨身体拒绝。
-- 身体快照、按提交 revision 选择的最新 32 条回执、区域来源和当前实体所有者写入实体 `meridian_humanoid` NBT。Framework 时间推进和健康回执中的 `released_qi` 会进入本模组世界 `PersistentState` 释放账本；所有者字段阻止其他实体借用快照，并兼容已有存档的身体 ID。
+- 身体快照、按提交 revision 选择的最新 32 条回执、区域来源和当前实体所有者写入实体 `meridian_humanoid` NBT。Framework 时间推进和健康回执中的 `released_qi` 会进入本模组世界 `SavedData` 释放账本；所有者字段阻止其他实体借用快照，并兼容已有存档的身体 ID。
 - 世界释放队列与实体回执从原始 NBT 列表检查元素类型，错误类型拒绝加载。实体身体标签读取失败时保留完整副本，保存时原样写回并只记录一次加载错误；世界账本或实体身体标签恢复失败时，已认领实体的健康请求返回 `INTERNAL_ERROR`，不退回原版 HP。
 - 释放账本保存完整 `RegionRelease`，每 tick 重试；Human tick 末合并保存后才返回 `released.persisted=true`。Humanoid 持久删除原请求并保存待遗忘 ID 后请求回收，Human 入账并持久删除去重项后确认；完成历史不再永久保留。两端文件同步与原子替换始终必须成功，Windows 跳过不支持的目录同步。协议与回归见[存档边界与回归](Persistence.md)。`UNLOADED_*` 与 `CHANGED_DIMENSION` 保留身体，`KILLED`/`DISCARDED` 结算并释放。
 - 已绑定身体的村民（游炁和真炁）雷击时不转女巫，沿用原版和平难度分支的普通雷击处理：仍是同一个村民、保留原身体、照常着火，伤害经过 Damage-Addon 与健康宿主；无身体村民保留原版转化。注入只改变村民雷击入口的难度判断，不修改世界难度。

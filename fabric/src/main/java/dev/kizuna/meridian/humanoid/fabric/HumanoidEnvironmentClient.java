@@ -5,8 +5,7 @@ import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.entity.Entity;
-
+import net.minecraft.world.entity.Entity;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -95,7 +94,7 @@ final class HumanoidEnvironmentClient {
     private EnvironmentHostMessages.RegionQuery position(Entity entity) {
         // 环境服务接收方块坐标，区域查找规则由 Human 解释。
         return EnvironmentHostMessages.RegionQuery.newBuilder()
-                .setDimensionId(entity.getWorld().getRegistryKey().getValue().toString())
+                .setDimensionId(entity.level().dimension().location().toString())
                 .setBlockX(entity.getBlockX())
                 .setBlockZ(entity.getBlockZ())
                 .build();

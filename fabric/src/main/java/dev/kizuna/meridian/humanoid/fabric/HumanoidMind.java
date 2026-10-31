@@ -2,13 +2,12 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment.Stance;
-import net.minecraft.entity.LivingEntity;
-
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.world.entity.LivingEntity;
 
 /** 一个被接管实体的大脑状态：姿态、对手、当前指令、决策序号、失败屏蔽与最近的决策记录。 */
 final class HumanoidMind {
