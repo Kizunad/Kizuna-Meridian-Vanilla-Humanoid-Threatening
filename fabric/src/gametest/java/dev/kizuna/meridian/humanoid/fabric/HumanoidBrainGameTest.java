@@ -75,6 +75,9 @@ public final class HumanoidBrainGameTest {
     private static final BlockPos MIDDLE_POS = new BlockPos(2, 0, 7);
     private static final BlockPos FAR_POS = new BlockPos(2, 0, 8);
     private static final BlockPos BED_FOOT_POS = new BlockPos(4, 0, 2);
+    /** 对决两端都在结构以内，间距与上面的近端到远端一样是 6 格。 */
+    private static final BlockPos DUEL_FIRST_POS = new BlockPos(2, 0, 1);
+    private static final BlockPos DUEL_SECOND_POS = new BlockPos(2, 0, 7);
     private static final int SHORT_TIMEOUT = 400;
     private static final int LONG_TIMEOUT = 800;
     private static final int RETREAT_TICKS = 200;
@@ -277,9 +280,12 @@ public final class HumanoidBrainGameTest {
     @GameTest(maxTicks = DUEL_TIMEOUT, environment = DUEL_BATCH)
     public void trueQiVindicatorsDuelForThreeMinutes(GameTestHelper context) {
         // 两只持斧真炁卫道士互设目标打三分钟或打到一方倒下，检查应对、准备与失败上限；虚脱后拉开另有确定性用例。
+        // 26.2 的 GameTest 用屏障围住 8×8 结构（1.20.1 自动运行不围），原来的远端 z=8 正好落在墙里，
+        // 两端整体挪进结构，间距不变。
         var arena = new Arena(context);
-        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", SUBJECT_POS);
-        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
+        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", DUEL_FIRST_POS);
+        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second",
+                DUEL_SECOND_POS);
         for (Vindicator fighter : List.of(first, second)) {
             fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         }
