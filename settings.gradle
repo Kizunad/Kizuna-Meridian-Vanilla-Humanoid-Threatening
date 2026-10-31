@@ -14,7 +14,11 @@ include 'server', 'fabric'
 
 // 类人实体内容只通过相邻仓库的公开 API 接入，不复制 Framework、Human 或 Qi-Variants 源码，相邻仓库都以源码组合。
 // local.meridian 是框架的本地替换键；本构建直接组合框架时以这里的规则为准，功法与 Human 的协议还需要 client。
-kizunaWorkspace.includeSource('framework', [client: 'local.meridian:client', server: 'local.meridian:server'])
+// 完整装配按坐标装入 Human Fabric 时，Loom 以框架真实坐标重新加入 client，所以真实坐标也登记替换。
+kizunaWorkspace.includeSource('framework', [
+        client: ['local.meridian:client', 'dev.kizuna.meridian:client'],
+        server: 'local.meridian:server'
+])
 kizunaWorkspace.includeSource('qi-variants', [
         server: 'dev.kizuna.meridian.qivariants:server',
         shared: 'dev.kizuna.meridian.qivariants:shared'
@@ -30,8 +34,10 @@ kizunaWorkspace.includeSource('vanilla-damage', [
         server: 'dev.kizuna.meridian.vanilla:server'
 ])
 kizunaWorkspace.includeSource('players-animation-mobs', ['': 'dev.kizuna:kizuna-players-animation-mobs-addon'])
-// 规则代码只用 Human 公开的 server/shared 库；Human 的 Fabric 安装 JAR 由完整装配在运行时按清单装入。
+// 规则代码只用 Human 公开的 server/shared 库；类人身体快照登记到 Human 公开的 /meridian body status 视图，
+// 所以 Human 的 Fabric 模块也以源码组合，仅在编译期可见，运行时由完整装配按清单装入。
 kizunaWorkspace.includeSource('human', [
+        fabric: 'dev.kizuna.meridian.human:fabric',
         server: 'dev.kizuna.meridian.human:server',
         shared: 'dev.kizuna.meridian.human:shared'
 ])

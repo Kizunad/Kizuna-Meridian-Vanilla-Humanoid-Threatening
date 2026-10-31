@@ -4,18 +4,16 @@ import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
+import dev.kizuna.meridian.server.EnvironmentHostEntrypoint;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.world.entity.Entity;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.UUID;
 
 /** Human 区域服务的 Fabric 字节协议客户端；不直接依赖 Human Fabric 实现类。 */
 final class HumanoidEnvironmentClient {
     private static final String ENTRYPOINT = "meridian_environment_host";
-    private Method exchange;
-    private Object endpoint;
+    private EnvironmentHostEntrypoint endpoint;
 
     RegionSnapshot query(Entity entity) {
         // 以实体所在维度和区块坐标向 Human 查询当前区域快照。
@@ -124,50 +122,31 @@ final class HumanoidEnvironmentClient {
     }
 
     private byte[] invoke(byte[] payload) {
-        // 已缓存的入口直接调用，缺少任一字段时在同步区内重新确认并绑定。
-        Method cachedExchange = exchange;
-        Object cachedEndpoint = endpoint;
-        EndpointBinding binding;
-        if (cachedExchange == null || cachedEndpoint == null) {
-            binding = bindEndpoint();
-        } else {
-            binding = new EndpointBinding(cachedExchange, cachedEndpoint);
-        }
+        // 已缓存的入口直接调用，未缓存时在同步区内重新确认并绑定；入口自身抛出的异常按拒绝调用上报。
+        EnvironmentHostEntrypoint cachedEndpoint = endpoint;
+        EnvironmentHostEntrypoint binding = cachedEndpoint == null ? bindEndpoint() : cachedEndpoint;
         try {
-            return (byte[]) binding.method().invoke(binding.target(), (Object) payload);
-        } catch (IllegalAccessException | InvocationTargetException failure) {
-            Throwable cause;
-            if (failure instanceof InvocationTargetException invocation) {
-                Throwable targetCause = invocation.getCause();
-                cause = targetCause == null ? failure : targetCause;
-            } else {
-                cause = failure;
-            }
-            throw unavailable("Human 环境服务入口拒绝调用", MeridianMessages.FailureCode.ENVIRONMENT_UNAVAILABLE, cause);
+            return binding.exchange(payload);
+        } catch (RuntimeException failure) {
+            throw unavailable("Human 环境服务入口拒绝调用", MeridianMessages.FailureCode.ENVIRONMENT_UNAVAILABLE,
+                    failure);
         }
     }
 
-    private synchronized EndpointBinding bindEndpoint() {
-        // 同步后再次检查缓存，避免并发首次请求重复解析公开字节入口。
-        Method cachedExchange = exchange;
-        Object cachedEndpoint = endpoint;
-        if (cachedExchange != null && cachedEndpoint != null) {
-            return new EndpointBinding(cachedExchange, cachedEndpoint);
+    private synchronized EnvironmentHostEntrypoint bindEndpoint() {
+        // 同步后再次检查缓存，避免并发首次请求重复取入口；入口按 Framework 接口类型取出，不反射查方法。
+        EnvironmentHostEntrypoint cachedEndpoint = endpoint;
+        if (cachedEndpoint != null) {
+            return cachedEndpoint;
         }
-        List<Object> entrypoints = FabricLoader.getInstance().getEntrypoints(ENTRYPOINT, Object.class);
+        List<EnvironmentHostEntrypoint> entrypoints = FabricLoader.getInstance()
+                .getEntrypoints(ENTRYPOINT, EnvironmentHostEntrypoint.class);
         if (entrypoints.isEmpty()) {
             throw unavailable("没有 Human 环境服务入口", MeridianMessages.FailureCode.ENVIRONMENT_UNAVAILABLE);
         }
-        Object installedEndpoint = entrypoints.get(0);
-        Method installedExchange;
-        try {
-            installedExchange = installedEndpoint.getClass().getMethod("exchange", byte[].class);
-        } catch (NoSuchMethodException failure) {
-            throw unavailable("Human 环境服务入口协议不匹配", MeridianMessages.FailureCode.INTERNAL_ERROR, failure);
-        }
+        EnvironmentHostEntrypoint installedEndpoint = entrypoints.get(0);
         endpoint = installedEndpoint;
-        exchange = installedExchange;
-        return new EndpointBinding(installedExchange, installedEndpoint);
+        return installedEndpoint;
     }
 
     private static Unavailable unavailable(String message, MeridianMessages.FailureCode code) {
@@ -187,9 +166,6 @@ final class HumanoidEnvironmentClient {
                 throw new IllegalArgumentException("区域快照不能为空");
             }
         }
-    }
-
-    private record EndpointBinding(Method method, Object target) {
     }
 
     static final class Unavailable extends RuntimeException {

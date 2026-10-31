@@ -14,6 +14,10 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation libs.fabric.loader
     modImplementation libs.fabric.api
+    // /meridian 指令统一注册点（Framework 的 Fabric 模组 meridian_framework），Framework 组合时自动替换为源码工程。
+    modImplementation 'dev.kizuna.meridian:fabric'
+    // 类人身体快照登记为 Human 的 /meridian body status 视图；只在编译期取 Human Fabric 模块本身，运行时由完整装配装入。
+    modCompileOnly('dev.kizuna.meridian.human:fabric') { transitive = false }
 
     implementation project(':server')
     include project(':server')

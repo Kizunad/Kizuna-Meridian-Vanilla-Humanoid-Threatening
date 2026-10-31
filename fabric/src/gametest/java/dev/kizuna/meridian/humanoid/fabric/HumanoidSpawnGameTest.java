@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
@@ -36,6 +37,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** 注册、物品交互、命令解析与唯一身体出生的完整宿主回归。 */
 public final class HumanoidSpawnGameTest implements FabricGameTest {
@@ -44,7 +46,8 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
     private static final int POSITION = 2;
     private static final int UUID_SEARCH_LIMIT = 4096;
     private static final long NATURAL_UUID_PREFIX = 0x7891213a516a4456L;
-    private static final String SUMMON = "meridian humanoid summon ";
+    private static final String SPAWN = "meridian humanoid spawn ";
+    private static final String BODY_STATUS = "meridian body status ";
     private static final String TECHNIQUE_PREFIX = "meridian_door_breaker:";
 
     @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
@@ -97,14 +100,14 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
     }
 
     @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
-    public void summonCommandSpawnsBothRealmsWithDefaultAndRelativePosition(GameTestHelper context) {
+    public void spawnCommandSpawnsBothRealmsWithDefaultAndRelativePosition(GameTestHelper context) {
         // 两档均从正式命令树执行，并核对成功反馈和相对坐标。
         var output = new RecordedOutput();
         var source = source(context).withSource(output);
         var world = context.getLevel();
         var commands = world.getServer().getCommands();
         for (HumanoidVariant variant : HumanoidVariant.values()) {
-            String baseCommand = SUMMON + "vindicator " + variant.name().toLowerCase(Locale.ROOT);
+            String baseCommand = SPAWN + "vindicator " + variant.name().toLowerCase(Locale.ROOT);
             Vec3 sourcePosition = source.getPosition();
             String command;
             Vec3 expected;
@@ -115,7 +118,7 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
                 command = baseCommand;
                 expected = sourcePosition;
             }
-            context.assertTrue(commands.performPrefixedCommand(source, command) == 1, "summon 命令生成失败");
+            context.assertTrue(commands.performPrefixedCommand(source, command) == 1, "spawn 命令生成失败");
             String feedback = output.messages.get(output.messages.size() - 1);
             String uuid = feedback.substring(feedback.lastIndexOf('：') + 1);
             var mob = (Vindicator) world.getEntity(UUID.fromString(uuid));
@@ -169,39 +172,85 @@ public final class HumanoidSpawnGameTest implements FabricGameTest {
     public void commandsCompleteSpeciesRealmsPositionsItemsAndRejectInvalidInput(GameTestHelper context) {
         // 补全通过真实 dispatcher 查询；非法物种、档位和无权限输入都必须报错。
         var source = source(context);
-        context.assertTrue(suggestions(source, SUMMON).equals(Set.of(
-                "villager", "wandering_trader", "pillager", "vindicator", "evoker", "witch", "illusioner")),
-                "物种补全不完整");
-        context.assertTrue(suggestions(source, SUMMON + "vindicator ").equals(Set.of("wandering_qi", "true_qi")),
-                "档位补全错误");
-        context.assertTrue(suggestions(source, SUMMON + "vindicator true_qi ").contains("~ ~ ~"), "坐标没有补全");
-        context.assertTrue(suggestions(source, "meridian humanoid inspect ").contains("@e"), "inspect 缺原版目标补全");
+        Set<String> species = Stream.concat(HumanoidSpecies.values().stream(), HumanoidSpecies.registered().stream())
+                .map(HumanoidSpecies::entityId)
+                .collect(Collectors.toSet());
+        context.assertTrue(suggestions(source, SPAWN).equals(species), "物种补全不完整");
+        var afterSpecies = suggestions(source, SPAWN + "vindicator ");
+        context.assertTrue(afterSpecies.containsAll(Set.of("mortal", "wandering_qi", "true_qi")), "档位补全错误");
+        context.assertTrue(afterSpecies.contains("~ ~ ~"), "省略档位时坐标没有补全");
+        context.assertTrue(suggestions(source, SPAWN + "vindicator true_qi ").contains("~ ~ ~"), "坐标没有补全");
+        context.assertTrue(suggestions(source, BODY_STATUS).contains("@e"), "body status 缺原版目标补全");
         context.assertTrue(suggestions(source, "give @s meridian_humanoid:").size() == EGG_COUNT, "give 未补全十四个蛋");
         var output = new RecordedOutput();
         var commands = context.getLevel().getServer().getCommands();
         var observed = source.withSource(output);
-        for (String command : List.of(SUMMON + "zombie true_qi", SUMMON + "vindicator invalid")) {
+        for (String command : List.of(SPAWN + "zombie true_qi", SPAWN + "vindicator invalid")) {
             output.messages.clear();
             context.assertTrue(commands.performPrefixedCommand(observed, command) == 0 && !output.messages.isEmpty(),
                     "非法命令没有错误反馈");
         }
         output.messages.clear();
-        context.assertTrue(commands.performPrefixedCommand(observed.withPermission(1), SUMMON + "vindicator true_qi") == 0
-                && !output.messages.isEmpty(), "低权限命令没有拒绝");
+        int lowPermission = commands.performPrefixedCommand(observed.withPermission(1), SPAWN + "vindicator true_qi");
+        context.assertTrue(lowPermission == 0 && !output.messages.isEmpty(), "低权限命令没有拒绝");
         context.succeed();
     }
 
+    @GameTest(template = FabricGameTest.EMPTY_STRUCTURE)
+    public void spawnCommandRollsOmittedRealmAndBirthsMortalWithoutOpenedMeridians(GameTestHelper context) {
+        // 省略档位的内置生人按自然出生抽档；mortal 不开任何经脉；内置物种不接受放置钩子。
+        var output = new RecordedOutput();
+        var source = source(context).withSource(output);
+        var world = context.getLevel();
+        var commands = world.getServer().getCommands();
+        var natural = spawnByCommand(context, commands.performPrefixedCommand(source, SPAWN + "vindicator"), output);
+        try {
+            var region = HumanoidFabric.region(natural);
+            var random = HumanoidBodyGenerator.randomFor(world.getSeed(), natural.getUUID());
+            var rolled = HumanoidFabric.generator().rollVariant(HumanoidSpecies.VINDICATOR, region.inventory(), random);
+            var snapshot = ((HumanoidEntityAccess) natural).meridian$humanoidBody().snapshot();
+            context.assertTrue(snapshot.getRealm().name().equals(rolled.name()), "省略档位没有按自然出生抽档");
+        } finally {
+            natural.discard();
+        }
+        var mortal = spawnByCommand(context, commands.performPrefixedCommand(source, SPAWN + "vindicator mortal"),
+                output);
+        try {
+            var snapshot = ((HumanoidEntityAccess) mortal).meridian$humanoidBody().snapshot();
+            context.assertTrue(HumanoidTier.of(snapshot) == HumanoidTier.MORTAL, "mortal 出生打开了经脉");
+            context.assertTrue(output.messages.get(output.messages.size() - 1).contains("凡人"), "mortal 反馈档位错误");
+        } finally {
+            mortal.discard();
+        }
+        try {
+            HumanoidSpawns.registerPlacement(HumanoidSpecies.VINDICATOR, (level, position, yaw, tier) -> null);
+            context.fail("内置物种登记了放置钩子");
+        } catch (IllegalArgumentException expected) {
+            // 内置生人固定走原版生物出生。
+        }
+        context.succeed();
+    }
+
+    private static Vindicator spawnByCommand(GameTestHelper context, int result, RecordedOutput output) {
+        // 从命令成功反馈末尾的 UUID 找回刚生成的实体。
+        context.assertTrue(result == 1, "spawn 命令生成失败");
+        String feedback = output.messages.get(output.messages.size() - 1);
+        var entity = context.getLevel().getEntity(UUID.fromString(feedback.substring(feedback.lastIndexOf('：') + 1)));
+        context.assertTrue(entity instanceof Vindicator, "spawn 反馈 UUID 错误");
+        return (Vindicator) entity;
+    }
+
     private static void assertSpawn(GameTestHelper context, Vindicator mob, HumanoidVariant variant) {
-        // 只读 inspect 必须立即可用；装备和自动学卷来自相同出生后的正式路径。
+        // 只读 body status 必须立即可用；装备和自动学卷来自相同出生后的正式路径。
         var snapshot = ((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot();
         context.assertTrue(snapshot.getRealm().name().equals(variant.name()), "指定档位未用于首次身体创建");
         context.assertTrue(mob.getMainHandItem().is(Items.IRON_AXE), "原版卫道士初始化丢失铁斧");
         var output = new RecordedOutput();
         var commands = context.getLevel().getServer().getCommands();
         context.assertTrue(commands.performPrefixedCommand(source(context).withSource(output),
-                "meridian humanoid inspect " + mob.getStringUUID()) == 1, "inspect 未找到已生成身体");
+                BODY_STATUS + mob.getStringUUID()) == 1, "body status 未找到已生成身体");
         context.assertTrue(output.messages.stream().anyMatch(message -> message.contains("档位=" + variant.name())),
-                "inspect 档位反馈错误");
+                "body status 档位反馈错误");
         var known = TechniqueFabric.service().known(mob.getUUID()).stream()
                 .map(entry -> entry.technique().getId())
                 .collect(Collectors.toSet());

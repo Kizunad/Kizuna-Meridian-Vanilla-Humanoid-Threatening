@@ -767,18 +767,16 @@ public final class HumanoidGameTest implements FabricGameTest {
     }
 
     private static void clearEnvironmentClient() throws Exception {
-        // 同时清除方法和目标引用，让后续请求重新绑定服务。
+        // 清除已缓存的入口引用，让后续请求重新绑定服务。
         Field environmentField = HumanoidFabric.class.getDeclaredField("environment");
         environmentField.setAccessible(true /* allowAccess */);
         Object client = environmentField.get(null);
         if (client == null) {
             return;
         }
-        for (String name : List.of("exchange", "endpoint")) {
-            Field field = client.getClass().getDeclaredField(name);
-            field.setAccessible(true /* allowAccess */);
-            field.set(client, null);
-        }
+        Field field = client.getClass().getDeclaredField("endpoint");
+        field.setAccessible(true /* allowAccess */);
+        field.set(client, null);
     }
 
     private record ReceiptBatch(BodyMessages.BodySnapshot body,

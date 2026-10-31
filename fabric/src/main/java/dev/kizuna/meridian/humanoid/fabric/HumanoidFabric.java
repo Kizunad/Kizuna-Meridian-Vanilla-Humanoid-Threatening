@@ -1,6 +1,9 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import dev.kizuna.meridian.fabric.MeridianCommands;
+import dev.kizuna.meridian.human.fabric.HumanBodyStatus;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfigLoader;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfig;
@@ -18,13 +21,10 @@ import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
-import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
@@ -44,7 +44,8 @@ import java.util.UUID;
 public final class HumanoidFabric implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_host");
     private static final String STATE_ID = "meridian_humanoid";
-    private static final int INSPECT_PERMISSION_LEVEL = 2;
+    private static final SimpleCommandExceptionType BODY_NOT_CREATED =
+            new SimpleCommandExceptionType(Component.literal("目标尚未创建身体"));
     private static MinecraftServer activeServer;
     private static HumanoidConfig config;
     private static AddonRegistry content;
@@ -71,7 +72,7 @@ public final class HumanoidFabric implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(HumanoidFabric::startServer);
         ServerTickEvents.END_SERVER_TICK.register(HumanoidFabric::tick);
         ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
-        CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> registerCommands(dispatcher));
+        registerCommands();
     }
 
     private static void startServer(MinecraftServer server) {
@@ -273,35 +274,26 @@ public final class HumanoidFabric implements ModInitializer {
                 .orElse("meridian:none");
     }
 
-    private static void registerCommands(com.mojang.brigadier.CommandDispatcher<CommandSourceStack> dispatcher) {
-        // 只有具备权限的调用方可以读取身体快照，可省略目标以检查执行实体。
-        var target = Commands.argument("target", EntityArgument.entity())
-                .executes(context -> inspect(context, EntityArgument.getEntity(context, "target")));
-        var inspect = Commands.literal("inspect")
-                .requires(source -> source.hasPermission(INSPECT_PERMISSION_LEVEL))
-                .executes(context -> inspect(context, context.getSource().getEntity()))
-                .then(target);
-        var humanoid = Commands.literal("humanoid")
-                .then(inspect)
-                .then(HumanoidSpawnCommands.command());
-        dispatcher.register(Commands.literal("meridian").then(humanoid));
+    private static void registerCommands() {
+        // /meridian humanoid spawn 登记在 Framework 的注册点，要求权限 2；
+        // 类人身体快照并入 Human 的 /meridian body status，作为非玩家目标的视图登记。
+        MeridianCommands.register(MeridianCommands.Branch.HUMANOID, "spawn", MeridianCommands.GAMEMASTER,
+                (node, context) -> HumanoidSpawnCommands.attach(node));
+        HumanBodyStatus.registerView(HumanoidFabric::showBody);
     }
 
-    private static int inspect(CommandContext<CommandSourceStack> context, Entity entity) {
-        // 调试命令只读取已绑定状态，不触发身体创建。
-        CommandSourceStack source = context.getSource();
+    private static boolean showBody(CommandSourceStack source, Entity entity) throws CommandSyntaxException {
+        // 不是已认领的类人实体时交还 Human 继续分派；只读取已绑定状态，不触发身体创建。
         if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
-            source.sendFailure(Component.literal("目标不是类人实体"));
-            return 0;
+            return false;
         }
         HumanoidBodyState body;
         if (!(living instanceof HumanoidEntityAccess access) || (body = access.meridian$humanoidBody()) == null) {
-            source.sendFailure(Component.literal("目标尚未创建身体"));
-            return 0;
+            throw BODY_NOT_CREATED.create();
         }
         Component message = inspectMessage(body);
         source.sendSuccess(() -> message, false /* broadcastToOps */);
-        return 1;
+        return true;
     }
 
     private static Component inspectMessage(HumanoidBodyState body) {

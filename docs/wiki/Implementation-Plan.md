@@ -20,7 +20,7 @@
 - 世界释放队列与实体回执从原始 NBT 列表检查元素类型，错误类型拒绝加载。实体身体标签读取失败时保留完整副本，保存时原样写回并只记录一次加载错误；世界账本或实体身体标签恢复失败时，已认领实体的健康请求返回 `INTERNAL_ERROR`，不退回原版 HP。
 - 释放账本保存完整 `RegionRelease`，每 tick 重试；Human tick 末合并保存后才返回 `released.persisted=true`。Humanoid 持久删除原请求并保存待遗忘 ID 后请求回收，Human 入账并持久删除去重项后确认；完成历史不再永久保留。两端文件同步与原子替换始终必须成功，Windows 跳过不支持的目录同步。协议与回归见[存档边界与回归](Persistence.md)。`UNLOADED_*` 与 `CHANGED_DIMENSION` 保留身体，`KILLED`/`DISCARDED` 结算并释放。
 - 已绑定身体的村民（游炁和真炁）雷击时不转女巫，沿用原版和平难度分支的普通雷击处理：仍是同一个村民、保留原身体、照常着火，伤害经过 Damage-Addon 与健康宿主；无身体村民保留原版转化。注入只改变村民雷击入口的难度判断，不修改世界难度。
-- 村民转僵尸村民后不再属于生人，原身体按死亡路径释放。OP 命令 `/meridian humanoid inspect` 输出档位、开拓经脉列表、主属性、密度、装填体积和区域来源。
+- 村民转僵尸村民后不再属于生人，原身体按死亡路径释放。类人身体快照登记为 Human `/meridian body status` 的非玩家视图，输出档位、开拓经脉列表、主属性、密度、装填体积和区域来源。
 
 本仓库的 Fabric 工程通过 Framework 的 `full-assembly.gradle` 使用完整装配，装入范围由 Framework 统一装配清单决定，缺少产物明确报错。Framework、Qi-Variants、功法库、Damage、PA Mobs-Addon 与 Human 的 server/shared 在 settings 中以源码组合，编译和开发运行使用其当前输出；Human Fabric 与破门斩、基础功法等高层附属只在运行时按清单读取已构建的安装 JAR，组合构建不反向依赖本仓库。真元属性不带被动战斗效果，只在被使用时才有区别。
 
@@ -38,19 +38,22 @@
 
 ```text
 /give @s meridian_humanoid:vindicator_true_qi_spawn_egg
-/meridian humanoid summon vindicator true_qi ~ ~ ~5
-/meridian humanoid summon vindicator wandering_qi
-/meridian humanoid inspect @e[type=minecraft:vindicator,sort=nearest,limit=1]
+/meridian humanoid spawn vindicator true_qi ~ ~ ~5
+/meridian humanoid spawn vindicator wandering_qi
+/meridian body status @e[type=minecraft:vindicator,sort=nearest,limit=1]
 ```
 
-`summon` 需要权限 2，七种生人和两档都是可补全的 literal，位置使用原版坐标参数；
-省略位置时生成在命令源位置，成功反馈实体名称、档位和 UUID。`inspect` 使用原版实体参数补全。
+`spawn` 登记在 Framework 的 `/meridian` 注册点，需要权限 2，参数与补全见 [Framework 指令页](https://github.com/Kizunad/Kizuna-Meridian-Mod-Framework/wiki/Commands)。
+物种为实体 ID，补全七种生人与全部登记物种；档位可选 `mortal`、`wandering_qi`、`true_qi`，
+省略时登记物种用物种表的 `default_tier`，内置生人按自然出生抽档；省略位置时生成在命令源位置，
+成功反馈实体名称、档位和 UUID。登记物种可以提供放置钩子，见 [物种注册](Species-Registration.md)。
 蛋和命令共用 `HumanoidSpawns`，先走原版装备初始化，再在首次身体创建时指定档位；
 已有身体不得覆盖。其余密度、库存、开脉和功法分配沿用原有规则，指定出生立即完成自动学卷。
 自然生成仍按世界种子和 UUID 随机抽档；强制出生也保留原抽档随机数消耗，后续随机采样顺序不变。
 
-`HumanoidSpawnGameTest` 覆盖十四蛋与独立创造页、两档卫道士的蛋/命令出生及 inspect、
-真炁自动学卷、默认与相对坐标、自然随机及采样顺序、补全、非法参数和权限拒绝。
+`HumanoidSpawnGameTest` 覆盖十四蛋与独立创造页、两档卫道士的蛋/命令出生及 body status、
+真炁自动学卷、默认与相对坐标、自然随机及采样顺序、省略档位的自然抽档、凡人档不开脉、
+内置物种拒绝放置钩子、补全、非法参数和权限拒绝。
 
 ## 调试入口
 

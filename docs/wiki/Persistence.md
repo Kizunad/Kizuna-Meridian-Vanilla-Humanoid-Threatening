@@ -46,7 +46,7 @@ NBT 复合标签没有键顺序约定，`copy()` 可能改变 HashMap 遍历顺�
 
 ## 释放交接协议与写盘边界
 
-Human 和 Humanoid 通过必装的 `meridian_environment_host.exchange(byte[])` 交换 Protobuf；生产代码不读取 Human 私有状态。双方一起更新，不保留旧接口降级路径。
+Human 和 Humanoid 通过必装的 `meridian_environment_host` 入口（Framework `EnvironmentHostEntrypoint.exchange(byte[])`，按接口类型调用）交换 Protobuf；生产代码不读取 Human 私有状态。双方一起更新，不保留旧接口降级路径。
 
 | 协议 | 字段与语义 |
 |---|---|

@@ -8,6 +8,7 @@ import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionQuery
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelease;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.ReleaseResult;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
+import dev.kizuna.meridian.server.EnvironmentHostEntrypoint;
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.gametest.framework.GameTest;
@@ -344,15 +345,15 @@ public final class ReleaseHandoffGameTest implements FabricGameTest {
     }
 
     private static EnvironmentHostResponse exchange(RegionRelease release) throws Exception {
-        // 失败码必须来自注册的真实字节入口，不能直接调用接收端内部方法代替。
-        Object endpoint = FabricLoader.getInstance().getEntrypoints("meridian_environment_host", Object.class).get(0);
+        // 失败码必须来自注册的真实字节入口，不能直接调用接收端内部方法代替；入口按 Framework 接口类型取出。
+        EnvironmentHostEntrypoint endpoint = FabricLoader.getInstance()
+                .getEntrypoints("meridian_environment_host", EnvironmentHostEntrypoint.class).get(0);
         var request = EnvironmentHostRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(UUID.randomUUID().toString())
                 .setRelease(release)
                 .build();
-        byte[] response = (byte[]) endpoint.getClass().getMethod("exchange", byte[].class)
-                .invoke(endpoint, (Object) request.toByteArray());
+        byte[] response = endpoint.exchange(request.toByteArray());
         return EnvironmentHostResponse.parseFrom(response);
     }
 

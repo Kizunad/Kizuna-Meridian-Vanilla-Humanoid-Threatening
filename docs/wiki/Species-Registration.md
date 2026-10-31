@@ -22,6 +22,7 @@ Threatening 内置七种原版生人。其他模组可以在初始化时登记�
 | | `Optional<HumanoidSpeciesDefinition> definition()` | 内置物种为空 |
 | | `boolean brainManaged()` | 内置物种为真；登记物种取定义里的 `brain` |
 | `HumanoidSpeciesBirths`（fabric） | `static void birth(LivingEntity, HumanoidTier)` | 实体创建、就位后，加入世界前调用，按指定档位出生身体 |
+| `HumanoidSpawns`（fabric） | `static void registerPlacement(HumanoidSpecies, Placement)` | 登记物种的 `/meridian humanoid spawn` 放置钩子；钩子创建实体、调用 `birth` 后加入世界并返回实体，内置物种与重复登记被拒绝 |
 | `HumanoidTier`（server） | `MORTAL` / `WANDERING_QI` / `TRUE_QI`，`static HumanoidTier of(BodySnapshot)` | 出生档位，可从身体快照读回 |
 
 **调用时机**：登记必须在世界加载前完成，例如在 `ModInitializer.onInitialize` 里。
@@ -65,6 +66,8 @@ foot_opening_weight = 1.0
   - 内置七种的画像仍来自 `meridian-humanoid.toml`；
   - 该配置文件只接受内置七种的实体 ID。
 - **自然出生**：没有指定档位的实体首次需要身体时，按画像的 `true_qi_base_probability` 和区域浓度在游炁、真炁之间抽档，不会抽到凡人。
+- **命令出生**：`/meridian humanoid spawn` 补全登记物种的实体 ID；省略档位时用物种表的 `default_tier`；
+  登记了放置钩子时由钩子放置并收到命令源朝向，否则按原版生物创建（实体须是 `Mob`）。写法见 [Framework 指令页](https://github.com/Kizunad/Kizuna-Meridian-Mod-Framework/wiki/Commands)。
 - **学卷**：
   - `meridian-humanoid-brain.toml` 的学卷表可以另列登记物种的实体 ID；
   - 未列出的物种不学卷。
