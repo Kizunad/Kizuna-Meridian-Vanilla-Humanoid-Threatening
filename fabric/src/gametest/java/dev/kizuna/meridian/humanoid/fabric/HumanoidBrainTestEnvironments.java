@@ -28,22 +28,23 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
         }
     }
 
-    private enum Volumes implements TestEnvironmentDefinition<Unit> {
+    /** 环境类型：同一类型可被多份环境数据引用，各自是一个批次。 */
+    private enum Volumes {
         DOOR_BREAKER_ONLY("door_breaker_only"),
         VILLAGER_WITHOUT_VOLUMES("villager_without_volumes"),
         PILLAGER_WITHOUT_VOLUMES("pillager_without_volumes");
 
         private final String path;
-        private final MapCodec<Volumes> codec;
+        private final MapCodec<VolumesEnvironment> codec;
 
         Volumes(String path) {
-            // 环境数据不带参数，类型本身就是配置。
+            // 环境数据不带参数，类型本身就是配置；每份数据各解出一个新实例，
+            // 注册表按对象身份拒收重复值，破门卷的三个批次不能共用同一个对象。
             this.path = path;
-            this.codec = MapCodec.unit(this);
+            this.codec = MapCodec.unit(() -> new VolumesEnvironment(this));
         }
 
-        @Override
-        public Unit setup(ServerLevel level) {
+        void install() {
             // 破门旧用例只发破门卷；撤退与原版射击用例清空对应物种的学卷表。
             switch (this) {
                 case DOOR_BREAKER_ONLY -> HumanoidBrainTestConfigs.doorBreakerOnly();
@@ -52,6 +53,15 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
                 case PILLAGER_WITHOUT_VOLUMES ->
                         HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.PILLAGER.entityId(), List.of());
             }
+        }
+    }
+
+    /** 一份环境数据：批次开始前按类型换学卷表，批次结束后换回启动配置。 */
+    private record VolumesEnvironment(Volumes volumes) implements TestEnvironmentDefinition<Unit> {
+        @Override
+        public Unit setup(ServerLevel level) {
+            // 按环境类型换学卷表。
+            volumes.install();
             return Unit.INSTANCE;
         }
 
@@ -62,9 +72,9 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
         }
 
         @Override
-        public MapCodec<Volumes> codec() {
-            // 每个环境类型对应一个无参数编解码器。
-            return codec;
+        public MapCodec<VolumesEnvironment> codec() {
+            // 编码回写时沿用所属类型的无参数编解码器。
+            return volumes.codec;
         }
     }
 }
