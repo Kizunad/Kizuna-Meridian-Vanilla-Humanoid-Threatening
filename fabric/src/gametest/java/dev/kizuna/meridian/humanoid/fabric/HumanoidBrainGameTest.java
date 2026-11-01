@@ -481,7 +481,8 @@ public final class HumanoidBrainGameTest {
         }
 
         private <T extends Mob> T placed(EntityType<T> type, String name, BlockPos relative) {
-            // 固定 UUID 让选式种子可重复；GameTest 世界跨运行保留，上次超时留下的同 UUID 实体先移除。
+            // 固定 UUID 让选式种子可重复；整体回归每局新建世界，只有在保留下来的世界里重跑时才会碰上同 UUID 的实体，
+            // 先移除，否则加入世界会失败。
             UUID id = UUID.nameUUIDFromBytes(("humanoid-brain/" + name).getBytes(StandardCharsets.UTF_8));
             Entity stale = context.getLevel().getEntity(id);
             if (stale != null) {
