@@ -84,7 +84,7 @@
 
 表现通过硬依赖 Mobs-Addon 的 `MobAnimationServer.playFrom/stop` 接入 PA，与玩家共用 Human 公开的
 `HumanTechniqueAnimations` 映射并保留原始起播时刻。叩门、破门、撞门使用专属主副手片段，
-命中分别对齐 34、64、48 tick；其余五式暂用 `attack_main/off`。左右惯用手由 PA 运行时镜像。
+命中分别对齐 25、32、33 tick；其余五式暂用 `attack_main/off`。左右惯用手由 PA 运行时镜像。
 原版举斧不再是渲染要求；自动移动、举斧预备和挥砍均由 Mobs-Addon
 的客户端自动层替换，显式功法动作优先，装备继续渲染。
 

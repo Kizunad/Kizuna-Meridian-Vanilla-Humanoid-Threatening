@@ -66,9 +66,9 @@ public final class HumanoidTechniqueGameTest {
     private static final int DECISION_CYCLES = 3;
     private static final int VOLUME_SAMPLE_LIMIT = 1000;
     private static final int SHIELD_READY_TICKS = 6;
-    private static final int KNOCK_HIT_TICKS = 34;
-    private static final int CLEAVE_HIT_TICKS = 64;
-    private static final int FOLLOW_UP_TICKS = 96;
+    private static final int KNOCK_HIT_TICKS = 25;
+    private static final int CLEAVE_HIT_TICKS = 32;
+    private static final int FOLLOW_UP_TICKS = 64;
     private static final int RECOVERY_TICKS = 125;
     private static final int TEST_TIMEOUT = 220;
     private static final int UPPER_COUNT = 3;
