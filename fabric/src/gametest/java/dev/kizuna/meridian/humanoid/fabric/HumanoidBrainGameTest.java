@@ -51,9 +51,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** 类人大脑整体回归：撤退、对敌、准备、恢复、原版日常与两只真炁卫道士互打，均用正式目录和原版实体。 */
 public final class HumanoidBrainGameTest {
+    private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_test");
     private static final String UNARMED_BATCH = "meridian_humanoid_test:brain_unarmed";
     private static final String ARMED_VILLAGER_BATCH = "meridian_humanoid_test:brain_armed_villager";
     private static final String LIGHT_STEP_BATCH = "meridian_humanoid_test:brain_light_step";
@@ -293,7 +296,9 @@ public final class HumanoidBrainGameTest {
         first.setTarget(second);
         second.setTarget(first);
         var watches = List.of(new Watch(first), new Watch(second));
+        long start = context.getLevel().getGameTime();
         arena.observe(DUEL_TICKS, () -> duelOver(watches), () -> {
+            logDuel(watches, context.getLevel().getGameTime() - start);
             assertDuel(context, watches);
             arena.finish();
         });
@@ -303,6 +308,22 @@ public final class HumanoidBrainGameTest {
         // 每 tick 记录双方，任一方倒下即结束。
         watches.forEach(Watch::observe);
         return watches.stream().anyMatch(watch -> !watch.mob().isAlive());
+    }
+
+    private static void logDuel(List<Watch> watches, long ticks) {
+        // 每局把走的分支写进 GameTest 日志，便于跨局统计抖动；只记不断言，先于断言写，失败的局也有记录。
+        // 按做过撤退或拉开决策的一方数量分：没有为交手，一方为一方撤退，双方为双方撤退。
+        long retreated = watches.stream().filter(watch -> watch.sawAny(RETREATS)).count();
+        String branch = "交手";
+        if (retreated == watches.size()) {
+            branch = "双方撤退";
+        } else if (retreated > 0) {
+            branch = "一方撤退";
+        }
+        long struck = watches.stream().filter(Watch::struckByTechnique).count();
+        long fallen = watches.stream().filter(watch -> !watch.mob().isAlive()).count();
+        LOGGER.info("卫道士对决分支：{}（撤退 {}，被打中 {}，倒下 {}，共 {} 方，{} tick）",
+                branch, retreated, struck, fallen, watches.size(), ticks);
     }
 
     private static void assertDuel(GameTestHelper context, List<Watch> watches) {
