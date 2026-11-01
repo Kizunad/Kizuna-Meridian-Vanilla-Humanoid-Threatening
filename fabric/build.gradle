@@ -22,6 +22,9 @@ dependencies {
     implementation project(':server')
     include project(':server')
     include implementation('local.meridian:server')
+    // 身体变体生成直接调用 Qi-Variants 的纯 Java 库；它没有自己的模组 JAR，安装 JAR 由本模组嵌套。
+    include 'dev.kizuna.meridian.qivariants:server'
+    include 'dev.kizuna.meridian.qivariants:shared'
     // 版本目录条目是 Provider，implementation 不返回依赖对象，嵌套声明单独写。
     implementation libs.protobuf.java
     include libs.protobuf.java
