@@ -87,7 +87,7 @@
 原版举斧不再是渲染要求；自动移动、举斧预备和挥砍均由 Mobs-Addon
 的客户端自动层替换，显式功法动作优先，装备继续渲染。
 
-世界打击和劈门使用功法库共享执行器的生物策略：排除友队与袭击生物，遵守 `mobGriefing`，不扣物品耐久。剂量与单次挥手做功交由 Damage，不为每个横扫目标重复做功。上、中卷费用可使用达到最低相态的任意属性库存，不能要求真炁卫道士额外持有固定的无属性游离态库存。
+世界打击和劈门使用功法库共享执行器的生物策略：排除友队与袭击生物，遵守 `mob_griefing`，不扣物品耐久。剂量与单次挥手做功交由 Damage，不为每个横扫目标重复做功。上、中卷费用可使用达到最低相态的任意属性库存，不能要求真炁卫道士额外持有固定的无属性游离态库存。
 功法活动保留 `meridian_technique:caster` 调用身份，Framework 可据此核验万门一斩能力曲线的来源。
 腿部功率由四块主要腿肌分担，不能将目录的整体功率重复施加到每块肌肉。
 
@@ -123,7 +123,7 @@
 | 每十 tick 决策、无威胁与施放中不重复准备 | `brainThrottlesDecisionsAndSkipsMissingThreatAndActiveCast` |
 | 0.4 倍移速、保留寻路、主动位移、PA 与近战互斥、结束恢复 | `castSlowsMovementKeepsNavigationPlaysPaAndBlocksMelee` |
 | 破门动画主副手与服务端起播时刻 | `allDoorAnimationsUseSelectedHandAndServerStartTick` |
-| 木门、mobGriefing 开/关 | `cleavesWoodenDoorWhenMobGriefingEnabled`、`preservesWoodenDoorWhenMobGriefingDisabled` |
+| 木门、`mob_griefing` 开/关 | `cleavesWoodenDoorWhenMobGriefingEnabled`、`preservesWoodenDoorWhenMobGriefingDisabled` |
 | 举盾优先破盾 | `shieldingTargetPrioritizesHook` |
 | 敌人包围优先横扫、旁观者不计 | `surroundedPrioritizesSweepAndBystandersDoNotCount` |
 | 追赶掩门、远目标与受伤避长起手 | `pursuedPrioritizesCloseAndPressureAvoidsLongWarmup` |

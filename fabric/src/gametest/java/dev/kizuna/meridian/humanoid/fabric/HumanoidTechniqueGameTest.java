@@ -661,7 +661,7 @@ public final class HumanoidTechniqueGameTest {
             context.runAfterDelay(DECISION_TICKS, () -> {
                 try {
                     boolean remains = world.getBlockState(context.absolutePos(lower)).is(Blocks.OAK_DOOR);
-                    context.assertTrue(remains == (rule == DoorRule.DENY), "劈门未遵守 mobGriefing：" + rule);
+                    context.assertTrue(remains == (rule == DoorRule.DENY), "劈门未遵守 mob_griefing：" + rule);
                     context.assertTrue(mob.getMainHandItem().getDamageValue() == 0, "生物劈门磨损铁斧");
                     context.succeed();
                 } finally {
