@@ -25,6 +25,16 @@ loom.runs.gametest {
     vmArg "-Dmeridian.repro.evidence=${reproEvidence}"
     vmArg "-Dfabric-api.gametest.report-file=${rootProject.file("fabric/build/repro-${reproMode}.xml")}"
 }
+tasks.named('runGametest') {
+    doFirst {
+        // 整体回归每局从空目录新建世界：GameTest 服务端按自带的平坦预设建世界，旧目录只会累积上一局的区块、实体、假玩家与模组存档。
+        // 26.2 把生成设置与游戏规则拆到了 data/minecraft，只留 level.dat 会退回随机种子的默认地形，所以整个目录删掉。
+        // 其余模式的独立世界要跨运行保留（release-before 与 release-after 共用），不清。
+        if (reproMode == 'full') {
+            file('build/gametest/world').deleteDir()
+        }
+    }
+}
 tasks.named('processGametestResources') {
     inputs.property('reproMode', reproMode)
     doLast {
