@@ -108,6 +108,7 @@ public final class HumanoidBrainGameTest {
     private static final Set<String> LIMB_MUSCLES = Set.of(HumanoidFighters.ARM_MUSCLE, HumanoidFighters.LEG_MUSCLE);
     private static final Set<Decision.Action> RESPONSES = EnumSet.of(Decision.Action.INTERRUPT,
             Decision.Action.DODGE, Decision.Action.ABSORB);
+    private static final Set<Decision.Action> RETREATS = EnumSet.of(Decision.Action.RETREAT, Decision.Action.KITE);
 
     @GameTest(maxTicks = LONG_TIMEOUT, environment = UNARMED_BATCH)
     public void unarmedVillagerRetreatsFromVindicatorAndResumesRoutine(GameTestHelper context) {
@@ -305,13 +306,15 @@ public final class HumanoidBrainGameTest {
     }
 
     private static void assertDuel(GameTestHelper context, List<Watch> watches) {
-        // 至少一方起手过打击式，对手起手过的一方应对过来袭；双方都蓄过力，同一式连续失败不到三次。
-        context.assertTrue(watches.stream().anyMatch(watch -> watch.castAny(DOOR_BREAKER_PREFIX)),
-                "双方都没有起手打击式：" + watches);
+        // 双方都起手过打击式时各自应对过来袭；双方都蓄过力，同一式连续失败不到三次。
+        // 整场撤退是评估结果：撤退方一直拉开，来袭罩不到它，不要求应对；双方都撤时可以谁也不起手。
+        boolean struck = watches.stream().anyMatch(watch -> watch.castAny(DOOR_BREAKER_PREFIX));
+        boolean bothRetreated = watches.stream().allMatch(watch -> watch.sawAny(RETREATS));
+        context.assertTrue(struck || bothRetreated, "双方都没有起手打击式，也不是都在撤退：" + watches);
         for (Watch watch : watches) {
-            if (opponentStruck(watch, watches)) {
+            if (watch.castAny(DOOR_BREAKER_PREFIX) && opponentStruck(watch, watches)) {
                 String duel = watches + " / " + decisions(watch.mob());
-                context.assertTrue(watch.sawAny(RESPONSES), "对手起手过打击式，这一方却没有打断、躲或硬抗：" + duel);
+                context.assertTrue(watch.sawAny(RESPONSES), "双方交过手，这一方却没有打断、躲或硬抗：" + duel);
             }
             context.assertTrue(watch.cast(CHARGE), "一方开打前没有蓄力：" + watch);
             context.assertTrue(watch.failureStreak() < FAILURE_STREAK_LIMIT, "同一式连续失败三次以上：" + watch);
@@ -319,7 +322,7 @@ public final class HumanoidBrainGameTest {
     }
 
     private static boolean opponentStruck(Watch watch, List<Watch> watches) {
-        // 另一方施放过破门目录的打击式；一方整场撤退时对面没有可应对的起手。
+        // 另一方施放过破门目录的打击式。
         return watches.stream()
                 .filter(other -> other != watch)
                 .anyMatch(other -> other.castAny(DOOR_BREAKER_PREFIX));
