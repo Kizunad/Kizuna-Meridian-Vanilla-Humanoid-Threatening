@@ -150,7 +150,7 @@
 | 空学卷表的掠夺者仍用原版弩射击 | `emptyTablePillagerStillShoots` |
 | 无威胁村民夜里照常上床 | `idleVillagerStillSleepsAtNight` |
 | 一百个无威胁村民一分钟内不准备身体会话、不记决策（健康宿主照常惰性出生身体；方阵放在 10×10 的测试结构里，由 GameTest 的屏障围住，闲逛不会撞上前面批次留下的生物） | `hundredIdleVillagersPrepareNoBodiesForAMinute` |
-| 两只真炁卫道士互打：至少一方起手打击式，或双方都撤退；双方都起过手时各自有应对；双方蓄力；同一式连续失败不到三次 | `trueQiVindicatorsDuelForThreeMinutes` |
+| 两只真炁卫道士互打（原版同伴，互为目标）：至少一方起手打击式且至少一方被打击式打中，或双方都撤退；双方都起过手时各自有应对；双方蓄力；同一式连续失败不到三次 | `trueQiVindicatorsDuelForThreeMinutes` |
 
 涉及真实玩家的用例在 Basic 仓 `HumanoidBrainPlayerGameTest`：玩家打游炁村民后它撤退、打持斧真炁村民后它还手，卫道士轻身跃到六格外静立玩家面前一到两格再出招。
 
