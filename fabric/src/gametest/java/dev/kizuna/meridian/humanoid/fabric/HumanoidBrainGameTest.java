@@ -63,6 +63,8 @@ public final class HumanoidBrainGameTest {
     private static final String SLEEP_BATCH = "meridian_humanoid_test:brain_sleep";
     private static final String CROWD_BATCH = "meridian_humanoid_test:brain_crowd";
     private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
+    /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
+    private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
     private static final String EXHAUSTION_BATCH = "meridian_humanoid_test:brain_exhaustion";
     private static final String BASIC_PREFIX = "meridian_basic_techniques:";
     private static final String DOOR_BREAKER_PREFIX = "meridian_door_breaker:";
@@ -73,11 +75,13 @@ public final class HumanoidBrainGameTest {
     private static final BlockPos SUBJECT_POS = new BlockPos(2, 0, 2);
     private static final BlockPos NEAR_POS = new BlockPos(2, 0, 4);
     private static final BlockPos MIDDLE_POS = new BlockPos(2, 0, 7);
-    private static final BlockPos FAR_POS = new BlockPos(2, 0, 8);
     private static final BlockPos BED_FOOT_POS = new BlockPos(4, 0, 2);
-    /** 对决两端都在结构以内，间距与上面的近端到远端一样是 6 格。 */
-    private static final BlockPos DUEL_FIRST_POS = new BlockPos(2, 0, 1);
-    private static final BlockPos DUEL_SECOND_POS = new BlockPos(2, 0, 7);
+    /**
+     * 远距两端，蓄力、掠夺者与对决共用，相距 6 格。26.2 的 GameTest 用屏障围住 8×8 结构（1.20.1 自动运行不围），
+     * 原来 z=2 到 z=8 的远端正好落在墙里，所以两端整体挪进结构，间距不变。
+     */
+    private static final BlockPos FAR_SUBJECT_POS = new BlockPos(2, 0, 1);
+    private static final BlockPos FAR_POS = new BlockPos(2, 0, 7);
     private static final int SHORT_TIMEOUT = 400;
     private static final int LONG_TIMEOUT = 800;
     private static final int RETREAT_TICKS = 200;
@@ -92,7 +96,6 @@ public final class HumanoidBrainGameTest {
     private static final int CROWD_SIDE = 10;
     private static final int CROWD_TICKS = 1200;
     private static final int CROWD_TIMEOUT = CROWD_TICKS + 100;
-    private static final int PEN_HEIGHT = 2;
     private static final int DUEL_TICKS = 3600;
     private static final int DUEL_TIMEOUT = 4200;
     private static final int FAILURE_STREAK_LIMIT = 3;
@@ -207,7 +210,7 @@ public final class HumanoidBrainGameTest {
         // 持斧真炁卫道士在打击距离外先放蓄力，之后才出破门打击式。
         var arena = new Arena(context);
         Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "charge",
-                SUBJECT_POS);
+                FAR_SUBJECT_POS);
         vindicator.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         Cow target = arena.target(FAR_POS);
         vindicator.setTarget(target);
@@ -224,7 +227,7 @@ public final class HumanoidBrainGameTest {
         // 空学卷表的掠夺者被接管后仍交还原版弩射击，不会呆住。
         var arena = new Arena(context);
         Pillager pillager = arena.spawn(EntityTypes.PILLAGER, HumanoidTier.WANDERING_QI, "pillager",
-                SUBJECT_POS);
+                FAR_SUBJECT_POS);
         pillager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.CROSSBOW));
         Cow target = arena.target(FAR_POS);
         float health = target.getHealth();
@@ -252,11 +255,11 @@ public final class HumanoidBrainGameTest {
         });
     }
 
-    @GameTest(maxTicks = CROWD_TIMEOUT, environment = CROWD_BATCH)
+    @GameTest(maxTicks = CROWD_TIMEOUT, environment = CROWD_BATCH, structure = CROWD_STRUCTURE)
     public void hundredIdleVillagersPrepareNoBodiesForAMinute(GameTestHelper context) {
         // 一百个无威胁村民跑满一分钟；健康宿主照常惰性出生身体，大脑不准备身体会话，也不记决策。
+        // GameTest 用屏障围住 10×10 结构，闲逛一分钟也走不出清场半径，撞不上前面批次留在原地的生物。
         var arena = new Arena(context);
-        arena.pen(CROWD_SIDE, PEN_HEIGHT);
         var villagers = new ArrayList<Villager>();
         for (int x = 0; x < CROWD_SIDE; x++) {
             for (int z = 0; z < CROWD_SIDE; z++) {
@@ -280,12 +283,9 @@ public final class HumanoidBrainGameTest {
     @GameTest(maxTicks = DUEL_TIMEOUT, environment = DUEL_BATCH)
     public void trueQiVindicatorsDuelForThreeMinutes(GameTestHelper context) {
         // 两只持斧真炁卫道士互设目标打三分钟或打到一方倒下，检查应对、准备与失败上限；虚脱后拉开另有确定性用例。
-        // 26.2 的 GameTest 用屏障围住 8×8 结构（1.20.1 自动运行不围），原来的远端 z=8 正好落在墙里，
-        // 两端整体挪进结构，间距不变。
         var arena = new Arena(context);
-        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", DUEL_FIRST_POS);
-        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second",
-                DUEL_SECOND_POS);
+        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", FAR_SUBJECT_POS);
+        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
         for (Vindicator fighter : List.of(first, second)) {
             fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         }
@@ -506,22 +506,6 @@ public final class HumanoidBrainGameTest {
             // 留在场地外的生物会被原版敌对感知读到而成为敌意来源；半径覆盖放下距离与一百村民的方阵。
             AABB area = new AABB(context.absolutePos(BlockPos.ZERO)).inflate(radius);
             context.getLevel().getEntitiesOfClass(Mob.class, area, mob -> true).forEach(Entity::discard);
-        }
-
-        void pen(int side, int height) {
-            // 闲逛一分钟会走出清场半径，撞上前面批次留在原地的生物；屏障把方阵关在清过的范围内，结束时拆除。
-            var world = context.getLevel();
-            Set<BlockPos> posts = new LinkedHashSet<>();
-            for (int y = 0; y < height; y++) {
-                for (int offset = -1; offset <= side; offset++) {
-                    posts.add(context.absolutePos(new BlockPos(offset, y, -1)));
-                    posts.add(context.absolutePos(new BlockPos(offset, y, side)));
-                    posts.add(context.absolutePos(new BlockPos(-1, y, offset)));
-                    posts.add(context.absolutePos(new BlockPos(side, y, offset)));
-                }
-            }
-            posts.forEach(post -> world.setBlockAndUpdate(post, Blocks.BARRIER.defaultBlockState()));
-            onFinish(() -> posts.forEach(post -> world.setBlockAndUpdate(post, Blocks.AIR.defaultBlockState())));
         }
 
         Cow target(BlockPos relative) {
