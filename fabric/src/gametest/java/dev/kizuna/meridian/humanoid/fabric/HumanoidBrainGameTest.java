@@ -306,11 +306,14 @@ public final class HumanoidBrainGameTest {
     }
 
     private static void assertDuel(GameTestHelper context, List<Watch> watches) {
-        // 双方都起手过打击式时各自应对过来袭；双方都蓄过力，同一式连续失败不到三次。
-        // 整场撤退是评估结果：撤退方一直拉开，来袭罩不到它，不要求应对；双方都撤时可以谁也不起手。
+        // 至少一方被破门打击式打中过；双方都起手过打击式时各自应对过来袭；双方都蓄过力，同一式连续失败不到三次。
+        // 整场撤退是评估结果：撤退方一直拉开，来袭罩不到它，不要求应对；双方都撤时可以谁也不起手、谁也没打中。
+        // 两只卫道士是原版同伴，互为目标才打得到，命中断言守住「同伴但正是我的敌人」交给宿主判定。
         boolean struck = watches.stream().anyMatch(watch -> watch.castAny(DOOR_BREAKER_PREFIX));
+        boolean hit = watches.stream().anyMatch(Watch::struckByTechnique);
         boolean bothRetreated = watches.stream().allMatch(watch -> watch.sawAny(RETREATS));
         context.assertTrue(struck || bothRetreated, "双方都没有起手打击式，也不是都在撤退：" + watches);
+        context.assertTrue(hit || bothRetreated, "双方都没有被打击式打中过，也不是都在撤退：" + watches);
         for (Watch watch : watches) {
             if (watch.castAny(DOOR_BREAKER_PREFIX) && opponentStruck(watch, watches)) {
                 String duel = watches + " / " + decisions(watch.mob());
@@ -583,7 +586,7 @@ public final class HumanoidBrainGameTest {
         }
     }
 
-    /** 逐 tick 记下一只实体出现过的式、决策动作、跃步、虚脱后的拉开与失败连击。 */
+    /** 逐 tick 记下一只实体出现过的式、决策动作、跃步、被打击式打中、虚脱后的拉开与失败连击。 */
     private static final class Watch {
         private final Mob mob;
         private final double exhaustedRatio;
@@ -592,6 +595,7 @@ public final class HumanoidBrainGameTest {
         private long lastDecisionTick = Long.MIN_VALUE;
         private long exhaustedTick = Long.MAX_VALUE;
         private boolean leaped;
+        private boolean struckByTechnique;
         private boolean kitedAfterExhaustion;
         private int failureStreak;
 
@@ -612,11 +616,17 @@ public final class HumanoidBrainGameTest {
         }
 
         Watch observe() {
-            // 记当前施放、跃步、失败连击与新增决策；返回自己便于在条件里链式读取。
+            // 记当前施放、跃步、受击、失败连击与新增决策；返回自己便于在条件里链式读取。
+            // 原版只在受伤成功时记来源并保留 40 tick，逐 tick 读不会漏；伤害类型都已注册，键必然存在。
             techniques.addAll(castTechniques(mob));
             long now = mob.level().getGameTime();
             if (((TechniqueLeapAccess) mob).meridian$getLeap() != null) {
                 leaped = true;
+            }
+            var damage = mob.getLastDamageSource();
+            if (damage != null && damage.typeHolder().unwrapKey().orElseThrow().identifier().toString()
+                    .startsWith(DOOR_BREAKER_PREFIX)) {
+                struckByTechnique = true;
             }
             failureStreak = Math.max(failureStreak, HumanoidBrain.failureStreak(mob.getUUID()));
             observeExhaustion(now);
@@ -684,6 +694,11 @@ public final class HumanoidBrainGameTest {
             return leaped;
         }
 
+        boolean struckByTechnique() {
+            // 是否受过破门目录打击式的伤害。
+            return struckByTechnique;
+        }
+
         boolean kitedAfterExhaustion() {
             // 虚脱后是否做过背向跃步的决策。
             return kitedAfterExhaustion;
@@ -699,6 +714,7 @@ public final class HumanoidBrainGameTest {
             // 失败信息用的摘要。
             return mob.getStringUUID() + " alive=" + mob.isAlive() + " hp=" + mob.getHealth()
                     + " techniques=" + techniques + " actions=" + actions + " leaped=" + leaped
+                    + " struck=" + struckByTechnique
                     + " exhaustedTick=" + exhaustedTick + " kited=" + kitedAfterExhaustion
                     + " failureStreak=" + failureStreak;
         }
