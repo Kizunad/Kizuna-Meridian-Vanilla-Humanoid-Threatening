@@ -1,6 +1,5 @@
 package dev.kizuna.meridian.humanoid.server;
 
-import dev.kizuna.meridian.core.Realm;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -47,7 +46,7 @@ public class HumanoidBrainConfigLoaderTest {
         assertEquals(DEFAULT_SAFE_DISTANCE, config.response().tactics().safeDistance(), TOLERANCE);
         assertEquals(DEFAULT_SAFE_DISTANCE, config.assessment().recovery().distance(), TOLERANCE);
         assertEquals(DEFAULT_VOLUME_COUNT, config.volumes().allVolumes().size());
-        var trueQi = config.volumes().species().get(VINDICATOR).get(Realm.TRUE_QI);
+        var trueQi = config.volumes().species().get(VINDICATOR).get(HumanoidTier.TRUE_QI);
         assertEquals(TRUE_QI_VINDICATOR_VOLUMES, trueQi.size());
         assertTrue(trueQi.contains(new VolumeTable.Grant(LOWER, LOWER_CHANCE)));
         for (HumanoidSpecies species : HumanoidSpecies.values()) {
@@ -74,14 +73,29 @@ public class HumanoidBrainConfigLoaderTest {
                 + "\", chance = 1.0 }]\n";
         VolumeTable volumes = HumanoidBrainConfigLoader.parse(text).volumes();
         UUID entity = UUID.nameUUIDFromBytes("dummy".getBytes(StandardCharsets.UTF_8));
-        assertEquals(List.of(BREATH), volumes.volumes("dummy:humanoid", Realm.TRUE_QI, entity));
-        assertEquals(List.of(), volumes.volumes("dummy:humanoid", Realm.WANDERING_QI, entity));
-        assertEquals(List.of(), volumes.volumes("dummy:unlisted", Realm.TRUE_QI, entity));
+        assertEquals(List.of(BREATH), volumes.volumes("dummy:humanoid", HumanoidTier.TRUE_QI, entity));
+        assertEquals(List.of(), volumes.volumes("dummy:humanoid", HumanoidTier.WANDERING_QI, entity));
+        assertEquals(List.of(), volumes.volumes("dummy:unlisted", HumanoidTier.TRUE_QI, entity));
+    }
+
+    @Test
+    public void mortalTierIsEmptyByDefaultAndCanBeListed() {
+        // 默认表各物种都不写凡人档，凡人一卷不学；游炁照旧学满档。配置可以另写 mortal 档。
+        UUID entity = UUID.nameUUIDFromBytes("mortal".getBytes(StandardCharsets.UTF_8));
+        VolumeTable defaults = HumanoidBrainConfigLoader.defaults().volumes();
+        for (HumanoidSpecies species : HumanoidSpecies.values()) {
+            assertEquals(List.of(), defaults.volumes(species.entityId(), HumanoidTier.MORTAL, entity));
+            assertFalse(defaults.volumes(species.entityId(), HumanoidTier.WANDERING_QI, entity).isEmpty());
+        }
+        String text = replace("[volumes.\"minecraft:witch\"]",
+                "[volumes.\"minecraft:witch\"]\nmortal = [{ volume = \"" + BREATH + "\", chance = 1.0 }]");
+        VolumeTable listed = HumanoidBrainConfigLoader.parse(text).volumes();
+        assertEquals(List.of(BREATH), listed.volumes("minecraft:witch", HumanoidTier.MORTAL, entity));
     }
 
     @Test
     public void invalidConfigsAreRejected() {
-        // 版本、未知字段、缺物种、概率越界、无命名空间卷、未知境界、负权重和零失败次数都在加载时拒绝。
+        // 版本、未知字段、缺物种、概率越界、无命名空间卷、未知档位、负权重和零失败次数都在加载时拒绝。
         var invalid = Map.of(
                 "版本", replace("config_version = 1", "config_version = 2"),
                 "顶层未知字段", replace("log_decisions = false", "log_decisions = false\nunknown = 1"),
@@ -89,7 +103,7 @@ public class HumanoidBrainConfigLoaderTest {
                 "缺物种", DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("[volumes.\"minecraft:illusioner\"]")),
                 "概率越界", replace("chance = 0.1", "chance = 1.5"),
                 "无命名空间卷", replace(LOWER, "lower"),
-                "未知境界", replace("[volumes.\"minecraft:witch\"]", "[volumes.\"minecraft:witch\"]\nmortal = []"),
+                "未知档位", replace("[volumes.\"minecraft:witch\"]", "[volumes.\"minecraft:witch\"]\ngolden_core = []"),
                 "负权重", replace("qi_weight = 0.25", "qi_weight = -0.25"),
                 "零失败次数", replace("failure_limit = 2", "failure_limit = 0"));
         invalid.forEach((label, text) -> {

@@ -1,9 +1,9 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
-import dev.kizuna.meridian.core.Realm;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -471,7 +471,7 @@ public final class HumanoidTechniqueGameTest {
         var volumes = HumanoidBrain.config().volumes();
         return Stream.generate(UUID::randomUUID)
                 .limit(VOLUME_SAMPLE_LIMIT)
-                .filter(id -> volumes.volumes(entityId, Realm.TRUE_QI, id).contains(lower)
+                .filter(id -> volumes.volumes(entityId, HumanoidTier.TRUE_QI, id).contains(lower)
                         == (wanted == LowerVolume.GRANTED))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("学卷表找不到下卷分配为 " + wanted + " 的 UUID"));

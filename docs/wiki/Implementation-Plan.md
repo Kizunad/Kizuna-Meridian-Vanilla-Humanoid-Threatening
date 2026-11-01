@@ -53,7 +53,7 @@
 自然生成仍按世界种子和 UUID 随机抽档；强制出生也保留原抽档随机数消耗，后续随机采样顺序不变。
 
 `HumanoidSpawnGameTest` 覆盖十四蛋与独立创造页、两档卫道士的蛋/命令出生及 body status、
-真炁自动学卷、默认与相对坐标、自然随机及采样顺序、省略档位的自然抽档、凡人档不开脉、
+真炁自动学卷、默认与相对坐标、自然随机及采样顺序、省略档位的自然抽档、凡人档不开脉、凡人一卷不学而游炁照旧学上卷、
 内置物种拒绝放置钩子、补全、非法参数和权限拒绝。
 
 ## 调试入口
@@ -69,9 +69,10 @@
 
 `HumanoidTechniqueHost` 通过 `meridian_technique_host` 认领同一实体身体，检查两手持物。知识、活动、冷却和曲线保存在 Framework 的身体进度中；宿主仅保存当前加载实体的世界效果回执和移动限速。卸载与死亡清理活动、姿势和移动限速；读取起手中的旧 NBT 时只恢复清理，不补发离线打击。
 
-七种生人都按学卷表学卷。表在 `meridian-humanoid-brain.toml` 的 `[volumes]`，每个物种按境界档写明卷与概率，概率按 UUID 与卷 ID 确定性分桶。默认表：
+七种生人都按学卷表学卷。表在 `meridian-humanoid-brain.toml` 的 `[volumes]`，每个物种按出生档位（`mortal` 凡人、`wandering_qi` 游炁、`true_qi` 真炁）写明卷与概率，概率按 UUID 与卷 ID 确定性分桶。档位与 `body status`、生成命令一样从身体快照读回：真炁境界为真炁，游炁境界下有已开经脉为游炁，一条都没开为凡人。未写的档不学卷。默认表：
 
-- 七种生人两档都学基础功法的调息、轻步、蓄力三卷。
+- 凡人档各物种都不写，凡人一卷不学。
+- 七种生人游炁、真炁两档都学基础功法的调息、轻步、蓄力三卷。
 - 卫道士游炁另学破门上卷；真炁另学上卷、中卷，下卷概率 0.1。
 
 学卷发生在宿主首次为实体准备会话时：显式功法请求、分档蛋/命令出生，或大脑第一次遇到威胁。已学的卷再学不变，不额外改变身体生成器随机序列。启动后第一个服务器 tick 检查表里每一卷都已安装，缺卷直接报错。
@@ -155,4 +156,4 @@
 
 默认完整验证的入口由 `fabric/persistence-tests.gradle` 合并注册，包含上述功法测试和既有持久化回归。
 
-纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、学卷分桶）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。
+纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。

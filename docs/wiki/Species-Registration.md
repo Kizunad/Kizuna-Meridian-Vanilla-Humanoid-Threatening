@@ -69,5 +69,5 @@ foot_opening_weight = 1.0
 - **命令出生**：`/meridian humanoid spawn` 补全登记物种的实体 ID；省略档位时用物种表的 `default_tier`；
   登记了放置钩子时由钩子放置并收到命令源朝向，否则按原版生物创建（实体须是 `Mob`）。写法见 [Framework 指令页](https://github.com/Kizunad/Kizuna-Meridian-Mod-Framework/wiki/Commands)。
 - **学卷**：
-  - `meridian-humanoid-brain.toml` 的学卷表可以另列登记物种的实体 ID；
-  - 未列出的物种不学卷。
+  - `meridian-humanoid-brain.toml` 的学卷表可以另列登记物种的实体 ID，按出生档位 `mortal`、`wandering_qi`、`true_qi` 分档写；
+  - 未列出的物种或未写的档不学卷；`default_tier = "mortal"` 出生的身体查 `mortal` 档，不沿用游炁档。

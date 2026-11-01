@@ -1,6 +1,5 @@
 package dev.kizuna.meridian.humanoid.server;
 
-import dev.kizuna.meridian.core.Realm;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlTable;
 
@@ -9,7 +8,6 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -108,7 +106,7 @@ public final class HumanoidBrainConfigLoader {
 
     private static VolumeTable volumes(TomlTable table) {
         // 七种内置类人必须全部出现；其他命名空间实体 ID 也接受，供另行注册的类人使用。
-        var species = new HashMap<String, Map<Realm, List<VolumeTable.Grant>>>();
+        var species = new HashMap<String, Map<HumanoidTier, List<VolumeTable.Grant>>>();
         for (String entityId : table.keySet()) {
             String path = "volumes." + entityId;
             requireId(entityId, path);
@@ -122,15 +120,16 @@ public final class HumanoidBrainConfigLoader {
         return new VolumeTable(species);
     }
 
-    private static Map<Realm, List<VolumeTable.Grant>> tiers(TomlTable table, String path) {
-        // 档位键为境界名小写，每档写全，不从低档继承。
-        var tiers = new EnumMap<Realm, List<VolumeTable.Grant>>(Realm.class);
+    private static Map<HumanoidTier, List<VolumeTable.Grant>> tiers(TomlTable table, String path) {
+        // 档位键为出生档位小写名（mortal、wandering_qi、true_qi），每档写全，不从低档继承；未写的档不学卷。
+        var tiers = new EnumMap<HumanoidTier, List<VolumeTable.Grant>>(HumanoidTier.class);
         for (String key : table.keySet()) {
-            Realm realm = realm(key, path);
+            HumanoidTier tier = HumanoidTier.fromId(key)
+                    .orElseThrow(() -> TOML.invalid("未知档位 " + path + "." + key));
             if (!(table.get(List.of(key)) instanceof TomlArray grants)) {
                 throw TOML.invalid(path + "." + key + " 必须是数组");
             }
-            tiers.put(realm, grants(grants, path + "." + key));
+            tiers.put(tier, grants(grants, path + "." + key));
         }
         return tiers;
     }
@@ -150,15 +149,6 @@ public final class HumanoidBrainConfigLoader {
             grants.add(new VolumeTable.Grant(volume, ratio(grant, "chance", path)));
         }
         return List.copyOf(grants);
-    }
-
-    private static Realm realm(String key, String path) {
-        // 只接受已定义的境界名。
-        try {
-            return Realm.valueOf(key.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException unknown) {
-            throw TOML.invalid("未知境界 " + path + "." + key);
-        }
     }
 
     private static void requireId(String id, String path) {

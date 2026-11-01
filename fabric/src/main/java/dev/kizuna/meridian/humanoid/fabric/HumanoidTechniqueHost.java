@@ -2,8 +2,8 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import com.google.protobuf.Any;
 import dev.kizuna.meridian.core.BodySnapshot;
-import dev.kizuna.meridian.core.Realm;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
@@ -136,10 +136,11 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static void learnVolumes(LivingEntity entity, HumanoidBodyState body) {
         // 按大脑配置的学卷表分配，概率按 UUID 分桶，不改变身体生成器原有随机调用序列；已学的卷再学不变。
+        // 档位与生成命令一样从身体快照读回：凡人是游炁境界下一条经脉都没开，查的是凡人档而不是游炁档。
         var service = TechniqueFabric.service();
         String entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-        Realm realm = Realm.valueOf(body.snapshot().getRealm().name());
-        for (String volume : HumanoidBrain.config().volumes().volumes(entityId, realm, entity.getUUID())) {
+        HumanoidTier tier = HumanoidTier.of(body.snapshot());
+        for (String volume : HumanoidBrain.config().volumes().volumes(entityId, tier, entity.getUUID())) {
             service.learn(entity.getUUID(), volume);
         }
     }

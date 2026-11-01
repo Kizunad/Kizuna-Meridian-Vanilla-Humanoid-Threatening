@@ -235,6 +235,25 @@ public final class HumanoidSpawnGameTest {
         context.succeed();
     }
 
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void spawnCommandMortalLearnsNoVolumesWhileWanderingQiStillDoes(GameTestHelper context) {
+        // 学卷表按出生档位查，默认没有凡人档：凡人一卷不学。同一命令路径生成的游炁照旧学上卷，
+        // 证明出生时已经走过学卷，凡人的空集不是还没分配。
+        var output = new RecordedOutput();
+        var source = source(context).withSource(output);
+        var mortal = spawnByCommand(context, run(source, SPAWN + "vindicator mortal"), output);
+        var wandering = spawnByCommand(context, run(source, SPAWN + "vindicator wandering_qi"), output);
+        try {
+            var known = TechniqueFabric.service().known(mortal.getUUID());
+            context.assertTrue(known.isEmpty(), "凡人生成后学了卷：" + known);
+            assertSpawn(context, wandering, HumanoidVariant.WANDERING_QI);
+        } finally {
+            mortal.discard();
+            wandering.discard();
+        }
+        context.succeed();
+    }
+
     private static Vindicator spawnByCommand(GameTestHelper context, int result, RecordedOutput output) {
         // 从命令成功反馈末尾的 UUID 找回刚生成的实体。
         context.assertTrue(result == 1, "spawn 命令生成失败");

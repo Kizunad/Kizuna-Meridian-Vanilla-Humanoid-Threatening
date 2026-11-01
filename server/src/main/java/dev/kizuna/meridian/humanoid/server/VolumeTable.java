@@ -1,7 +1,5 @@
 package dev.kizuna.meridian.humanoid.server;
 
-import dev.kizuna.meridian.core.Realm;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,8 +9,8 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-/** 每个物种按境界档写明学哪几卷、概率多少；卷可以来自任何已安装的功法目录。 */
-public record VolumeTable(Map<String, Map<Realm, List<Grant>>> species) {
+/** 每个物种按出生档位写明学哪几卷、概率多少；卷可以来自任何已安装的功法目录。 */
+public record VolumeTable(Map<String, Map<HumanoidTier, List<Grant>>> species) {
     private static final int BUCKETS = 1_000_000;
 
     /** 一卷与学到它的概率。 */
@@ -20,14 +18,15 @@ public record VolumeTable(Map<String, Map<Realm, List<Grant>>> species) {
 
     public VolumeTable {
         // 表在加载后只读，档位列表一并复制。
-        var copied = new HashMap<String, Map<Realm, List<Grant>>>();
+        var copied = new HashMap<String, Map<HumanoidTier, List<Grant>>>();
         species.forEach((entityId, tiers) -> copied.put(entityId, Map.copyOf(tiers)));
         species = Map.copyOf(copied);
     }
 
-    public List<String> volumes(String entityId, Realm realm, UUID entity) {
-        // 未列出的物种或档位不学卷；概率按实体 UUID 与卷 ID 确定性分桶，不动身体生成器的随机序列。
-        return species.getOrDefault(entityId, Map.of()).getOrDefault(realm, List.of()).stream()
+    public List<String> volumes(String entityId, HumanoidTier tier, UUID entity) {
+        // 未列出的物种或档位不学卷，默认表不写凡人档，凡人因此一卷不学；
+        // 概率按实体 UUID 与卷 ID 确定性分桶，不动身体生成器的随机序列。
+        return species.getOrDefault(entityId, Map.of()).getOrDefault(tier, List.of()).stream()
                 .filter(grant -> granted(grant, entity))
                 .map(Grant::volume)
                 .toList();

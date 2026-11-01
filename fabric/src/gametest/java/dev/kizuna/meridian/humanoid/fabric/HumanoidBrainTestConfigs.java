@@ -1,7 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import dev.kizuna.meridian.core.Realm;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.VolumeTable;
 
 import java.util.EnumMap;
@@ -28,8 +28,8 @@ final class HumanoidBrainTestConfigs {
         // 只把一个物种的每一档换成给定的卷，其他物种照启动配置。
         HumanoidBrainConfig current = HumanoidBrain.config();
         var species = new HashMap<>(current.volumes().species());
-        var tiers = new EnumMap<Realm, List<VolumeTable.Grant>>(Realm.class);
-        species.getOrDefault(entityId, Map.of()).keySet().forEach(realm -> tiers.put(realm, grants));
+        var tiers = new EnumMap<HumanoidTier, List<VolumeTable.Grant>>(HumanoidTier.class);
+        species.getOrDefault(entityId, Map.of()).keySet().forEach(tier -> tiers.put(tier, grants));
         species.put(entityId, tiers);
         install(current, new VolumeTable(species));
     }
@@ -52,10 +52,10 @@ final class HumanoidBrainTestConfigs {
 
     private static VolumeTable doorBreakerVolumes(VolumeTable table) {
         // 物种与档位不变，只过滤每档的卷。
-        var species = new HashMap<String, Map<Realm, List<VolumeTable.Grant>>>();
+        var species = new HashMap<String, Map<HumanoidTier, List<VolumeTable.Grant>>>();
         table.species().forEach((entityId, tiers) -> {
-            var kept = new EnumMap<Realm, List<VolumeTable.Grant>>(Realm.class);
-            tiers.forEach((realm, grants) -> kept.put(realm, doorBreakerGrants(grants)));
+            var kept = new EnumMap<HumanoidTier, List<VolumeTable.Grant>>(HumanoidTier.class);
+            tiers.forEach((tier, grants) -> kept.put(tier, doorBreakerGrants(grants)));
             species.put(entityId, kept);
         });
         return new VolumeTable(species);
