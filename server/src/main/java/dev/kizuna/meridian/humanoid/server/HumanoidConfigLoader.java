@@ -90,13 +90,24 @@ public final class HumanoidConfigLoader {
     static HumanoidConfig.SpeciesProfile speciesProfile(HumanoidToml toml, TomlTable table, String path) {
         // 物种偏向只改变随机权重，实体 ID 与结构仍由生成器固定；物种表读取器也用它解析登记物种的画像。
         toml.checkKeys(table, Set.of("true_qi_base_probability", "opening_count_multiplier", "fill_multiplier",
-                "wall_fill_multiplier", "arm_opening_weight", "foot_opening_weight"), path + ".");
+                "wall_fill_multiplier", "arm_opening_weight", "foot_opening_weight",
+                "wandering_qi_leg_training_growth", "true_qi_leg_training_growth"), path + ".");
         return new HumanoidConfig.SpeciesProfile(
                 toml.number(table, "true_qi_base_probability", path + ".true_qi_base_probability"),
                 toml.number(table, "opening_count_multiplier", path + ".opening_count_multiplier"),
                 toml.number(table, "fill_multiplier", path + ".fill_multiplier"),
                 toml.number(table, "wall_fill_multiplier", path + ".wall_fill_multiplier"),
                 toml.number(table, "arm_opening_weight", path + ".arm_opening_weight"),
-                toml.number(table, "foot_opening_weight", path + ".foot_opening_weight"));
+                toml.number(table, "foot_opening_weight", path + ".foot_opening_weight"),
+                optionalNumber(toml, table, "wandering_qi_leg_training_growth", path),
+                optionalNumber(toml, table, "true_qi_leg_training_growth", path));
+    }
+
+    private static double optionalNumber(HumanoidToml toml, TomlTable table, String key, String path) {
+        // 登记物种可以省略成长配置，省略时保持没有出生训练成长。
+        if (!table.contains(key)) {
+            return 0;
+        }
+        return toml.number(table, key, path + "." + key);
     }
 }

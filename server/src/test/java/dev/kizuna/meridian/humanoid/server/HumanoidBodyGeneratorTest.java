@@ -34,6 +34,11 @@ public class HumanoidBodyGeneratorTest {
     private static final double TIME_TOLERANCE = 0.0001;
     private static final double PROBABILITY_TOLERANCE = 0.000001;
     private static final double VOLUME_TOLERANCE = 1e-7;
+    private static final double WANDERING_TRADER_WANDERING_LEG_GROWTH = 0.20;
+    private static final double WANDERING_TRADER_TRUE_LEG_GROWTH = 0.35;
+    private static final double NO_LEG_GROWTH = 0;
+    private static final String LEG_MUSCLE_TAG = "human:leg_muscle";
+    private static final int LEG_MUSCLE_COUNT = 6;
     private static final double FREE_DENSITY = 0.01;
     private static final double LIQUID_DENSITY = 0.1;
     private HumanoidBodyGenerator generator;
@@ -131,6 +136,21 @@ public class HumanoidBodyGeneratorTest {
     }
 
     @Test
+    public void wanderingTraderLegMusclesStartWithConfiguredTrainingGrowth() {
+        // 流浪商人的六块腿肌肉按境界获得配置成长，其他组织和物种保持零成长。
+        RegionInventory region = RegionInventory.fromShares(1.0, Map.of("meridian:fire", 1.0));
+        BodyMessages.BodySnapshot wandering = generateBody(HumanoidSpecies.WANDERING_TRADER,
+                HumanoidVariant.WANDERING_QI, region);
+        BodyMessages.BodySnapshot trueQi = generateBody(HumanoidSpecies.WANDERING_TRADER,
+                HumanoidVariant.TRUE_QI, region);
+        BodyMessages.BodySnapshot villager = generateBody(HumanoidSpecies.VILLAGER,
+                HumanoidVariant.TRUE_QI, region);
+        assertLegGrowth(wandering, WANDERING_TRADER_WANDERING_LEG_GROWTH);
+        assertLegGrowth(trueQi, WANDERING_TRADER_TRUE_LEG_GROWTH);
+        assertLegGrowth(villager, NO_LEG_GROWTH);
+    }
+
+    @Test
     public void regionInventoryAggregatesPhasesAndFiltersInvalidSources() {
         // 同属性不同相态先合计；无属性和目录外属性不能进入 Qi-Variants 抽取输入。
         double freeMetalAmount = 2;
@@ -186,6 +206,28 @@ public class HumanoidBodyGeneratorTest {
                 .build();
         AddonRegistry installed = AddonRegistry.load(registration);
         return QiVariantRegistry.load(installed, QiVariantsContent.catalog());
+    }
+
+    private BodyMessages.BodySnapshot generateBody(HumanoidSpecies species, HumanoidVariant variant,
+                                                   RegionInventory region) {
+        UUID id = UUID.nameUUIDFromBytes((species.entityId() + variant).getBytes());
+        var request = new HumanoidBodyGenerator.GenerationRequest(species, variant, id, region, null);
+        return generator.generate(request, REPRODUCIBLE_WORLD_SEED);
+    }
+
+    private static void assertLegGrowth(BodyMessages.BodySnapshot body, double expectedGrowth) {
+        int legCount = 0;
+        for (int index = 0; index < body.getStructure().getTissuesCount(); index++) {
+            BodyMessages.TissueDefinition definition = body.getStructure().getTissues(index);
+            BodyMessages.TissueState state = body.getTissueStates(index);
+            boolean legMuscle = definition.getTagsList().contains(LEG_MUSCLE_TAG);
+            if (legMuscle) {
+                legCount++;
+            }
+            double expected = legMuscle ? expectedGrowth : NO_LEG_GROWTH;
+            assertEquals(expected, state.getTrainingGrowth(), TIME_TOLERANCE);
+        }
+        assertEquals(LEG_MUSCLE_COUNT, legCount);
     }
 
     private void verifyMeridians(BodyMessages.BodySnapshot body, HumanoidVariant variant) {

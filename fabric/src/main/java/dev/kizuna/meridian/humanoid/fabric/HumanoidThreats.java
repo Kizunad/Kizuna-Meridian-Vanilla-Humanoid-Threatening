@@ -152,6 +152,13 @@ final class HumanoidThreats {
         return close >= SURROUNDED_COUNT;
     }
 
+    static int enemyCount(Mob mob, LivingEntity selected) {
+        // 主动腿法只在当前威胁集合中只有选定目标时启用；远处可见敌人也计入。
+        double radius = HumanoidBrain.config().threat().forgetDistance();
+        return mob.level().getEntitiesOfClass(LivingEntity.class, mob.getBoundingBox().inflate(radius),
+                candidate -> valid(mob, candidate) && (candidate == selected || enemy(mob, candidate))).size();
+    }
+
     static boolean allied(LivingEntity self, LivingEntity other) {
         // 同队伍，或同属一个非空原版阵营。
         Faction faction = faction(self);

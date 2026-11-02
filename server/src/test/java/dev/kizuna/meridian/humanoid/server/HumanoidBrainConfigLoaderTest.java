@@ -22,13 +22,17 @@ public class HumanoidBrainConfigLoaderTest {
     private static final String DEFAULT_TEXT = new HumanoidToml(HumanoidErrors.BRAIN)
             .resource(HumanoidBrainConfigLoader.DEFAULT_RESOURCE);
     private static final String VINDICATOR = "minecraft:vindicator";
+    private static final String WANDERING_TRADER = "minecraft:wandering_trader";
     private static final String LOWER = "meridian_door_breaker:lower";
     private static final String BREATH = "meridian_basic_techniques:breath_volume";
+    private static final String ROAD = "meridian_peddler:road";
+    private static final String AMBUSH = "meridian_peddler:ambush";
+    private static final String JOURNEY = "meridian_peddler:journey";
     private static final int DEFAULT_INTERVAL = 10;
     private static final int CUSTOM_INTERVAL = 7;
     private static final double DEFAULT_SAFE_DISTANCE = 12;
     private static final double LOWER_CHANCE = 0.1;
-    private static final int DEFAULT_VOLUME_COUNT = 6;
+    private static final int DEFAULT_VOLUME_COUNT = 9;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
     private static final int POPULATION = 2000;
     private static final double RATE_TOLERANCE = 0.03;
@@ -67,6 +71,19 @@ public class HumanoidBrainConfigLoaderTest {
     }
 
     @Test
+    public void wanderingTraderReceivesPeddlerVolumesByRealm() {
+        // 流浪商人两档都固定学上卷，真炁再学中卷，下卷保留一成概率。
+        HumanoidBrainConfig config = HumanoidBrainConfigLoader.defaults();
+        var wandering = config.volumes().volumes(WANDERING_TRADER, HumanoidTier.WANDERING_QI, UUID.randomUUID());
+        var trueQi = config.volumes().volumes(WANDERING_TRADER, HumanoidTier.TRUE_QI, UUID.randomUUID());
+        assertTrue(wandering.contains(ROAD));
+        assertTrue(trueQi.contains(ROAD));
+        assertTrue(trueQi.contains(AMBUSH));
+        var grants = config.volumes().species().get(WANDERING_TRADER).get(HumanoidTier.TRUE_QI);
+        assertTrue(grants.contains(new VolumeTable.Grant(JOURNEY, LOWER_CHANCE)));
+    }
+
+    @Test
     public void extraEntityIdsAreAccepted() {
         // 其他命名空间的实体 ID 可以另列学卷；未列档位不学卷。
         String text = DEFAULT_TEXT + "\n[volumes.\"dummy:humanoid\"]\ntrue_qi = [{ volume = \"" + BREATH
@@ -101,7 +118,8 @@ public class HumanoidBrainConfigLoaderTest {
                 "顶层未知字段", replace("log_decisions = false", "log_decisions = false\nunknown = 1"),
                 "章节未知字段", replace("[threat]", "[threat]\nunknown = 1"),
                 "缺物种", DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("[volumes.\"minecraft:illusioner\"]")),
-                "概率越界", replace("chance = 0.1", "chance = 1.5"),
+                "概率越界", replace("meridian_peddler:journey\", chance = 0.1",
+                        "meridian_peddler:journey\", chance = 1.5"),
                 "无命名空间卷", replace(LOWER, "lower"),
                 "未知档位", replace("[volumes.\"minecraft:witch\"]", "[volumes.\"minecraft:witch\"]\ngolden_core = []"),
                 "负权重", replace("qi_weight = 0.25", "qi_weight = -0.25"),

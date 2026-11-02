@@ -146,6 +146,13 @@ final class HumanoidFighters {
                 .orElse(1);
     }
 
+    static double legForceNewtons(BodySnapshot body) {
+        // 两腿的有效力量合计，供千里腿的虚脱门槛使用。
+        return tissues(body, LEG_MUSCLE).stream()
+                .mapToDouble(tissue -> TissueCapabilities.available(body, tissue.id()).strengthNewtons())
+                .sum();
+    }
+
     static double fatigueRatio(BodySnapshot body, Set<Anatomy.TissueId> tissueIds) {
         // 所绑定肌肉的平均疲劳比：1 减去有效力量与基础力量之比；没有可比肌肉时为 0。
         Map<Anatomy.TissueId, Anatomy.TissueDefinition> definitions = body.structure().tissues().stream()
