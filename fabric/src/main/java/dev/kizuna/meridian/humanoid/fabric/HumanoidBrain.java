@@ -116,6 +116,9 @@ public final class HumanoidBrain {
                 TechniqueFabric.service().registry());
         double distance = HumanoidMotion.distance(mob, threat.get());
         var stance = HumanoidAssessment.stance(self, other, mind.stance(), distance, config.assessment());
+        if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
+            stance = HumanoidAssessment.Stance.RETREAT;
+        }
         var incoming = HumanoidStrikeEstimates.incoming(mob, body, opponent);
         var encounter = new Encounter(self, other, distance, incoming, circumstances(mob));
         Decision decision = HumanoidTactics.decide(encounter, stance, readout.repertoire(),

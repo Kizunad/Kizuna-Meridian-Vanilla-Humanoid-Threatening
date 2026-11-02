@@ -2,7 +2,8 @@
 def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
 def reproClasses = [
         full: ['HumanoidGameTest', 'HumanoidTechniqueGameTest', 'HumanoidBrainGameTest', 'HumanoidSpawnGameTest',
-               'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest'],
+               'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
+               'HumanoidPeddlerGameTest'],
         normal: ['HumanoidAuditReproGameTest'],
         'bad-ledger': ['BadLedgerReproGameTest'],
         'release-before': ['ReleaseCrashBeforeGameTest'],

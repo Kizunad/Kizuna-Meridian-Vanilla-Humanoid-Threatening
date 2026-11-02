@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.Anatomy;
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.core.Realm;
 import dev.kizuna.meridian.humanoid.server.Fighter.Means;
 import dev.kizuna.meridian.humanoid.server.Repertoire;
 import dev.kizuna.meridian.humanoid.server.StrikeGeometry;
@@ -16,6 +17,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HeldItemRules
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HeldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechnique;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ModuleKind;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueEffect;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
@@ -42,7 +44,22 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 /** 本次决策的候选式与时机：绑定、费用、冷却与持物都通过的打击式和辅助式，以及轻身、下一击与走出范围的毫秒。 */
 final class HumanoidRepertoires {
     private static final double WALK_BLOCKS_PER_SECOND_PER_SPEED = 43.17;
+    private static final double PEDDLER_MINIMUM_LEG_FORCE = 3000;
+    private static final double PEDDLER_HALF_HP = 0.5;
+    private static final double PEDDLER_BEHIND_DISTANCE = 3;
+    private static final double PEDDLER_FRONT_BLOCK_DISTANCE = 3.5;
+    private static final int SINGLE_OPPONENT_COUNT = 1;
     private static final long MILLIS_PER_TICK = 50;
+    private static final String PEDDLER_PREFIX = "meridian_peddler:";
+    private static final String SNAP_KICK = PEDDLER_PREFIX + "snap_kick";
+    private static final String PUSH_KICK = PEDDLER_PREFIX + "push_kick";
+    private static final String GROUND_SWEEP = PEDDLER_PREFIX + "ground_sweep";
+    private static final String ROUNDHOUSE = PEDDLER_PREFIX + "roundhouse";
+    private static final String TRIPLE_KICK = PEDDLER_PREFIX + "triple_kick";
+    private static final String MULE_KICK = PEDDLER_PREFIX + "mule_kick";
+    private static final String FLYING_KICK = PEDDLER_PREFIX + "flying_kick";
+    private static final String AXE_KICK = PEDDLER_PREFIX + "axe_kick";
+    private static final String WHIRLWIND = PEDDLER_PREFIX + "whirlwind";
 
     /** 读出的候选：战术用的式表、自己的功法手段、选式上下文与可选打击式。 */
     record Readout(Repertoire repertoire, Set<Means> means, TechniqueSelector.Context context,
@@ -60,8 +77,18 @@ final class HumanoidRepertoires {
         }
     }
 
+    private record FirstStrike(long millis, double distance,
+                               Optional<TechniqueForecasts.FirstStrike> weapon) { }
+
     private HumanoidRepertoires() {
         // 每次决策重新读身体，不缓存绑定。
+    }
+
+    static boolean peddlerShouldRetreat(Readout readout) {
+        // 学了千里腿却没有当前防守或主动候选时，保留功法的默认逃跑性格。
+        boolean knowsPeddler = readout.known().stream()
+                .anyMatch(known -> known.getTechnique().getId().startsWith(PEDDLER_PREFIX));
+        return knowsPeddler && readout.repertoire().strikes().isEmpty();
     }
 
     static Readout read(Mob mob, BodySnapshot body, Optional<HumanoidOpponent> opponent,
@@ -73,13 +100,15 @@ final class HumanoidRepertoires {
         var castable = ready.stream()
                 .filter(entry -> TechniqueSelector.castable(context, entry.known(), entry.definition()))
                 .toList();
-        var strikes = castable.stream()
+        var readyStrikes = castable.stream()
                 .filter(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED)
-                .filter(entry -> TechniqueForecasts.firstStrike(entry.definition()).isPresent())
+                .filter(entry -> firstStrike(entry.definition()).isPresent())
+                .filter(entry -> peddlerStrikeAllowed(source, opponent, entry))
                 .toList();
-        var repertoire = new Repertoire(strikes(source, strikes, opponent), supports(body, castable),
+        var repertoire = new Repertoire(strikes(source, readyStrikes, opponent), supports(body, castable),
                 timing(source, opponent));
-        return new Readout(repertoire, means(source, ready), context, strikes.stream().map(Ready::known).toList(),
+        return new Readout(repertoire, means(source, ready), context,
+                readyStrikes.stream().map(Ready::known).toList(),
                 source.progress().getKnownList());
     }
 
@@ -87,7 +116,7 @@ final class HumanoidRepertoires {
         // 会一个绑定、费用与持物都通过的打击式即算可施放，冷却中也算；有当前施放另记，不限速的式也算。
         var means = EnumSet.noneOf(Means.class);
         if (ready.stream().anyMatch(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED
-                && TechniqueForecasts.firstStrike(entry.definition()).isPresent())) {
+                && firstStrike(entry.definition()).isPresent())) {
             means.add(Means.CASTABLE_STRIKE);
         }
         if (source.progress().hasActiveCast()) {
@@ -104,7 +133,7 @@ final class HumanoidRepertoires {
         double distance = opponent.map(target -> HumanoidMotion.distance(mob, target.entity())).orElse(0.0);
         var situation = new TechniqueSelector.Situation(body.settledAt().elapsedMillis(),
                 Math.min(1, body.partHpRatio()), HumanoidFighters.qiRatio(body), distance,
-                TechniqueSelector.TargetState.ENGAGED);
+                TechniqueSelector.TargetState.ENGAGED, HumanoidFighters.legForceNewtons(body));
         Map<TechniqueReference, BindingOutcome> bindings = ready.stream()
                 .collect(Collectors.toMap(entry -> entry.known().getTechnique(), Ready::binding));
         var availability = new TechniqueSelector.Availability(bindings, bindings.keySet(),
@@ -116,7 +145,7 @@ final class HumanoidRepertoires {
     }
 
     private static Set<TechniqueSelector.CombatFact> facts(Mob mob, LivingEntity target) {
-        // 举盾、被围、受击与被追直接读当前世界事实。
+        // 举盾、被围、受击、被追、身后、腾空与逃跑直接读当前世界事实。
         var facts = EnumSet.noneOf(TechniqueSelector.CombatFact.class);
         if (target.isBlocking()) {
             facts.add(TechniqueSelector.CombatFact.TARGET_SHIELDING);
@@ -127,11 +156,77 @@ final class HumanoidRepertoires {
         if (mob.hurtTime > 0) {
             facts.add(TechniqueSelector.CombatFact.UNDER_ATTACK);
         }
-        var towardMob = mob.position().subtract(target.position());
-        if (target.getDeltaMovement().dot(towardMob) > 0 && mob.getDeltaMovement().dot(towardMob) > 0) {
+        if (pursued(mob, target)) {
             facts.add(TechniqueSelector.CombatFact.PURSUED);
         }
+        if (targetBehind(mob, target)) {
+            facts.add(TechniqueSelector.CombatFact.TARGET_BEHIND);
+        }
+        if (!target.onGround()) {
+            facts.add(TechniqueSelector.CombatFact.TARGET_AIRBORNE);
+        }
+        var towardTarget = target.position().subtract(mob.position());
+        if (mob.getDeltaMovement().dot(towardTarget) < 0) {
+            facts.add(TechniqueSelector.CombatFact.SELF_FLEEING);
+        }
         return facts;
+    }
+
+    private static boolean peddlerStrikeAllowed(Source source, Optional<HumanoidOpponent> opponent, Ready entry) {
+        // 千里腿保留「能跑就跑」：目录负责权重，宿主只补目录无法表达的
+        // 档位、血量和人数门槛。
+        String id = entry.known().getTechnique().getId();
+        if (!id.startsWith(PEDDLER_PREFIX)) {
+            return true;
+        }
+        if (opponent.isEmpty() || HumanoidFighters.legForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE) {
+            return false;
+        }
+        LivingEntity target = opponent.get().entity();
+        double distance = HumanoidMotion.distance(source.mob(), target);
+        boolean behind = targetBehind(source.mob(), target);
+        boolean surrounded = HumanoidThreats.surrounded(source.mob());
+        boolean frontBlocked = !behind && !surrounded && distance <= PEDDLER_FRONT_BLOCK_DISTANCE;
+        if (id.equals(MULE_KICK)) {
+            return distance <= PEDDLER_BEHIND_DISTANCE && (behind || pursued(source.mob(), target));
+        }
+        if (id.equals(GROUND_SWEEP)) {
+            return surrounded;
+        }
+        if (id.equals(SNAP_KICK) || id.equals(PUSH_KICK)) {
+            return frontBlocked;
+        }
+        boolean activeReady = activePeddler(source, target);
+        if (id.equals(AXE_KICK)) {
+            return activeReady && (target.isBlocking() || !target.onGround());
+        }
+        if (id.equals(ROUNDHOUSE) || id.equals(TRIPLE_KICK) || id.equals(FLYING_KICK)
+                || id.equals(WHIRLWIND)) {
+            boolean defensive = behind || surrounded || frontBlocked || target.isBlocking() || !target.onGround();
+            return activeReady && !defensive;
+        }
+        return false;
+    }
+
+    private static boolean activePeddler(Source source, LivingEntity target) {
+        // 主动腿法只给真炁、半血以上且只有一个敌人的生物。
+        BodySnapshot body = source.body();
+        return body.realm() == Realm.TRUE_QI
+                && Math.min(1, body.partHpRatio()) > PEDDLER_HALF_HP
+                && HumanoidThreats.enemyCount(source.mob(), target) == SINGLE_OPPONENT_COUNT;
+    }
+
+    private static boolean targetBehind(Mob mob, LivingEntity target) {
+        // 只看水平朝向；目标在身后半圈时交给尥蹶情境。
+        var towardTarget = target.position().subtract(mob.position()).multiply(1, 0, 1);
+        var facing = mob.getLookAngle().multiply(1, 0, 1);
+        return towardTarget.lengthSqr() > 0 && facing.lengthSqr() > 0 && facing.dot(towardTarget) < 0;
+    }
+
+    private static boolean pursued(Mob mob, LivingEntity target) {
+        // 双方水平速度都朝向我时视为被追。
+        var towardMob = mob.position().subtract(target.position());
+        return target.getDeltaMovement().dot(towardMob) > 0 && mob.getDeltaMovement().dot(towardMob) > 0;
     }
 
     private static List<Ready> ready(Source source, HeldItems items, Predicate<String> blocked) {
@@ -168,12 +263,28 @@ final class HumanoidRepertoires {
                 .filter(TechniqueForecasts.CastForecast::interruptible).isPresent());
         var result = new ArrayList<Repertoire.Strike>();
         for (Ready entry : strikes) {
-            var first = TechniqueForecasts.firstStrike(entry.definition()).orElseThrow();
-            long stagger = interruptible.map(target -> staggerMillis(source, entry, first, target)).orElse(0L);
+            var first = firstStrike(entry.definition()).orElseThrow();
+            long stagger = interruptible.flatMap(target -> first.weapon()
+                    .map(weapon -> staggerMillis(source, entry, weapon, target))).orElse(0L);
             result.add(new Repertoire.Strike(entry.definition().getId(), first.millis(),
-                    first.strike().getDistance().getValue(), stagger));
+                    first.distance(), stagger));
         }
         return result;
+    }
+
+    private static Optional<FirstStrike> firstStrike(TechniqueDefinition definition) {
+        var candidates = new ArrayList<FirstStrike>();
+        TechniqueForecasts.firstStrike(definition)
+                .map(first -> new FirstStrike(first.millis(), first.strike().getDistance().getValue(),
+                        Optional.of(first)))
+                .ifPresent(candidates::add);
+        definition.getEffectsList().stream()
+                .filter(TechniqueEffect::hasLegStrike)
+                .min(java.util.Comparator.comparingLong(TechniqueEffect::getAtMillis))
+                .map(effect -> new FirstStrike(effect.getAtMillis(),
+                        effect.getLegStrike().getDistance().getValue(), Optional.empty()))
+                .ifPresent(candidates::add);
+        return candidates.stream().min(java.util.Comparator.comparingLong(FirstStrike::millis));
     }
 
     private static long staggerMillis(Source source, Ready entry, TechniqueForecasts.FirstStrike first,
