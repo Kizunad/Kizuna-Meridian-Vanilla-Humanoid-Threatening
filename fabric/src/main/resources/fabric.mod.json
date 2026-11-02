@@ -23,6 +23,7 @@
     "meridian_human_host": "*",
     "meridian_technique": "*",
     "meridian_door_breaker": "*",
+    "meridian_peddler": "*",
     "meridian_basic_techniques": "*",
     "meridian_vanilla_damage": "*",
     "meridian_vanilla_healing": "*"

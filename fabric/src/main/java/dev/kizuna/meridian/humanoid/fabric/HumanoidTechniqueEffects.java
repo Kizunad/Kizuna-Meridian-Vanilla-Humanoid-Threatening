@@ -30,6 +30,7 @@ final class HumanoidTechniqueEffects {
     private static final double TICKS_PER_SECOND = 20;
     private final LivingEntity entity;
     private final TechniqueWorldEffects world;
+    private final HumanoidLegStrikeEffects legEffects;
     private final Map<Identity, EffectIntent> receipts = new HashMap<>();
     private final Set<Identity> executing = new HashSet<>();
     private final Set<String> castingIds = new HashSet<>();
@@ -38,6 +39,7 @@ final class HumanoidTechniqueEffects {
     HumanoidTechniqueEffects(LivingEntity entity) {
         // 共用世界执行器只接收敌我策略和 Damage 出手边界，不复制伤害规则。
         this.entity = entity;
+        legEffects = new HumanoidLegStrikeEffects();
         world = new TechniqueWorldEffects(entity, () -> TechniqueWorldEffects.Policy.MOB,
                 target -> HumanoidThreats.hittable(entity, target),
                 (actor, source, strike) -> {
@@ -92,6 +94,8 @@ final class HumanoidTechniqueEffects {
         // 实体移动和表现不绕开原版物理，打击与劈门由共享工具执行。
         if (effect.hasStatusBenefit()) {
             TechniqueStatusBenefits.apply(entity, effect.getStatusBenefit());
+        } else if (effect.hasLegStrike()) {
+            legEffects.strike(entity, effect);
         } else if (effect.hasWeaponStrike()) {
             world.strike(effect);
         } else if (effect.hasBreakBlocks()) {
@@ -130,6 +134,7 @@ final class HumanoidTechniqueEffects {
             attribute.removeModifier(id);
             castingIds.remove(effect.getCastId());
             world.finish(effect.getCastId());
+            legEffects.finish(effect.getCastId());
         }
         if (entity instanceof Mob mob) {
             mob.setAggressive(!castingIds.isEmpty());

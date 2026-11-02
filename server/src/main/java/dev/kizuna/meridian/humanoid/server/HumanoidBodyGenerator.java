@@ -31,6 +31,7 @@ public final class HumanoidBodyGenerator {
     private static final double RESIDUAL_DENSITY_MIN = 0.01;
     private static final double RESIDUAL_DENSITY_MAX = 0.1;
     private static final String NONE_ATTRIBUTE = "meridian:none";
+    private static final String LEG_MUSCLE_TAG = "human:leg_muscle";
     private static final String DEFAULT_TIME_DOMAIN = "meridian_humanoid:world";
     private static final String DEFAULT_TIME_EPOCH = "initial";
     private static final MeridianOpening OPENED = MeridianOpening.newBuilder()
@@ -157,6 +158,7 @@ public final class HumanoidBodyGenerator {
         }
         BodyMessages.BodyStructure structure = expandedStructure(original, opened);
         BodyMessages.VitalityState vitality = vitality(random);
+        double legTrainingGrowth = legTrainingGrowth(variant, profile);
         var snapshot = BodyMessages.BodySnapshot.newBuilder()
                 .setSchemaVersion(SCHEMA_VERSION)
                 .setId("meridian_humanoid:entity/" + request.entityId())
@@ -166,7 +168,7 @@ public final class HumanoidBodyGenerator {
                 .setRevision(0)
                 .setSettledAt(time)
                 .setVitality(vitality);
-        addHealthyStates(snapshot, structure);
+        addHealthyStates(snapshot, structure, legTrainingGrowth);
         var birth = new BirthParameters(variant, profile, opened, mainAttribute, mainShare);
         addMeridianStates(snapshot, birth, random);
         BodyMessages.BodySnapshot result = snapshot.build();
@@ -198,10 +200,10 @@ public final class HumanoidBodyGenerator {
     }
 
     private static void addHealthyStates(BodyMessages.BodySnapshot.Builder snapshot,
-                                         BodyMessages.BodyStructure structure) {
+                                         BodyMessages.BodyStructure structure, double legTrainingGrowth) {
         // 按模板顺序复制各类账户的满血状态，保持状态列表与定义列表一一对应。
         addPartStates(snapshot, structure.getPartsList());
-        addTissueStates(snapshot, structure.getTissuesList());
+        addTissueStates(snapshot, structure.getTissuesList(), legTrainingGrowth);
         addOrganStates(snapshot, structure.getOrgansList());
     }
 
@@ -218,16 +220,26 @@ public final class HumanoidBodyGenerator {
     }
 
     private static void addTissueStates(BodyMessages.BodySnapshot.Builder snapshot,
-                                        List<BodyMessages.TissueDefinition> tissues) {
+                                        List<BodyMessages.TissueDefinition> tissues, double legTrainingGrowth) {
         // 组织出生时没有疲劳，生命值取模板最大值。
         for (BodyMessages.TissueDefinition tissue : tissues) {
-            BodyMessages.TissueState state = BodyMessages.TissueState.newBuilder()
+            var state = BodyMessages.TissueState.newBuilder()
                     .setId(tissue.getId())
                     .setHp(tissue.getMaxHp())
-                    .setFatigue(0)
-                    .build();
-            snapshot.addTissueStates(state);
+                    .setFatigue(0);
+            if (tissue.getTagsList().contains(LEG_MUSCLE_TAG)) {
+                state.setTrainingGrowth(legTrainingGrowth);
+            }
+            snapshot.addTissueStates(state.build());
         }
+    }
+
+    private static double legTrainingGrowth(HumanoidVariant variant, HumanoidConfig.SpeciesProfile profile) {
+        // 出生变体选择对应境界的腿部耐力成长，其他组织不共享该参数。
+        if (variant == HumanoidVariant.TRUE_QI) {
+            return profile.trueQiLegTrainingGrowth();
+        }
+        return profile.wanderingQiLegTrainingGrowth();
     }
 
     private static void addOrganStates(BodyMessages.BodySnapshot.Builder snapshot,

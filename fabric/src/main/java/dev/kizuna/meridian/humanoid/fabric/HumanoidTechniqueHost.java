@@ -82,6 +82,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
             }
             response.setBody(body.snapshot());
             response.setHeldItems(TechniqueWorldItems.inspect(entity));
+            response.setInspectFacts(HumanoidTechniqueFacts.inspect(entity));
         } else if (request.hasActivity()) {
             var result = body.applyTechnique(request);
             if (result.hasFailure()) {

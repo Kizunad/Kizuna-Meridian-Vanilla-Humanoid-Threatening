@@ -10,6 +10,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidSpawnGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidBrainGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidPeddlerGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidDebugQiGameTest"
     ]
   }
