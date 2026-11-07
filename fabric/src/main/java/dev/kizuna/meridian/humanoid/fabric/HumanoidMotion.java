@@ -1,6 +1,9 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -15,8 +18,10 @@ final class HumanoidMotion {
     private static final int PATH_REFRESH_TICKS = 10;
     private static final int RETREAT_HORIZONTAL_RANGE = 16;
     private static final int RETREAT_VERTICAL_RANGE = 7;
-    private static final double RETREAT_STEP = 8;
+    private static final int[] RETREAT_STEPS = {RETREAT_HORIZONTAL_RANGE, 8, 4, 2};
+    private static final double RETREAT_GAIN = 1;
     private static final double ARRIVED_DISTANCE = 1;
+    private static final double SUPPORT_PROBE_DEPTH = 0.1;
 
     /** 指令里的移动方式：交还原版、跟随对手、走到某点、原地不动。 */
     enum Movement { VANILLA, FOLLOW, MOVE_TO, STAY }
@@ -75,16 +80,69 @@ final class HumanoidMotion {
         }
     }
 
-    static Vec3 retreatPoint(Mob mob, LivingEntity threat) {
-        // 原版无惩罚寻路找一处背离威胁的点；找不到时沿背离方向直走一段。
-        if (mob instanceof PathfinderMob walker) {
+    static Optional<Vec3> retreatPoint(Mob mob, LivingEntity threat, Directive previous, double safeDistance) {
+        // 沿用尚未走完的可达退路；原版抽样与附近候选统一交给寻路器，失败明确表示无路可退。
+        double minimumDistance = Math.max(mob.distanceTo(threat) + RETREAT_GAIN, safeDistance);
+        if (usableRetreat(mob, threat, previous, minimumDistance)) {
+            return previous.destination();
+        }
+        for (int step : RETREAT_STEPS) {
+            Set<BlockPos> candidates = retreatCandidates(mob, threat, minimumDistance, step);
+            if (candidates.isEmpty()) {
+                continue;
+            }
+            var path = mob.getNavigation().createPath(candidates, 0);
+            if (path != null && path.canReach()) {
+                return Optional.of(Vec3.atBottomCenterOf(path.getTarget()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean usableRetreat(Mob mob, LivingEntity threat, Directive directive, double minimumDistance) {
+        // 导航已经失败、到达或目标已不再拉开距离时必须重算，不能永久保留墙外坐标。
+        var navigation = mob.getNavigation();
+        var path = navigation.getPath();
+        if (directive.movement() != Movement.MOVE_TO || directive.pace() != Pace.FLEE
+                || navigation.isDone() || path == null || !path.canReach()) {
+            return false;
+        }
+        Vec3 destination = directive.destination().orElseThrow();
+        return mob.position().distanceTo(destination) > ARRIVED_DISTANCE
+                && destination.distanceToSqr(threat.position()) >= minimumDistance * minimumDistance;
+    }
+
+    private static Set<BlockPos> retreatCandidates(Mob mob, LivingEntity threat, double minimumDistance, int step) {
+        // 优先寻找长退路，再逐圈缩小；同一圈只做一次多目标寻路，墙边也能沿侧面退让。
+        Set<BlockPos> candidates = new LinkedHashSet<>();
+        if (step == RETREAT_HORIZONTAL_RANGE && mob instanceof PathfinderMob walker) {
             Vec3 found = DefaultRandomPos.getPosAway(walker, RETREAT_HORIZONTAL_RANGE, RETREAT_VERTICAL_RANGE,
                     threat.position());
             if (found != null) {
-                return found;
+                addRetreatCandidate(mob, threat, BlockPos.containing(found), minimumDistance, candidates);
             }
         }
-        return mob.position().add(away(mob, threat).scale(RETREAT_STEP));
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) {
+                if (x != 0 || z != 0) {
+                    BlockPos point = mob.blockPosition().offset(x * step, 0, z * step);
+                    addRetreatCandidate(mob, threat, point, minimumDistance, candidates);
+                }
+            }
+        }
+        return candidates;
+    }
+
+    private static void addRetreatCandidate(Mob mob, LivingEntity threat, BlockPos candidate, double minimumDistance,
+                                             Set<BlockPos> candidates) {
+        // 目的地须能站立、容纳实体且确实增加间距；高度搜索处理台阶和起跳后的坐标。
+        BlockPos.findClosestMatch(candidate, 0, RETREAT_VERTICAL_RANGE, point -> {
+            Vec3 destination = Vec3.atBottomCenterOf(point);
+            var bounds = mob.getBoundingBox().move(destination.subtract(mob.position()));
+            return destination.distanceToSqr(threat.position()) >= minimumDistance * minimumDistance
+                    && mob.level().noCollision(mob, bounds)
+                    && !mob.level().noCollision(mob, bounds.move(0, -SUPPORT_PROBE_DEPTH, 0));
+        }).ifPresent(point -> candidates.add(point.immutable()));
     }
 
     static Vec3 away(Entity self, Entity threat) {

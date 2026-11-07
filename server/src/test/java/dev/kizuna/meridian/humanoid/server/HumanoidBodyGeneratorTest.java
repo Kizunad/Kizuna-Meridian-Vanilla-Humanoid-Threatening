@@ -41,6 +41,10 @@ public class HumanoidBodyGeneratorTest {
     private static final int LEG_MUSCLE_COUNT = 6;
     private static final double FREE_DENSITY = 0.01;
     private static final double LIQUID_DENSITY = 0.1;
+    private static final double PILLAGER_WANDERING_ARM_GROWTH = 0.20;
+    private static final double PILLAGER_TRUE_ARM_GROWTH = 0.35;
+    private static final int ARM_MUSCLE_COUNT = 6;
+    private static final String ARM_MUSCLE_TAG = "human:arm_muscle";
     private HumanoidBodyGenerator generator;
     private HumanoidConfig config;
 
@@ -148,6 +152,77 @@ public class HumanoidBodyGeneratorTest {
         assertLegGrowth(wandering, WANDERING_TRADER_WANDERING_LEG_GROWTH);
         assertLegGrowth(trueQi, WANDERING_TRADER_TRUE_LEG_GROWTH);
         assertLegGrowth(villager, NO_LEG_GROWTH);
+    }
+
+    @Test
+    public void onlyPillagerCultivatorsStartWithArmTrainingGrowth() {
+        // 掠夺者两档六块臂肌带固定成长；其他物种和凡人臂肌没有成长，所有待巩固负荷为零。
+        RegionInventory region = RegionInventory.absent();
+        for (HumanoidSpecies species : HumanoidSpecies.values()) {
+            for (HumanoidVariant variant : HumanoidVariant.values()) {
+                double expected = expectedArmGrowth(species, variant);
+                assertArmGrowth(generateBody(species, variant, region), expected);
+            }
+        }
+        UUID id = UUID.nameUUIDFromBytes("mortal-pillager".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var request = new HumanoidBodyGenerator.GenerationRequest(HumanoidSpecies.PILLAGER,
+                HumanoidVariant.WANDERING_QI, id, region, null);
+        var random = HumanoidBodyGenerator.randomFor(REPRODUCIBLE_WORLD_SEED, id);
+        assertArmGrowth(generator.generateUnopened(request, random), 0);
+    }
+
+    @Test
+    public void armTrainingConfigurationDoesNotChangeOtherBirthSampling() {
+        // 关闭手臂成长后，只有六块臂肌的成长字段改变，不消耗或移动身体随机流。
+        String defaults = new HumanoidToml(HumanoidErrors.CONFIG).resource(HumanoidConfigLoader.DEFAULT_RESOURCE);
+        String disabled = defaults.replace("wandering_qi_arm_training_growth = 0.20",
+                        "wandering_qi_arm_training_growth = 0.0")
+                .replace("true_qi_arm_training_growth = 0.35", "true_qi_arm_training_growth = 0.0");
+        var untrained = new HumanoidBodyGenerator(generatorRegistry(), HumanoidConfigLoader.parse(disabled));
+        UUID id = UUID.nameUUIDFromBytes("arm-growth".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        for (HumanoidVariant variant : HumanoidVariant.values()) {
+            var request = new HumanoidBodyGenerator.GenerationRequest(HumanoidSpecies.PILLAGER, variant,
+                    id, RegionInventory.absent(), null);
+            var trained = generator.generate(request, REPRODUCIBLE_WORLD_SEED).toBuilder();
+            for (var tissue : trained.getTissueStatesBuilderList()) {
+                tissue.setTrainingGrowth(0);
+            }
+            assertEquals(untrained.generate(request, REPRODUCIBLE_WORLD_SEED), trained.build());
+        }
+    }
+
+    @Test
+    public void armTrainingConfigurationRejectsInvalidGrowth() {
+        // 成长必须是有限的闭区间比例，不能绕过出生配置校验。
+        String defaults = new HumanoidToml(HumanoidErrors.CONFIG).resource(HumanoidConfigLoader.DEFAULT_RESOURCE);
+        for (String invalid : List.of("-0.1", "1.1", "nan", "inf")) {
+            String text = defaults.replace("true_qi_arm_training_growth = 0.35",
+                    "true_qi_arm_training_growth = " + invalid);
+            assertThrows(IllegalArgumentException.class, () -> HumanoidConfigLoader.parse(text));
+        }
+    }
+
+    private static double expectedArmGrowth(HumanoidSpecies species, HumanoidVariant variant) {
+        if (species != HumanoidSpecies.PILLAGER) {
+            return 0;
+        }
+        return variant == HumanoidVariant.TRUE_QI
+                ? PILLAGER_TRUE_ARM_GROWTH : PILLAGER_WANDERING_ARM_GROWTH;
+    }
+
+    private static void assertArmGrowth(BodyMessages.BodySnapshot body, double expectedGrowth) {
+        // 按真实人体标签核对六肌，不依赖模板列表中的固定下标。
+        int armCount = 0;
+        for (int index = 0; index < body.getStructure().getTissuesCount(); index++) {
+            var definition = body.getStructure().getTissues(index);
+            var state = body.getTissueStates(index);
+            if (definition.getTagsList().contains(ARM_MUSCLE_TAG)) {
+                armCount++;
+                assertEquals(expectedGrowth, state.getTrainingGrowth(), TIME_TOLERANCE);
+            }
+            assertEquals(0, state.getPendingTrainingLoad(), TIME_TOLERANCE);
+        }
+        assertEquals(ARM_MUSCLE_COUNT, armCount);
     }
 
     @Test

@@ -32,7 +32,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final int CUSTOM_INTERVAL = 7;
     private static final double DEFAULT_SAFE_DISTANCE = 12;
     private static final double LOWER_CHANCE = 0.1;
-    private static final int DEFAULT_VOLUME_COUNT = 9;
+    private static final int DEFAULT_VOLUME_COUNT = 12;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
     private static final int POPULATION = 2000;
     private static final double RATE_TOLERANCE = 0.03;
@@ -81,6 +81,33 @@ public class HumanoidBrainConfigLoaderTest {
         assertTrue(trueQi.contains(AMBUSH));
         var grants = config.volumes().species().get(WANDERING_TRADER).get(HumanoidTier.TRUE_QI);
         assertTrue(grants.contains(new VolumeTable.Grant(JOURNEY, LOWER_CHANCE)));
+    }
+
+    @Test
+    public void pillagerReceivesWayfarerVolumesByTier() {
+        // 游炁固定学弩卷；真炁再学弓上卷，一成学弓下卷；凡人不学，其他物种不受影响。
+        String pillager = HumanoidSpecies.PILLAGER.entityId();
+        String crossbow = "meridian_wayfarer:crossbow";
+        String upper = "meridian_wayfarer:bow_upper";
+        String lower = "meridian_wayfarer:bow_lower";
+        VolumeTable table = HumanoidBrainConfigLoader.defaults().volumes();
+        UUID entity = UUID.nameUUIDFromBytes("wayfarer".getBytes(StandardCharsets.UTF_8));
+        var wandering = table.volumes(pillager, HumanoidTier.WANDERING_QI, entity);
+        assertTrue(wandering.contains(crossbow));
+        assertFalse(wandering.contains(upper));
+        assertFalse(wandering.contains(lower));
+        var trueQi = table.volumes(pillager, HumanoidTier.TRUE_QI, entity);
+        assertTrue(trueQi.contains(crossbow));
+        assertTrue(trueQi.contains(upper));
+        var grants = table.species().get(pillager).get(HumanoidTier.TRUE_QI);
+        assertTrue(grants.contains(new VolumeTable.Grant(lower, LOWER_CHANCE)));
+        assertTrue(table.volumes(pillager, HumanoidTier.MORTAL, entity).isEmpty());
+        table.species().forEach((species, tiers) -> {
+            if (!species.equals(pillager)) {
+                tiers.values().forEach(values -> assertTrue(values.stream()
+                        .noneMatch(grant -> grant.volume().startsWith("meridian_wayfarer:"))));
+            }
+        });
     }
 
     @Test

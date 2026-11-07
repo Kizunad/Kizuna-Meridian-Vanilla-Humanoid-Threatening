@@ -28,7 +28,6 @@ import net.minecraft.world.phys.Vec3;
 /** 把一次战术决策落到施放请求与移动指令上；施放失败按式累计，连续失败后暂停该式。 */
 final class HumanoidActions {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_brain");
-    private static final double FLEE_ARRIVED_DISTANCE = 2;
 
     /** 一次决策执行所需的实体、大脑状态、身体、候选与对手。 */
     record Turn(Mob mob, HumanoidMind mind, BodySnapshot body, HumanoidRepertoires.Readout readout,
@@ -45,7 +44,7 @@ final class HumanoidActions {
         }
         switch (decision.action()) {
             case INTERRUPT -> castAndFollow(turn, decision.technique().orElseThrow());
-            case STRIKE -> strike(turn);
+            case STRIKE -> strike(turn, decision);
             case PREPARE -> prepare(turn, decision.technique().orElseThrow());
             case RECOVER -> recover(turn, decision.technique().orElseThrow());
             case DODGE -> dodge(turn);
@@ -60,13 +59,21 @@ final class HumanoidActions {
     }
 
     private static void castAndFollow(Turn turn, String technique) {
-        // 打断与打击都朝对手施放并贴住它。
+        // 行矢射击时保持站位；近战打断与打击继续贴住对手。
         cast(turn, technique);
+        if (technique.startsWith(HumanoidWayfarerAi.PREFIX)) {
+            turn.mind().direct(HumanoidMotion.Directive.STAYING);
+            return;
+        }
         turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
     }
 
-    private static void strike(Turn turn) {
+    private static void strike(Turn turn, Decision decision) {
         // 在可选打击式里按情境与本实体种子抽一式；都不合适时继续接近。
+        if (decision.technique().isPresent()) {
+            castAndFollow(turn, decision.technique().orElseThrow());
+            return;
+        }
         var readout = turn.readout();
         var chosen = TechniqueSelector.choose(readout.context(), readout.strikes(),
                 HumanoidBrain.seed(turn.mob(), turn.mind()));
@@ -123,10 +130,9 @@ final class HumanoidActions {
     }
 
     private static void kite(Turn turn) {
-        // 背向对手跃步，再沿同一方向走开。
-        Vec3 destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
-        TechniqueLeaps.leapToward(turn.mob(), destination);
-        turn.mind().direct(HumanoidMotion.Directive.moveTo(destination, HumanoidMotion.Pace.FLEE));
+        // 只向本次决策确认可达的退路跃步，再沿同一路径走开。
+        turn.mind().retreatPoint().ifPresent(destination -> TechniqueLeaps.leapToward(turn.mob(), destination));
+        retreat(turn);
     }
 
     private static void approach(Turn turn) {
@@ -139,26 +145,11 @@ final class HumanoidActions {
     }
 
     private static void retreat(Turn turn) {
-        // 上一个撤退点仍在背离对手的方向且未走到时沿用，免得每次决策换方向。
-        if (stillFleeing(turn)) {
-            return;
-        }
-        Vec3 destination = HumanoidMotion.retreatPoint(turn.mob(), opponentEntity(turn));
-        turn.mind().direct(HumanoidMotion.Directive.moveTo(destination, HumanoidMotion.Pace.FLEE));
-    }
-
-    private static boolean stillFleeing(Turn turn) {
-        // 当前指令是逃离走点，离目的地还远，且目的地比自己离对手更远。
-        var directive = turn.mind().directive();
-        if (directive.movement() != HumanoidMotion.Movement.MOVE_TO
-                || directive.pace() != HumanoidMotion.Pace.FLEE) {
-            return false;
-        }
-        Vec3 destination = directive.destination().orElseThrow();
-        Vec3 threat = opponentEntity(turn).position();
-        Vec3 position = turn.mob().position();
-        return position.distanceTo(destination) > FLEE_ARRIVED_DISTANCE
-                && destination.distanceToSqr(threat) > position.distanceToSqr(threat);
+        // 战术与执行共用已验证的目的地；无退路时停止旧导航。
+        var directive = turn.mind().retreatPoint()
+                .map(destination -> HumanoidMotion.Directive.moveTo(destination, HumanoidMotion.Pace.FLEE))
+                .orElse(HumanoidMotion.Directive.STAYING);
+        turn.mind().direct(directive);
     }
 
     private static void hold(Turn turn) {
@@ -181,7 +172,7 @@ final class HumanoidActions {
                 .setTechnique(reference(turn, technique))
                 .setCastId(UUID.randomUUID().toString());
         turn.opponent().ifPresent(opponent -> request.setTargetId(opponent.entity().getStringUUID()));
-        CastOutcome outcome = service.cast(mob.getUUID(), request.build());
+        CastOutcome outcome = castWithWeapon(turn, technique, request.build());
         if (failed(outcome)) {
             HumanoidBrainConfig.ResponseRules rules = HumanoidBrain.config().response();
             long now = turn.body().settledAt().elapsedMillis();
@@ -190,6 +181,22 @@ final class HumanoidActions {
             return;
         }
         turn.mind().succeeded(technique);
+    }
+
+    private static CastOutcome castWithWeapon(Turn turn, String technique, CastRequest request) {
+        // 选中后才换兵；真实起手重新检查持物和费用，拒绝或异常均还原原物品。
+        var exchange = Optional.ofNullable(turn.readout().exchanges().get(technique));
+        exchange.ifPresent(HumanoidWayfarerWeapons.Exchange::apply);
+        try {
+            CastOutcome outcome = TechniqueFabric.service().cast(turn.mob().getUUID(), request);
+            if (failed(outcome)) {
+                exchange.ifPresent(HumanoidWayfarerWeapons.Exchange::restore);
+            }
+            return outcome;
+        } catch (RuntimeException failure) {
+            exchange.ifPresent(HumanoidWayfarerWeapons.Exchange::restore);
+            throw failure;
+        }
     }
 
     private static boolean failed(CastOutcome outcome) {

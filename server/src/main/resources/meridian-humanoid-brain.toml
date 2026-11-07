@@ -74,11 +74,15 @@ wandering_qi = [
   { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+  { volume = "meridian_wayfarer:crossbow", chance = 1.0 },
 ]
 true_qi = [
   { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
+  { volume = "meridian_wayfarer:crossbow", chance = 1.0 },
+  { volume = "meridian_wayfarer:bow_upper", chance = 1.0 },
+  { volume = "meridian_wayfarer:bow_lower", chance = 0.1 },
 ]
 
 [volumes."minecraft:vindicator"]

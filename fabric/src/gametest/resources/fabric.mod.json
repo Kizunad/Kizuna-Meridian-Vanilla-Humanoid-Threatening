@@ -11,6 +11,12 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidSpawnGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidBrainGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidPeddlerGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidEnclosedArenaGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerAiGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerProjectileGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerDecisionGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerNaturalAiGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidDebugQiGameTest"
     ]
   }

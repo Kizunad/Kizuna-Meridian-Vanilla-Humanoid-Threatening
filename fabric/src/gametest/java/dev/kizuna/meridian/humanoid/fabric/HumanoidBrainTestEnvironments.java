@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.serialization.MapCodec;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.VolumeTable;
 import java.util.List;
 import net.fabricmc.api.ModInitializer;
 import net.minecraft.core.Registry;
@@ -32,7 +33,8 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
     private enum Volumes {
         DOOR_BREAKER_ONLY("door_breaker_only"),
         VILLAGER_WITHOUT_VOLUMES("villager_without_volumes"),
-        PILLAGER_WITHOUT_VOLUMES("pillager_without_volumes");
+        PILLAGER_WITHOUT_VOLUMES("pillager_without_volumes"),
+        PILLAGER_BASIC_VOLUMES("pillager_basic_volumes");
 
         private final String path;
         private final MapCodec<VolumesEnvironment> codec;
@@ -52,6 +54,11 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
                         HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.VILLAGER.entityId(), List.of());
                 case PILLAGER_WITHOUT_VOLUMES ->
                         HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.PILLAGER.entityId(), List.of());
+                case PILLAGER_BASIC_VOLUMES -> HumanoidBrainTestConfigs.withVolumes(
+                        HumanoidSpecies.PILLAGER.entityId(), List.of(
+                                new VolumeTable.Grant("meridian_basic_techniques:breath_volume", 1),
+                                new VolumeTable.Grant("meridian_basic_techniques:light_step_volume", 1),
+                                new VolumeTable.Grant("meridian_basic_techniques:charge_volume", 1)));
             }
         }
     }

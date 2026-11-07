@@ -38,6 +38,8 @@ final class HumanoidLegStrikeEffects {
     private static final double SINGLE_TARGET_ANGLE = 60;
     private static final float ATTACK_SOUND_VOLUME = 1.0F;
     private static final float ATTACK_SOUND_PITCH = 1.0F;
+    private static final double TRIP_UPWARD_METERS_PER_SECOND = 2;
+    private static final double TICKS_PER_SECOND = 20;
 
     private final Map<String, CastHits> casts = new HashMap<>();
 
@@ -105,7 +107,7 @@ final class HumanoidLegStrikeEffects {
     }
 
     private static void applyKnockback(KnockbackContext context) {
-        // 四种腿击方向沿用原版速度入口；绊倒保留竖直速度，踩落只压低竖直分量。
+        // 四种腿击方向沿用原版速度入口；绊倒向上挑起，踩落只压低竖直分量。
         switch (context.kind()) {
             case PUSH -> push(context);
             case SIDEWAYS -> sideways(context);
@@ -130,9 +132,9 @@ final class HumanoidLegStrikeEffects {
     }
 
     private static void trip(LivingEntity target) {
-        // 绊倒清空水平速度，保留正在下落或跳跃的竖直速度。
-        Vec3 velocity = target.getDeltaMovement();
-        target.setDeltaMovement(0, velocity.y, 0);
+        // 绊倒清空水平速度，以固定每秒速度挑起，覆盖原有下落或跳跃速度。
+        double upwardPerTick = TRIP_UPWARD_METERS_PER_SECOND / TICKS_PER_SECOND;
+        target.setDeltaMovement(0, upwardPerTick, 0);
         target.hurtMarked = true;
     }
 

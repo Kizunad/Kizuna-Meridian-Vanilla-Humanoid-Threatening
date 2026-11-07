@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Optional;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.phys.Vec3;
 
 /** 按 Damage 同一规则估算打击：护甲前剂量乘肌力系数换成身体 HP，再求僵直；以及来袭打击是否覆盖我、往哪走出。 */
@@ -131,8 +132,8 @@ final class HumanoidStrikeEstimates {
         return StrikeGeometry.covers(sector(caster, strike), point(self.position()));
     }
 
-    static Optional<Exit> exit(LivingEntity self, HumanoidOpponent opponent) {
-        // 最早一击覆盖我时，沿背离对方的方向走出范围。
+    static Optional<Exit> exit(Mob self, HumanoidOpponent opponent) {
+        // 最早一击覆盖我时，只有寻路确认可达的出口才算能走出范围。
         var cast = opponent.cast();
         var next = cast.flatMap(HumanoidStrikeEstimates::next);
         if (next.isEmpty()) {
@@ -145,7 +146,19 @@ final class HumanoidStrikeEstimates {
         var sector = sector(opponent.entity(), strike);
         double distance = StrikeGeometry.exitDistance(sector, point(self.position()));
         Vec3 away = HumanoidMotion.away(self, opponent.entity());
-        return Optional.of(new Exit(distance, self.position().add(away.scale(distance))));
+        Vec3 destination = self.position().add(away.scale(distance));
+        var path = self.getNavigation().createPath(destination.x, destination.y, destination.z, 0);
+        if (path == null || !path.canReach()) {
+            return Optional.empty();
+        }
+        double walkingDistance = 0;
+        Vec3 previous = self.position();
+        for (int index = 0; index < path.getNodeCount(); index++) {
+            Vec3 waypoint = path.getEntityPosAtNode(self, index);
+            walkingDistance += previous.distanceTo(waypoint);
+            previous = waypoint;
+        }
+        return Optional.of(new Exit(Math.max(distance, walkingDistance), destination));
     }
 
     private static StrikeGeometry.Sector sector(LivingEntity caster, WeaponStrike strike) {

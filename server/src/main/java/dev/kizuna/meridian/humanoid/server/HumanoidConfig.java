@@ -105,13 +105,16 @@ public record HumanoidConfig(
                                  double armOpeningWeight,
                                  double footOpeningWeight,
                                  double wanderingQiLegTrainingGrowth,
-                                 double trueQiLegTrainingGrowth) {
+                                 double trueQiLegTrainingGrowth,
+                                 double wanderingQiArmTrainingGrowth,
+                                 double trueQiArmTrainingGrowth) {
         public SpeciesProfile {
             // 权重允许为零但不能为负；成长比例必须在闭区间内。
             if (!fraction(trueQiBaseProbability) || !positive(openingCountMultiplier)
                     || !positive(fillMultiplier) || !positive(wallFillMultiplier)
                     || !nonNegative(armOpeningWeight) || !nonNegative(footOpeningWeight)
-                    || !fraction(wanderingQiLegTrainingGrowth) || !fraction(trueQiLegTrainingGrowth)) {
+                    || !fraction(wanderingQiLegTrainingGrowth) || !fraction(trueQiLegTrainingGrowth)
+                    || !fraction(wanderingQiArmTrainingGrowth) || !fraction(trueQiArmTrainingGrowth)) {
                 throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 物种偏向范围无效");
             }
         }

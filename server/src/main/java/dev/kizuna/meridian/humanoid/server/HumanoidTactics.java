@@ -82,7 +82,10 @@ public final class HumanoidTactics {
         }
         Incoming incoming = encounter.incoming().get();
         boolean casting = encounter.self().has(Fighter.Means.CASTING);
-        if (!casting && stance == Stance.ENGAGE && incoming.has(Incoming.Trait.INTERRUPTIBLE)) {
+        boolean defending = encounter.has(Circumstance.RETREAT_BLOCKED)
+                || encounter.has(Circumstance.DEFENSIVE_STRIKE);
+        if (!casting && canStrike(encounter) && (stance == Stance.ENGAGE || defending)
+                && incoming.has(Incoming.Trait.INTERRUPTIBLE)) {
             Optional<Decision> interrupt = interrupt(encounter.distance(), incoming, repertoire.strikes(), reaction);
             if (interrupt.isPresent()) {
                 return interrupt;
@@ -100,7 +103,7 @@ public final class HumanoidTactics {
             return Optional.of(Decision.of(Action.ABSORB, format("预计剂量比 %.2f 偏小，硬抗", incoming.doseRatio())));
         }
         long exit = repertoire.timing().exitMillis();
-        if (exit + reaction.dodgeMarginMillis() < hit) {
+        if (exit < hit - reaction.dodgeMarginMillis()) {
             return Optional.of(Decision.of(Action.DODGE, format("来袭 %d ms 后命中，%d ms 可走出范围", hit, exit)));
         }
         return Optional.of(Decision.of(Action.ABSORB, format("来袭 %d ms 后命中，来不及走出范围，硬抗", hit)));
@@ -120,9 +123,20 @@ public final class HumanoidTactics {
     }
 
     private static Decision retreat(Encounter encounter, Repertoire repertoire, double safeDistance) {
-        // 到安全距离就恢复或等待；未到时轻身在身先背向跃步，其次补放机动式，最后走开。
+        // 被逼住或有近身防守式时先反击；仍有退路才用轻身和机动式拉开。
         var distance = OptionalDouble.of(encounter.distance());
         Fighter self = encounter.self();
+        if (canStrike(encounter) && (encounter.has(Circumstance.RETREAT_BLOCKED)
+                || encounter.has(Circumstance.DEFENSIVE_STRIKE))) {
+            boolean withinReach = repertoire.strikes().stream()
+                    .anyMatch(strike -> encounter.distance() <= strike.reach());
+            if (withinReach) {
+                return Decision.of(Action.STRIKE, "退避受阻或追兵近身，施放防守反击");
+            }
+        }
+        if (encounter.has(Circumstance.RETREAT_BLOCKED)) {
+            return cornered(encounter, repertoire, distance);
+        }
         if (encounter.distance() >= safeDistance) {
             return support(self, repertoire, RECOVER_SUPPORT, distance)
                     .map(chosen -> Decision.cast(Action.RECOVER, chosen.technique(), "已拉开到安全距离，施放恢复式"))
@@ -134,6 +148,25 @@ public final class HumanoidTactics {
         return support(self, repertoire, RETREAT_SUPPORT, distance)
                 .map(chosen -> Decision.cast(Action.PREPARE, chosen.technique(), "施放机动式以便拉开"))
                 .orElseGet(() -> Decision.of(Action.RETREAT, "走开拉开距离"));
+    }
+
+    private static Decision cornered(Encounter encounter, Repertoire repertoire, OptionalDouble distance) {
+        // 没有可达退路时，先用满足目录距离的恢复式；原版攻击者随后自卫，不能永远朝墙走。
+        var recovery = support(encounter.self(), repertoire, RECOVER_SUPPORT, distance);
+        if (recovery.isPresent()) {
+            return Decision.cast(Action.RECOVER, recovery.get().technique(), "无可达退路，利用间隙恢复");
+        }
+        if (encounter.self().has(Fighter.Means.VANILLA_OFFENSE)
+                && !encounter.has(Circumstance.EXHAUSTED_ARMS)) {
+            return Decision.of(Action.APPROACH, "无可达退路，交还原版攻击自卫");
+        }
+        return Decision.of(Action.HOLD, "无可达退路，等待防守式可用");
+    }
+
+    private static boolean canStrike(Encounter encounter) {
+        // 双臂虚脱禁止一般进攻，仍可使用已通过腿力门槛的防守腿法。
+        return !encounter.has(Circumstance.EXHAUSTED_ARMS)
+                || encounter.has(Circumstance.DEFENSIVE_STRIKE);
     }
 
     private static Decision engage(Encounter encounter, Repertoire repertoire) {

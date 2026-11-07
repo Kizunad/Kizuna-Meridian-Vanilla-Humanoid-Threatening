@@ -9,7 +9,6 @@ import dev.kizuna.meridian.humanoid.server.StrikeGeometry;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueStatusBenefits;
-import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.BindingOutcome;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Hand;
@@ -60,17 +59,21 @@ final class HumanoidRepertoires {
     private static final String FLYING_KICK = PEDDLER_PREFIX + "flying_kick";
     private static final String AXE_KICK = PEDDLER_PREFIX + "axe_kick";
     private static final String WHIRLWIND = PEDDLER_PREFIX + "whirlwind";
+    private static final Set<String> PEDDLER_DEFENSES = Set.of(SNAP_KICK, PUSH_KICK, MULE_KICK, GROUND_SWEEP);
 
     /** 读出的候选：战术用的式表、自己的功法手段、选式上下文与可选打击式。 */
     record Readout(Repertoire repertoire, Set<Means> means, TechniqueSelector.Context context,
-                   List<KnownTechnique> strikes, List<KnownTechnique> known) { }
+                   List<KnownTechnique> strikes, List<KnownTechnique> known,
+                   Map<String, HumanoidWayfarerWeapons.Exchange> exchanges) { }
 
     /** 一次决策读的实体、身体、目录与功法进度。 */
-    private record Source(Mob mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress) { }
+    private record Source(Mob mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress,
+                          Optional<HumanoidWayfarerFacts.Target> target) { }
 
     /** 绑定、费用与持物都通过的一式；书没有持物规则时选定手为空。 */
     private record Ready(KnownTechnique known, TechniqueDefinition definition, BindingOutcome binding,
-                         Optional<Hand> hand, Optional<HeldItemRules> rules) {
+                         Optional<Hand> hand, Optional<HeldItemRules> rules,
+                         Optional<HumanoidWayfarerWeapons.Exchange> exchange) {
         AiRole role() {
             // 未设角色的是打击式。
             return definition.getAiHints().getSupport().getRole();
@@ -91,11 +94,18 @@ final class HumanoidRepertoires {
         return knowsPeddler && readout.repertoire().strikes().isEmpty();
     }
 
+    static boolean peddlerCanDefend(Readout readout) {
+        // 候选已通过腿力、费用、冷却与前后方处境筛选；防守腿法不能被通用撤退姿态屏蔽。
+        return readout.repertoire().strikes().stream()
+                .anyMatch(strike -> PEDDLER_DEFENSES.contains(strike.technique()));
+    }
+
     static Readout read(Mob mob, BodySnapshot body, Optional<HumanoidOpponent> opponent,
                         Predicate<String> blocked) {
         // 被失败屏蔽的式不参与；冷却未过的打击式仍算「会打」，只是本次不进候选。
-        var source = new Source(mob, body, TechniqueFabric.service().registry(), TechniqueState.read(body));
-        List<Ready> ready = ready(source, TechniqueWorldItems.inspect(mob), blocked);
+        var target = opponent.map(value -> HumanoidWayfarerFacts.read(mob, value.entity()));
+        var source = new Source(mob, body, TechniqueFabric.service().registry(), TechniqueState.read(body), target);
+        List<Ready> ready = ready(source, HumanoidWayfarerWeapons.inspect(mob), blocked);
         var context = context(source, opponent, ready);
         var castable = ready.stream()
                 .filter(entry -> TechniqueSelector.castable(context, entry.known(), entry.definition()))
@@ -104,12 +114,20 @@ final class HumanoidRepertoires {
                 .filter(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED)
                 .filter(entry -> firstStrike(entry.definition()).isPresent())
                 .filter(entry -> peddlerStrikeAllowed(source, opponent, entry))
+                .filter(entry -> HumanoidWayfarerAi.allowed(mob, body, entry.definition(), source.target()))
                 .toList();
         var repertoire = new Repertoire(strikes(source, readyStrikes, opponent), supports(body, castable),
                 timing(source, opponent));
         return new Readout(repertoire, means(source, ready), context,
                 readyStrikes.stream().map(Ready::known).toList(),
-                source.progress().getKnownList());
+                source.progress().getKnownList(), exchanges(readyStrikes));
+    }
+
+    private static Map<String, HumanoidWayfarerWeapons.Exchange> exchanges(List<Ready> ready) {
+        // 只保留最终候选的库存预览，选式后才会实际交换。
+        return ready.stream().filter(entry -> entry.exchange().isPresent())
+                .collect(Collectors.toUnmodifiableMap(entry -> entry.definition().getId(),
+                        entry -> entry.exchange().orElseThrow()));
     }
 
     private static Set<Means> means(Source source, List<Ready> ready) {
@@ -140,7 +158,8 @@ final class HumanoidRepertoires {
                 source.progress().getCooldownsMap());
         Set<TechniqueSelector.CombatFact> facts = opponent.map(target -> facts(mob, target.entity()))
                 .orElse(Set.of());
-        var combat = new TechniqueSelector.CombatContext(facts, source.progress());
+        var ranged = source.target().map(target -> HumanoidWayfarerFacts.context(mob, target));
+        var combat = new TechniqueSelector.CombatContext(facts, source.progress(), ranged);
         return new TechniqueSelector.Context(source.registry(), situation, availability, combat);
     }
 
@@ -236,22 +255,26 @@ final class HumanoidRepertoires {
         var ready = new ArrayList<Ready>();
         for (KnownTechnique known : source.progress().getKnownList()) {
             TechniqueReference reference = known.getTechnique();
-            var definition = registry.find(reference);
-            if (definition.isEmpty() || blocked.test(reference.getId())) {
+            var found = registry.find(reference);
+            if (found.isEmpty() || blocked.test(reference.getId())) {
                 continue;
             }
-            BindingOutcome binding = TechniqueBinder.bind(body, definition.get());
-            if (!binding.hasBinding()
-                    || !TechniqueAvailability.affordable(body, definition.get(), binding.getBinding())) {
-                continue;
-            }
+            TechniqueDefinition definition = found.orElseThrow();
             var rules = registry.bookOf(reference).filter(book -> book.hasHeldItemRules())
                     .map(book -> book.getHeldItemRules());
-            var hand = rules.flatMap(held -> TechniqueHeldItems.find(held, items));
+            var exchange = HumanoidWayfarerWeapons.forTechnique(source.mob(), definition);
+            HeldItems preview = exchange.map(value -> value.preview(items)).orElse(items);
+            var hand = rules.flatMap(held -> TechniqueHeldItems.find(held, preview, definition));
             if (rules.isPresent() && hand.isEmpty()) {
                 continue;
             }
-            ready.add(new Ready(known, definition.get(), binding, hand, rules));
+            BindingOutcome binding = TechniqueBinder.bind(body, definition,
+                    hand.orElse(Hand.HAND_UNSPECIFIED), preview.getMainHandSide());
+            if (!binding.hasBinding()
+                    || !TechniqueAvailability.affordable(body, definition, binding.getBinding())) {
+                continue;
+            }
+            ready.add(new Ready(known, definition, binding, hand, rules, exchange));
         }
         return ready;
     }
@@ -283,6 +306,12 @@ final class HumanoidRepertoires {
                 .min(java.util.Comparator.comparingLong(TechniqueEffect::getAtMillis))
                 .map(effect -> new FirstStrike(effect.getAtMillis(),
                         effect.getLegStrike().getDistance().getValue(), Optional.empty()))
+                .ifPresent(candidates::add);
+        definition.getEffectsList().stream()
+                .filter(TechniqueEffect::hasLaunchProjectile)
+                .min(java.util.Comparator.comparingLong(TechniqueEffect::getAtMillis))
+                .map(effect -> new FirstStrike(effect.getAtMillis(),
+                        definition.getAiHints().getMaximumDistance().getValue(), Optional.empty()))
                 .ifPresent(candidates::add);
         return candidates.stream().min(java.util.Comparator.comparingLong(FirstStrike::millis));
     }
@@ -361,7 +390,7 @@ final class HumanoidRepertoires {
                 .orElse(Long.MAX_VALUE);
         long exit = opponent.flatMap(target -> HumanoidStrikeEstimates.exit(mob, target))
                 .map(found -> exitMillis(mob, found))
-                .orElse(0L);
+                .orElse(Long.MAX_VALUE);
         return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum);
     }
 

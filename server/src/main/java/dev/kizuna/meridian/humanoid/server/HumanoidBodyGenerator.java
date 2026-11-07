@@ -32,6 +32,7 @@ public final class HumanoidBodyGenerator {
     private static final double RESIDUAL_DENSITY_MAX = 0.1;
     private static final String NONE_ATTRIBUTE = "meridian:none";
     private static final String LEG_MUSCLE_TAG = "human:leg_muscle";
+    private static final String ARM_MUSCLE_TAG = "human:arm_muscle";
     private static final String DEFAULT_TIME_DOMAIN = "meridian_humanoid:world";
     private static final String DEFAULT_TIME_EPOCH = "initial";
     private static final MeridianOpening OPENED = MeridianOpening.newBuilder()
@@ -159,6 +160,7 @@ public final class HumanoidBodyGenerator {
         BodyMessages.BodyStructure structure = expandedStructure(original, opened);
         BodyMessages.VitalityState vitality = vitality(random);
         double legTrainingGrowth = legTrainingGrowth(variant, profile);
+        double armTrainingGrowth = armTrainingGrowth(variant, profile, opening);
         var snapshot = BodyMessages.BodySnapshot.newBuilder()
                 .setSchemaVersion(SCHEMA_VERSION)
                 .setId("meridian_humanoid:entity/" + request.entityId())
@@ -168,7 +170,7 @@ public final class HumanoidBodyGenerator {
                 .setRevision(0)
                 .setSettledAt(time)
                 .setVitality(vitality);
-        addHealthyStates(snapshot, structure, legTrainingGrowth);
+        addHealthyStates(snapshot, structure, new TrainingGrowth(legTrainingGrowth, armTrainingGrowth));
         var birth = new BirthParameters(variant, profile, opened, mainAttribute, mainShare);
         addMeridianStates(snapshot, birth, random);
         BodyMessages.BodySnapshot result = snapshot.build();
@@ -200,10 +202,10 @@ public final class HumanoidBodyGenerator {
     }
 
     private static void addHealthyStates(BodyMessages.BodySnapshot.Builder snapshot,
-                                         BodyMessages.BodyStructure structure, double legTrainingGrowth) {
+                                         BodyMessages.BodyStructure structure, TrainingGrowth growth) {
         // 按模板顺序复制各类账户的满血状态，保持状态列表与定义列表一一对应。
         addPartStates(snapshot, structure.getPartsList());
-        addTissueStates(snapshot, structure.getTissuesList(), legTrainingGrowth);
+        addTissueStates(snapshot, structure.getTissuesList(), growth);
         addOrganStates(snapshot, structure.getOrgansList());
     }
 
@@ -220,7 +222,7 @@ public final class HumanoidBodyGenerator {
     }
 
     private static void addTissueStates(BodyMessages.BodySnapshot.Builder snapshot,
-                                        List<BodyMessages.TissueDefinition> tissues, double legTrainingGrowth) {
+                                        List<BodyMessages.TissueDefinition> tissues, TrainingGrowth growth) {
         // 组织出生时没有疲劳，生命值取模板最大值。
         for (BodyMessages.TissueDefinition tissue : tissues) {
             var state = BodyMessages.TissueState.newBuilder()
@@ -228,7 +230,9 @@ public final class HumanoidBodyGenerator {
                     .setHp(tissue.getMaxHp())
                     .setFatigue(0);
             if (tissue.getTagsList().contains(LEG_MUSCLE_TAG)) {
-                state.setTrainingGrowth(legTrainingGrowth);
+                state.setTrainingGrowth(growth.leg());
+            } else if (tissue.getTagsList().contains(ARM_MUSCLE_TAG)) {
+                state.setTrainingGrowth(growth.arm());
             }
             snapshot.addTissueStates(state.build());
         }
@@ -240,6 +244,18 @@ public final class HumanoidBodyGenerator {
             return profile.trueQiLegTrainingGrowth();
         }
         return profile.wanderingQiLegTrainingGrowth();
+    }
+
+    private static double armTrainingGrowth(HumanoidVariant variant, HumanoidConfig.SpeciesProfile profile,
+                                            Opening opening) {
+        // 凡人没有修炼成长；修炼者按境界读取手臂耐力，待巩固负荷保持默认零值。
+        if (opening == Opening.NONE) {
+            return 0;
+        }
+        if (variant == HumanoidVariant.TRUE_QI) {
+            return profile.trueQiArmTrainingGrowth();
+        }
+        return profile.wanderingQiArmTrainingGrowth();
     }
 
     private static void addOrganStates(BodyMessages.BodySnapshot.Builder snapshot,
@@ -530,4 +546,6 @@ public final class HumanoidBodyGenerator {
     private record BirthParameters(HumanoidVariant variant, HumanoidConfig.SpeciesProfile profile,
                                     Set<String> opened, String mainAttribute, double mainShare) {
     }
+
+    private record TrainingGrowth(double leg, double arm) { }
 }

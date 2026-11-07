@@ -104,28 +104,66 @@ public final class HumanoidBrain {
         }
         mind.engage(threat.get());
         var opponent = new HumanoidOpponent(threat.get(), observe(threat.get()));
-        if (HumanoidTechniqueHost.hasActiveCast(mob) && opponent.cast().isEmpty()) {
+        if (HumanoidTechniqueHost.hasActiveCast(mob) && opponent.cast().isEmpty()
+                && !HumanoidTechniqueHost.castingWayfarer(mob)) {
             return;
         }
+        fight(mob, mind, opponent);
+    }
+
+    private static void fight(Mob mob, HumanoidMind mind, HumanoidOpponent opponent) {
+        // 一次身体读取、选式与处境评估产生一个动作，导航计划只计算一次。
         BodySnapshot body = body(mob);
         long now = body.settledAt().elapsedMillis();
         var readout = HumanoidRepertoires.read(mob, body, Optional.of(opponent),
                 technique -> mind.blocked(technique, now));
         Fighter self = HumanoidFighters.self(mob, body, readout.means());
-        Fighter other = HumanoidFighters.opponent(threat.get(), opponent.observation(),
+        Fighter other = HumanoidFighters.opponent(opponent.entity(), opponent.observation(),
                 TechniqueFabric.service().registry());
-        double distance = HumanoidMotion.distance(mob, threat.get());
-        var stance = HumanoidAssessment.stance(self, other, mind.stance(), distance, config.assessment());
+        double distance = HumanoidMotion.distance(mob, opponent.entity());
+        var assessed = HumanoidAssessment.stance(self, other, mind.stance(), distance, config.assessment());
+        HumanoidAssessment.Stance stance;
         if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
             stance = HumanoidAssessment.Stance.RETREAT;
+        } else {
+            stance = assessed;
         }
         var incoming = HumanoidStrikeEstimates.incoming(mob, body, opponent);
-        var encounter = new Encounter(self, other, distance, incoming, circumstances(mob));
-        Decision decision = HumanoidTactics.decide(encounter, stance, readout.repertoire(),
+        var circumstances = combatCircumstances(mob, mind, stance, self);
+        if (HumanoidRepertoires.peddlerCanDefend(readout)) {
+            circumstances.add(Encounter.Circumstance.DEFENSIVE_STRIKE);
+        }
+        if (self.condition().armStrengthRatio() < config.assessment().retreat().armStrengthRatio()) {
+            circumstances.add(Encounter.Circumstance.EXHAUSTED_ARMS);
+        }
+        var encounter = new Encounter(self, other, distance, incoming, circumstances);
+        Decision ordinary = HumanoidTactics.decide(encounter, stance, readout.repertoire(),
                 config.response().tactics());
+        Decision decision = HumanoidWayfarerAi.continueOrEscape(self, stance, readout, ordinary);
         record(mob, mind, stance, decision);
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent)),
                 decision);
+    }
+
+    private static Set<Encounter.Circumstance> combatCircumstances(Mob mob, HumanoidMind mind,
+                                                                  HumanoidAssessment.Stance stance, Fighter self) {
+        // 受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角。
+        var result = circumstances(mob);
+        if (stance != HumanoidAssessment.Stance.RETREAT) {
+            return result;
+        }
+        if (mob.onGround()) {
+            double safeDistance = 0;
+            if (mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
+                safeDistance = config.response().tactics().safeDistance();
+            }
+            LivingEntity opponent = mind.opponent().orElseThrow();
+            mind.planRetreat(HumanoidMotion.retreatPoint(mob, opponent, mind.directive(), safeDistance));
+        }
+        if (mind.cornered()) {
+            result.add(Encounter.Circumstance.RETREAT_BLOCKED);
+        }
+        return result;
     }
 
     private static void idle(Mob mob, HumanoidMind mind) {
@@ -228,6 +266,10 @@ public final class HumanoidBrain {
         if (mind == null) {
             return;
         }
+        if (HumanoidTechniqueHost.castingWayfarer(mob)) {
+            HumanoidMotion.apply(mob, HumanoidMotion.Directive.STAYING, mind.opponent(), speeds);
+            return;
+        }
         var directive = mind.directive();
         if (directive == HumanoidMotion.Directive.RELEASED) {
             HumanoidMotion.apply(mob, HumanoidMotion.Directive.FOLLOWING, mind.opponent(), speeds);
@@ -252,13 +294,19 @@ public final class HumanoidBrain {
     }
 
     public static boolean blocksMelee(Mob mob) {
-        // 施放中或撤退中不叠原版近战。
+        // 施放中不叠原版近战；撤退只有实际逃离时屏蔽攻击，无路自卫交还原版后允许出手。
         HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null) {
             return HumanoidTechniqueHost.isCasting(mob);
         }
         return HumanoidTechniqueHost.isCasting(mob)
-                || mind.stance() == HumanoidAssessment.Stance.RETREAT && mind.opponent().isPresent();
+                || mind.stance() == HumanoidAssessment.Stance.RETREAT && mind.opponent().isPresent()
+                && mind.directive() != HumanoidMotion.Directive.RELEASED;
+    }
+
+    public static boolean blocksRanged(Mob mob) {
+        // 原版弓弩拉弦和射击不能与行矢效果重复；结束、打断和卸载后自然恢复。
+        return HumanoidTechniqueHost.castingWayfarer(mob);
     }
 
     static List<HumanoidMind.Logged> decisions(UUID entity) {

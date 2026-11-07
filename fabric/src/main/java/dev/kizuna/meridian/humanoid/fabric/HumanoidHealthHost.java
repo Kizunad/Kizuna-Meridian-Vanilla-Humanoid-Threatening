@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.protocol.HealthHostProtobuf;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.pb.HealthHostMessages.HealthHostRequest;
 import dev.kizuna.meridian.protocol.pb.HealthHostMessages.HealthHostResponse;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
@@ -154,6 +155,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             long worldSeed = ((ServerLevel) entity.level()).getSeed();
             var subject = new HumanoidBodyState.BirthSubject(species, entityId, null);
             created = HumanoidBodyState.born(subject, worldSeed, region, now);
+            HumanoidWayfarerWeapons.equipAtBirth(entity, HumanoidTier.of(created.snapshot()));
         }
         access.meridian$humanoidBody(created);
         return created;

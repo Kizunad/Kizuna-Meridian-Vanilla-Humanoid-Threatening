@@ -1,0 +1,12 @@
+{
+    DataVersion: 4903,
+    size: [8, 8, 40],
+    data: [
+        {pos: [0, 0, 0], state: "minecraft:air"},
+        {pos: [7, 7, 39], state: "minecraft:air"}
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air"
+    ]
+}

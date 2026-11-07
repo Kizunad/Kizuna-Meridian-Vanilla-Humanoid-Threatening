@@ -20,6 +20,7 @@ import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.UUID;
+import java.util.List;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -64,6 +65,9 @@ public final class HumanoidPeddlerGameTest {
     private static final String GROUND_SWEEP = "meridian_peddler:ground_sweep";
     private static final double EXHAUSTED_RATIO = 0.5;
     private static final long EXHAUSTION_MILLIS = 60_000;
+    private static final double TRIP_UPWARD_PER_TICK = 0.1;
+    private static final double SPEED_TOLERANCE = 1e-6;
+    private static final List<Double> TRIP_INITIAL_VERTICAL_SPEEDS = List.of(-0.4, 0.0, 0.6);
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void wanderingTraderInspectsAndExecutesDeclaredLegStrike(GameTestHelper context) {
@@ -92,6 +96,58 @@ public final class HumanoidPeddlerGameTest {
         context.assertTrue(trader.getItemBySlot(EquipmentSlot.FEET).getDamageValue() == bootDamage,
                 "生物腿击错误扣除了靴子耐久");
         context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void traderTripClearsHorizontalMotionAndLiftsFallingOrJumpingTargets(GameTestHelper context) {
+        // 通过商人真实效果宿主验证绊倒，避免只测试速度计算而漏掉世界执行接线。
+        for (double initialVertical : TRIP_INITIAL_VERTICAL_SPEEDS) {
+            WanderingTrader actor = trader(context, HumanoidTier.TRUE_QI, ORIGIN_X, ORIGIN_Z);
+            Cow victim = target(context, ORIGIN_X, TARGET_Z);
+            try {
+                victim.setDeltaMovement(1, initialVertical, 1);
+                double initialHealth = victim.getHealth();
+                EffectIntent base = legStrikeEffect();
+                var strike = base.getLegStrike().getStrike().toBuilder()
+                        .setKnockbackKind(LegKnockbackKind.TRIP)
+                        .setKnockback(quantity(1, Unit.RATIO))
+                        .build();
+                var intent = base.getLegStrike().toBuilder().setStrike(strike).build();
+                EffectIntent effect = base.toBuilder().setLegStrike(intent).build();
+                var submission = new TechniqueHost.EffectSubmission(UUID.randomUUID().toString(), effect);
+                HumanoidTechniqueHost.prepare(actor).effects().submit(submission);
+                context.assertTrue(victim.getHealth() < initialHealth, "绊倒未通过真实伤害入口");
+                Vec3 velocity = victim.getDeltaMovement();
+                context.assertTrue(velocity.x == 0 && velocity.z == 0, "绊倒未清空水平速度");
+                context.assertTrue(Math.abs(velocity.y - TRIP_UPWARD_PER_TICK) < SPEED_TOLERANCE,
+                        "绊倒未将竖直速度设置为每秒两米");
+            } finally {
+                victim.discard();
+                actor.discard();
+            }
+        }
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void missedKickDoesNotBreakNextStrike(GameTestHelper context) {
+        // 商人原版没有攻击力属性；空场腿击仍须完成结算，随后可以正常命中。
+        floor(context);
+        WanderingTrader trader = trader(context, HumanoidTier.TRUE_QI, ORIGIN_X, ORIGIN_Z);
+        var session = HumanoidTechniqueHost.prepare(trader);
+        try {
+            session.effects().submit(new TechniqueHost.EffectSubmission(
+                    UUID.randomUUID().toString(), legStrikeEffect()));
+            Cow target = target(context, ORIGIN_X, TARGET_Z);
+            double health = target.getHealth();
+            session.effects().submit(new TechniqueHost.EffectSubmission(
+                    UUID.randomUUID().toString(), legStrikeEffect()));
+            context.assertTrue(target.getHealth() < health, "挥空后下一次腿击未造成伤害");
+            target.discard();
+            context.succeed();
+        } finally {
+            trader.discard();
+        }
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)

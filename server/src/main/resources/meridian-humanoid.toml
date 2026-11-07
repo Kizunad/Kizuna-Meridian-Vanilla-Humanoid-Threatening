@@ -61,6 +61,8 @@ arm_opening_weight = 3.0
 foot_opening_weight = 1.0
 wandering_qi_leg_training_growth = 0.0
 true_qi_leg_training_growth = 0.0
+wandering_qi_arm_training_growth = 0.20
+true_qi_arm_training_growth = 0.35
 
 [species."minecraft:vindicator"]
 true_qi_base_probability = 0.45

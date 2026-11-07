@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.Vec3;
 
 /** 一个被接管实体的大脑状态：姿态、对手、当前指令、决策序号、失败屏蔽与最近的决策记录。 */
 final class HumanoidMind {
@@ -19,6 +20,22 @@ final class HumanoidMind {
     private HumanoidMotion.Directive directive = HumanoidMotion.Directive.RELEASED;
     private long sequence;
     private boolean adapted;
+    private Optional<Vec3> retreatPoint = Optional.empty();
+    private boolean cornered;
+
+    Optional<Vec3> retreatPoint() {
+        return retreatPoint;
+    }
+
+    void planRetreat(Optional<Vec3> destination) {
+        // 本次决策与动作执行共用一次寻路结果，不能分别随机选择不同的出口。
+        retreatPoint = destination;
+        cornered = destination.isEmpty();
+    }
+
+    boolean cornered() {
+        return cornered;
+    }
 
     /** 一条决策记录：世界 tick、当时的对手与决策。 */
     record Logged(long tick, Optional<LivingEntity> opponent, Decision decision) { }
@@ -50,6 +67,8 @@ final class HumanoidMind {
         // 换对手时姿态从对敌重新评估。
         if (next != opponent) {
             stance = Stance.ENGAGE;
+            cornered = false;
+            retreatPoint = Optional.empty();
         }
         opponent = next;
     }
@@ -58,6 +77,8 @@ final class HumanoidMind {
         // 威胁消失，忘掉对手与姿态。
         opponent = null;
         stance = Stance.ENGAGE;
+        retreatPoint = Optional.empty();
+        cornered = false;
     }
 
     void direct(HumanoidMotion.Directive next) {

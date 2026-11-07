@@ -3,6 +3,7 @@
   "package": "dev.kizuna.meridian.humanoid.fabric.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": ["LivingEntityHumanoidMixin", "EntityHumanoidLifecycleMixin", "VillagerHumanoidLightningMixin",
-    "MobTechniqueMixin", "VillagerHumanoidBrainMixin", "BrainHumanoidInvoker", "PanicTaskHumanoidMixin"],
+    "MobTechniqueMixin", "VillagerHumanoidBrainMixin", "BrainHumanoidInvoker", "PanicTaskHumanoidMixin",
+    "LivingEntityWayfarerUseMixin", "PillagerWayfarerAttackMixin"],
   "injectors": {"defaultRequire": 1}
 }

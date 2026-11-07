@@ -31,5 +31,6 @@ public final class HumanoidSpeciesBirths {
         var body = HumanoidBodyState.born(subject, world.getSeed(), HumanoidFabric.region(entity),
                 HumanoidFabric.now());
         access.meridian$humanoidBody(body);
+        HumanoidWayfarerWeapons.equipAtBirth(entity, tier);
     }
 }

@@ -24,6 +24,7 @@
     "meridian_technique": "*",
     "meridian_door_breaker": "*",
     "meridian_peddler": "*",
+    "meridian_wayfarer": "*",
     "meridian_basic_techniques": "*",
     "meridian_vanilla_damage": "*",
     "meridian_vanilla_healing": "*"

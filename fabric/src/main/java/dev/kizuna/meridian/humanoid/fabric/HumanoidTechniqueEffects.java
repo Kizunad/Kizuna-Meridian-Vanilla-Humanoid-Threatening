@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.human.fabric.HumanProjectileEffects;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueStatusBenefits;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldEffects;
@@ -21,6 +22,7 @@ import java.util.UUID;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.phys.Vec3;
@@ -31,6 +33,7 @@ final class HumanoidTechniqueEffects {
     private final LivingEntity entity;
     private final TechniqueWorldEffects world;
     private final HumanoidLegStrikeEffects legEffects;
+    private final HumanProjectileEffects projectiles;
     private final Map<Identity, EffectIntent> receipts = new HashMap<>();
     private final Set<Identity> executing = new HashSet<>();
     private final Set<String> castingIds = new HashSet<>();
@@ -40,6 +43,7 @@ final class HumanoidTechniqueEffects {
         // 共用世界执行器只接收敌我策略和 Damage 出手边界，不复制伤害规则。
         this.entity = entity;
         legEffects = new HumanoidLegStrikeEffects();
+        projectiles = new HumanProjectileEffects(entity, target -> HumanoidThreats.hittable(entity, target));
         world = new TechniqueWorldEffects(entity, () -> TechniqueWorldEffects.Policy.MOB,
                 target -> HumanoidThreats.hittable(entity, target),
                 (actor, source, strike) -> {
@@ -94,6 +98,10 @@ final class HumanoidTechniqueEffects {
         // 实体移动和表现不绕开原版物理，打击与劈门由共享工具执行。
         if (effect.hasStatusBenefit()) {
             TechniqueStatusBenefits.apply(entity, effect.getStatusBenefit());
+        } else if (effect.hasTargetLock()) {
+            projectiles.lockTarget(effect);
+        } else if (effect.hasLaunchProjectile()) {
+            projectiles.launch(effect);
         } else if (effect.hasLegStrike()) {
             legEffects.strike(entity, effect);
         } else if (effect.hasWeaponStrike()) {
@@ -108,6 +116,10 @@ final class HumanoidTechniqueEffects {
                     direction(effect).scale(speed));
         } else if (effect.hasPresentation()) {
             presentation.apply(entity, effect);
+            if (effect.getPresentation().getAction()
+                    == dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationAction.STOP) {
+                projectiles.finish(effect.getCastId());
+            }
         } else {
             throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
         }
@@ -130,14 +142,30 @@ final class HumanoidTechniqueEffects {
                         AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
             }
             castingIds.add(effect.getCastId());
+            stopRangedUse();
         } else {
             attribute.removeModifier(id);
             castingIds.remove(effect.getCastId());
             world.finish(effect.getCastId());
             legEffects.finish(effect.getCastId());
+            projectiles.finish(effect.getCastId());
         }
         if (entity instanceof Mob mob) {
             mob.setAggressive(!castingIds.isEmpty());
+        }
+    }
+
+    private void stopRangedUse() {
+        // 原版拉弦和导航在行矢起手时停止，原上弦组件和冲量速度保留。
+        if (!HumanoidTechniqueHost.castingWayfarer(entity)) {
+            return;
+        }
+        entity.stopUsingItem();
+        if (entity instanceof Mob mob) {
+            mob.getNavigation().stop();
+        }
+        if (entity instanceof Pillager pillager) {
+            pillager.setChargingCrossbow(false /* charging */);
         }
     }
 

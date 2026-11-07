@@ -376,6 +376,7 @@ public final class HumanoidTechniqueGameTest {
         Vindicator mob = prepared(context);
         LivingEntity target = target(context);
         target.setPos(mob.position().add(0, 0, -1));
+        double initialDistance = mob.distanceTo(target);
         HumanoidTechniqueHost.removed(mob);
         BodyMessages.BodySnapshot exhausted = exhaustedBody(snapshot(mob));
         bind(mob, exhausted);
@@ -388,8 +389,8 @@ public final class HumanoidTechniqueGameTest {
             context.assertTrue(HumanoidBrain.blocksMelee(mob) && !mob.doHurtTarget(context.getLevel(), target),
                     "虚脱期间仍可近战");
             context.assertTrue(!progress(mob).hasActiveCast(), "虚脱期间仍开始功法");
-            context.assertTrue(!mob.getNavigation().isDone(), "虚脱没有启动撤退寻路；target=" + mob.getTarget()
-                    + "; onGround=" + mob.onGround() + "; pos=" + mob.position());
+            context.assertTrue(mob.distanceTo(target) > initialDistance + 1,
+                    "虚脱后没有实际拉开距离；target=" + mob.getTarget() + "; pos=" + mob.position());
         });
         context.runAfterDelay(KNOCK_HIT_TICKS, () -> {
             double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();

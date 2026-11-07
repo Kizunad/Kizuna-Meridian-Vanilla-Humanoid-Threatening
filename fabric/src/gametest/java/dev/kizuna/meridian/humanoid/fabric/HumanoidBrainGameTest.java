@@ -68,6 +68,10 @@ public final class HumanoidBrainGameTest {
     private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
     /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
     private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
+    private static final String RETREAT_STRUCTURE = "meridian_humanoid_test:retreat";
+    private static final BlockPos RETREAT_SUBJECT = new BlockPos(20, 0, 20);
+    private static final BlockPos RETREAT_NEAR = new BlockPos(20, 0, 22);
+    private static final BlockPos RETREAT_MIDDLE = new BlockPos(20, 0, 25);
     private static final String EXHAUSTION_BATCH = "meridian_humanoid_test:brain_exhaustion";
     private static final String BASIC_PREFIX = "meridian_basic_techniques:";
     private static final String DOOR_BREAKER_PREFIX = "meridian_door_breaker:";
@@ -113,13 +117,13 @@ public final class HumanoidBrainGameTest {
             Decision.Action.DODGE, Decision.Action.ABSORB);
     private static final Set<Decision.Action> RETREATS = EnumSet.of(Decision.Action.RETREAT, Decision.Action.KITE);
 
-    @GameTest(maxTicks = LONG_TIMEOUT, environment = UNARMED_BATCH)
+    @GameTest(maxTicks = LONG_TIMEOUT, environment = UNARMED_BATCH, structure = RETREAT_STRUCTURE)
     public void unarmedVillagerRetreatsFromVindicatorAndResumesRoutine(GameTestHelper context) {
         // 无功法的游炁村民被卫道士盯上时由大脑撤退而非原版恐慌；卫道士消失后交还原版日常。
         var arena = new Arena(context);
-        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "unarmed", SUBJECT_POS);
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "unarmed", RETREAT_SUBJECT);
         Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "unarmed-hunter",
-                NEAR_POS);
+                RETREAT_NEAR);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
         double start = villager.distanceTo(hunter);
@@ -157,14 +161,14 @@ public final class HumanoidBrainGameTest {
                 });
     }
 
-    @GameTest(maxTicks = SHORT_TIMEOUT, environment = LIGHT_STEP_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = LIGHT_STEP_BATCH, structure = RETREAT_STRUCTURE)
     public void retreatingVillagerLightStepsAndLeapsAway(GameTestHelper context) {
         // 只会基础三卷的游炁村民撤退时先放轻步，再背向跃步拉开。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "light-step",
-                SUBJECT_POS);
+                RETREAT_SUBJECT);
         Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "light-step-hunter",
-                MIDDLE_POS);
+                RETREAT_MIDDLE);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
         var watch = new Watch(villager);
@@ -173,16 +177,16 @@ public final class HumanoidBrainGameTest {
                 () -> "撤退村民没有轻步后跃步：" + watch + " / " + decisions(villager), arena::finish);
     }
 
-    @GameTest(maxTicks = SHORT_TIMEOUT, environment = EXHAUSTION_BATCH)
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = EXHAUSTION_BATCH, structure = RETREAT_STRUCTURE)
     public void exhaustedVindicatorLeapsAwayInsteadOfTrading(GameTestHelper context) {
         // 双臂虚脱的持斧真炁卫道士被盯上时不原地对打，先轻步再背向跃步拉开。
         var arena = new Arena(context);
         Vindicator exhausted = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "exhausted",
-                SUBJECT_POS);
+                RETREAT_SUBJECT);
         exhausted.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         fatigue(exhausted, HumanoidSpecies.VINDICATOR, ARM_MUSCLES);
         Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "exhausted-hunter",
-                NEAR_POS);
+                RETREAT_NEAR);
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(exhausted);
         double exhaustedRatio = HumanoidBrain.config().assessment().retreat().armStrengthRatio();

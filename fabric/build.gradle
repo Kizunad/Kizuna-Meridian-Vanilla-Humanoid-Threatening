@@ -87,9 +87,12 @@ loom {
             server()
             name 'Humanoid GameTest'
             source sourceSets.gametest
-            runDir 'build/gametest'
+            runDir providers.gradleProperty('gametestRunDir').getOrElse('build/gametest')
             vmArg '-Dfabric-api.gametest'
             vmArg '-Dfabric-api.gametest.report-file=build/gametest-results.xml'
+            if (providers.gradleProperty('gametestFilter').isPresent()) {
+                vmArg "-Dfabric-api.gametest.filter=${providers.gradleProperty('gametestFilter').get()}"
+            }
         }
     }
 }

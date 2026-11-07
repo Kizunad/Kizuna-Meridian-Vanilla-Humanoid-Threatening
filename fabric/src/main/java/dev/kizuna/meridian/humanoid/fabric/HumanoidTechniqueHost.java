@@ -9,7 +9,6 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
-import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.MovementAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationAction;
@@ -81,7 +80,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
                 recover(entity, session);
             }
             response.setBody(body.snapshot());
-            response.setHeldItems(TechniqueWorldItems.inspect(entity));
+            response.setHeldItems(HumanoidWayfarerWeapons.inspect(entity));
             response.setInspectFacts(HumanoidTechniqueFacts.inspect(entity));
         } else if (request.hasActivity()) {
             var result = body.applyTechnique(request);
@@ -158,6 +157,14 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     static boolean hasActiveCast(LivingEntity entity) {
         // 有当前施放即真，不论这一式是否限速；同样只读已发布会话，没有会话视为不在施放。
         return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast).isPresent();
+    }
+
+    static boolean castingWayfarer(LivingEntity entity) {
+        // 行矢施放时要继续检查承接窗口，并暂停导航；不改变其他功法的移动策略。
+        return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
+                .map(progress -> progress.getActiveCast().getRequest().getTechnique().getId())
+                .filter(id -> id.startsWith(HumanoidWayfarerAi.PREFIX))
+                .isPresent();
     }
 
     private static Optional<TechniqueProgress> publishedProgress(LivingEntity entity) {

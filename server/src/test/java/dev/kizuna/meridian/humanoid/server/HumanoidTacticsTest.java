@@ -172,6 +172,32 @@ public class HumanoidTacticsTest {
     }
 
     @Test
+    public void retreatStillDefendsWhenCorneredOrPursuedAtCloseRange() {
+        // 撤退姿态不屏蔽已经通过资源门槛的防守式；没有退路的原版攻击者也要恢复自卫。
+        var cornered = new Encounter(AXE, AXE, CLOSE, Optional.empty(),
+                Set.of(Circumstance.ON_GROUND, Circumstance.RETREAT_BLOCKED));
+        var defensive = new Encounter(BARE, AXE, CLOSE, Optional.empty(),
+                Set.of(Circumstance.ON_GROUND, Circumstance.DEFENSIVE_STRIKE));
+        assertEquals(Action.STRIKE, decide(cornered, Stance.RETREAT, strikes(KNOCK_STRIKE)).action());
+        assertEquals(Action.STRIKE, decide(defensive, Stance.RETREAT, strikes(KNOCK_STRIKE)).action());
+        assertEquals(Action.HOLD, decide(cornered, Stance.RETREAT, strikes()).action());
+        var nativeFighter = new Fighter(1, FULL, Set.of(Means.VANILLA_OFFENSE));
+        var nativeCornered = new Encounter(nativeFighter, AXE, CLOSE, Optional.empty(), cornered.circumstances());
+        assertEquals(Action.APPROACH, decide(nativeCornered, Stance.RETREAT, strikes()).action());
+        var exhausted = new Encounter(nativeFighter, AXE, CLOSE, Optional.empty(),
+                Set.of(Circumstance.RETREAT_BLOCKED, Circumstance.EXHAUSTED_ARMS));
+        assertEquals(Action.HOLD, decide(exhausted, Stance.RETREAT, strikes()).action());
+    }
+
+    @Test
+    public void unreachableExitCannotBecomeInstantDodgeThroughOverflow() {
+        // 无出口用最大时长表示，不能因加躲避余量溢出而被判成瞬间可达。
+        var incoming = new Incoming(INCOMING_HIT, 0, HEAVY_DOSE, Set.of(Incoming.Trait.COVERS));
+        var blocked = new Repertoire(List.of(), List.of(), timing(0, NO_OWN_HIT, Long.MAX_VALUE));
+        assertEquals(Action.ABSORB, decide(encounter(AXE, CLOSE, incoming), Stance.RETREAT, blocked).action());
+    }
+
+    @Test
     public void retreatAtSafeDistanceRecoversOrHolds() {
         // 拉开到安全距离后疲劳达门槛就调息，否则原地等待。
         Decision recover = decide(calm(AXE, SAFE), Stance.RETREAT, supports(0, breath(TIRED)));
