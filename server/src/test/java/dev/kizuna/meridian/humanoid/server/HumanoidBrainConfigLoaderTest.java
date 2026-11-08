@@ -49,6 +49,8 @@ public class HumanoidBrainConfigLoaderTest {
         assertEquals(HumanoidBrainConfig.DecisionLog.QUIET, config.schedule().log());
         assertEquals(DEFAULT_SAFE_DISTANCE, config.response().tactics().safeDistance(), TOLERANCE);
         assertEquals(DEFAULT_SAFE_DISTANCE, config.assessment().recovery().distance(), TOLERANCE);
+        assertEquals(0.5, config.concurrency().holdRangeProbability(), TOLERANCE);
+        assertTrue(config.concurrency().allowRecoveryMovement());
         assertEquals(DEFAULT_VOLUME_COUNT, config.volumes().allVolumes().size());
         var trueQi = config.volumes().species().get(VINDICATOR).get(HumanoidTier.TRUE_QI);
         assertEquals(TRUE_QI_VINDICATOR_VOLUMES, trueQi.size());
@@ -56,6 +58,20 @@ public class HumanoidBrainConfigLoaderTest {
         for (HumanoidSpecies species : HumanoidSpecies.values()) {
             assertTrue(config.volumes().species().containsKey(species.entityId()));
         }
+    }
+
+    @Test
+    public void versionOneWithoutConcurrencyUsesCompatibleDefaults() {
+        // 旧配置没有并行节时仍可加载，并使用与新默认资源相同的策略值。
+        String legacy = DEFAULT_TEXT.replace("config_version = 2", "config_version = 1");
+        String section = "[concurrency]\n"
+                + "hold_range_probability = 0.5   # 接敌准备时保持跃步带的概率，"
+                + "剩余情况直接接近\n"
+                + "allow_recovery_movement = true # 调息时允许沿撤退路线继续移动\n\n";
+        legacy = legacy.replace(section, "");
+        HumanoidBrainConfig config = HumanoidBrainConfigLoader.parse(legacy);
+        assertEquals(0.5, config.concurrency().holdRangeProbability(), TOLERANCE);
+        assertTrue(config.concurrency().allowRecoveryMovement());
     }
 
     @Test
@@ -141,7 +157,7 @@ public class HumanoidBrainConfigLoaderTest {
     public void invalidConfigsAreRejected() {
         // 版本、未知字段、缺物种、概率越界、无命名空间卷、未知档位、负权重和零失败次数都在加载时拒绝。
         var invalid = Map.of(
-                "版本", replace("config_version = 1", "config_version = 2"),
+                "版本", replace("config_version = 2", "config_version = 3"),
                 "顶层未知字段", replace("log_decisions = false", "log_decisions = false\nunknown = 1"),
                 "章节未知字段", replace("[threat]", "[threat]\nunknown = 1"),
                 "缺物种", DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("[volumes.\"minecraft:illusioner\"]")),

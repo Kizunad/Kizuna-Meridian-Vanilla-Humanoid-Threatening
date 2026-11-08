@@ -121,6 +121,16 @@ public class HumanoidTacticsTest {
     }
 
     @Test
+    public void activeCastOnlySelectsStrikeInsideFollowUpWindow() {
+        // 承接窗口是施放中继续选式的唯一入口，普通可用式不能绕过 ALREADY_CASTING。
+        Repertoire followUp = new Repertoire(List.of(KNOCK_STRIKE), List.of(),
+                timing(0, NO_OWN_HIT, QUICK_EXIT, true));
+        Decision decision = decide(calm(AXE_CASTING, CLOSE), Stance.ENGAGE, followUp);
+        assertEquals(Action.STRIKE, decision.action());
+        assertEquals(Optional.empty(), decision.technique());
+    }
+
+    @Test
     public void leapingHolds() {
         // 跃步飞行中什么都不改。
         var leaping = new Encounter(AXE, AXE, CLOSE, Optional.empty(), Set.of(Circumstance.LEAPING));
@@ -178,8 +188,12 @@ public class HumanoidTacticsTest {
                 Set.of(Circumstance.ON_GROUND, Circumstance.RETREAT_BLOCKED));
         var defensive = new Encounter(BARE, AXE, CLOSE, Optional.empty(),
                 Set.of(Circumstance.ON_GROUND, Circumstance.DEFENSIVE_STRIKE));
-        assertEquals(Action.STRIKE, decide(cornered, Stance.RETREAT, strikes(KNOCK_STRIKE)).action());
-        assertEquals(Action.STRIKE, decide(defensive, Stance.RETREAT, strikes(KNOCK_STRIKE)).action());
+        Decision corneredStrike = decide(cornered, Stance.RETREAT, strikes(KNOCK_STRIKE));
+        Decision defensiveStrike = decide(defensive, Stance.RETREAT, strikes(KNOCK_STRIKE));
+        assertEquals(Action.STRIKE, corneredStrike.action());
+        assertEquals(Action.STRIKE, defensiveStrike.action());
+        assertEquals(Decision.Movement.RETREAT, corneredStrike.movement());
+        assertEquals(Decision.Movement.RETREAT, defensiveStrike.movement());
         assertEquals(Action.HOLD, decide(cornered, Stance.RETREAT, strikes()).action());
         var nativeFighter = new Fighter(1, FULL, Set.of(Means.VANILLA_OFFENSE));
         var nativeCornered = new Encounter(nativeFighter, AXE, CLOSE, Optional.empty(), cornered.circumstances());
@@ -254,6 +268,12 @@ public class HumanoidTacticsTest {
     private static Timing timing(long lightBodyMillis, long ownNextHitMillis, long exitMillis) {
         // 跃步最小距离固定。
         return new Timing(lightBodyMillis, ownNextHitMillis, exitMillis, LEAP_MINIMUM);
+    }
+
+    private static Timing timing(long lightBodyMillis, long ownNextHitMillis, long exitMillis,
+                                 boolean followUpAvailable) {
+        // 测试承接窗口时显式传入窗口事实。
+        return new Timing(lightBodyMillis, ownNextHitMillis, exitMillis, LEAP_MINIMUM, followUpAvailable);
     }
 
     private static Support charge() {

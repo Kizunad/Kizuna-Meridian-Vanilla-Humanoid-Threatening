@@ -23,21 +23,40 @@ final class HumanoidMotion {
     private static final double ARRIVED_DISTANCE = 1;
     private static final double SUPPORT_PROBE_DEPTH = 0.1;
 
-    /** 指令里的移动方式：交还原版、跟随对手、走到某点、原地不动。 */
-    enum Movement { VANILLA, FOLLOW, MOVE_TO, STAY }
+    /** 指令里的移动方式：交还原版、跟随对手、保持距离带、走到某点、原地不动。 */
+    enum Movement { VANILLA, FOLLOW, HOLD_RANGE, MOVE_TO, STAY }
 
     /** 导航快慢：接近与逃离，各接入方式给出自己的倍率。 */
     enum Pace { APPROACH, FLEE }
 
-    /** 一条移动指令；只有走到某点时有目的地。 */
-    record Directive(Movement movement, Optional<Vec3> destination, Pace pace) {
-        static final Directive RELEASED = new Directive(Movement.VANILLA, Optional.empty(), Pace.APPROACH);
-        static final Directive FOLLOWING = new Directive(Movement.FOLLOW, Optional.empty(), Pace.APPROACH);
-        static final Directive STAYING = new Directive(Movement.STAY, Optional.empty(), Pace.APPROACH);
+    /** 保持距离带的上下界。 */
+    record Range(double minimum, double maximum) {
+        Range {
+            // 距离带必须有限且有序，避免导航在异常配置下反复重算。
+            if (!Double.isFinite(minimum) || !Double.isFinite(maximum) || minimum < 0 || maximum < minimum) {
+                throw new IllegalArgumentException("移动距离带非法");
+            }
+        }
+    }
+
+    /** 一条移动指令；只有走到某点或保持距离带时携带附加数据。 */
+    record Directive(Movement movement, Optional<Vec3> destination, Pace pace, Optional<Range> range) {
+        static final Directive RELEASED = new Directive(Movement.VANILLA, Optional.empty(), Pace.APPROACH,
+                Optional.empty());
+        static final Directive FOLLOWING = new Directive(Movement.FOLLOW, Optional.empty(), Pace.APPROACH,
+                Optional.empty());
+        static final Directive STAYING = new Directive(Movement.STAY, Optional.empty(), Pace.APPROACH,
+                Optional.empty());
 
         static Directive moveTo(Vec3 destination, Pace pace) {
             // 走到某点的指令。
-            return new Directive(Movement.MOVE_TO, Optional.of(destination), pace);
+            return new Directive(Movement.MOVE_TO, Optional.of(destination), pace, Optional.empty());
+        }
+
+        static Directive holdRange(double minimum, double maximum) {
+            // 在跃步最小距离与打击距离之间保持可突击带。
+            return new Directive(Movement.HOLD_RANGE, Optional.empty(), Pace.APPROACH,
+                    Optional.of(new Range(minimum, maximum)));
         }
     }
 
@@ -66,6 +85,12 @@ final class HumanoidMotion {
                     mob.getNavigation().moveTo(opponent.get(), speeds.of(directive.pace()));
                 }
             }
+            case HOLD_RANGE -> {
+                if (opponent.isPresent()) {
+                    Range range = directive.range().orElseThrow();
+                    applyHoldRange(mob, opponent.get(), range, speeds);
+                }
+            }
             case MOVE_TO -> {
                 Vec3 destination = directive.destination().orElseThrow();
                 if (refresh && mob.position().distanceToSqr(destination) > ARRIVED_DISTANCE * ARRIVED_DISTANCE) {
@@ -77,6 +102,27 @@ final class HumanoidMotion {
             case VANILLA -> {
                 // 原版控制自己移动。
             }
+        }
+    }
+
+    private static void applyHoldRange(Mob mob, LivingEntity opponent, Range range, Speeds speeds) {
+        // 太近时退到带外，太远时接近，处于带内停止导航保护后续跃步距离。
+        double distance = distance(mob, opponent);
+        if (distance < range.minimum()) {
+            boolean refresh = mob.getNavigation().isDone() || mob.tickCount % PATH_REFRESH_TICKS == 0;
+            if (refresh) {
+                Vec3 destination = opponent.position().add(away(mob, opponent).scale(range.minimum()));
+                mob.getNavigation().moveTo(destination.x, destination.y, destination.z, speeds.flee());
+            }
+            return;
+        }
+        if (distance <= range.maximum()) {
+            mob.getNavigation().stop();
+            return;
+        }
+        boolean refresh = mob.getNavigation().isDone() || mob.tickCount % PATH_REFRESH_TICKS == 0;
+        if (refresh) {
+            mob.getNavigation().moveTo(opponent, speeds.approach());
         }
     }
 

@@ -46,7 +46,7 @@ final class HumanoidRepertoires {
     private static final double PEDDLER_MINIMUM_LEG_FORCE = 3000;
     private static final double PEDDLER_HALF_HP = 0.5;
     private static final double PEDDLER_BEHIND_DISTANCE = 3;
-    private static final double PEDDLER_FRONT_BLOCK_DISTANCE = 3.5;
+    private static final double PEDDLER_RANGE_MARGIN = 0.5;
     private static final int SINGLE_OPPONENT_COUNT = 1;
     private static final long MILLIS_PER_TICK = 50;
     private static final String PEDDLER_PREFIX = "meridian_peddler:";
@@ -116,8 +116,9 @@ final class HumanoidRepertoires {
                 .filter(entry -> peddlerStrikeAllowed(source, opponent, entry))
                 .filter(entry -> HumanoidWayfarerAi.allowed(mob, body, entry.definition(), source.target()))
                 .toList();
+        boolean followUpAvailable = source.progress().hasActiveCast() && !readyStrikes.isEmpty();
         var repertoire = new Repertoire(strikes(source, readyStrikes, opponent), supports(body, castable),
-                timing(source, opponent));
+                timing(source, opponent, followUpAvailable));
         return new Readout(repertoire, means(source, ready), context,
                 readyStrikes.stream().map(Ready::known).toList(),
                 source.progress().getKnownList(), exchanges(readyStrikes));
@@ -205,7 +206,9 @@ final class HumanoidRepertoires {
         double distance = HumanoidMotion.distance(source.mob(), target);
         boolean behind = targetBehind(source.mob(), target);
         boolean surrounded = HumanoidThreats.surrounded(source.mob());
-        boolean frontBlocked = !behind && !surrounded && distance <= PEDDLER_FRONT_BLOCK_DISTANCE;
+        double maximumDistance = entry.definition().getAiHints().getMaximumDistance().getValue();
+        double frontDistance = Math.max(0, maximumDistance - PEDDLER_RANGE_MARGIN);
+        boolean frontBlocked = !behind && !surrounded && distance <= frontDistance;
         if (id.equals(MULE_KICK)) {
             return distance <= PEDDLER_BEHIND_DISTANCE && (behind || pursued(source.mob(), target));
         }
@@ -373,7 +376,8 @@ final class HumanoidRepertoires {
         };
     }
 
-    private static Repertoire.Timing timing(Source source, Optional<HumanoidOpponent> opponent) {
+    private static Repertoire.Timing timing(Source source, Optional<HumanoidOpponent> opponent,
+                                            boolean followUpAvailable) {
         // 轻身剩余读状态效果；下一击读自己的施放预报；走出范围按走路与跃步取快者。
         Mob mob = source.mob();
         long now = source.body().settledAt().elapsedMillis();
@@ -391,7 +395,7 @@ final class HumanoidRepertoires {
         long exit = opponent.flatMap(target -> HumanoidStrikeEstimates.exit(mob, target))
                 .map(found -> exitMillis(mob, found))
                 .orElse(Long.MAX_VALUE);
-        return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum);
+        return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum, followUpAvailable);
     }
 
     private static long exitMillis(Mob mob, HumanoidStrikeEstimates.Exit exit) {

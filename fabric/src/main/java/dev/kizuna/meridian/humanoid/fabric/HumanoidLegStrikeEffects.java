@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -27,6 +28,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.Vec3;
@@ -52,7 +54,7 @@ final class HumanoidLegStrikeEffects {
         StrikeData data = strikeData(actor, strike, rules);
         actor.swing(InteractionHand.MAIN_HAND);
         playAttackSound(actor);
-        List<LivingEntity> candidates = candidates(actor, strike);
+        List<LivingEntity> candidates = candidates(actor, effect, strike);
         List<String> selected = TechniqueStrikeTargets.select(strike, hits.groups,
                 candidates.stream().map(LivingEntity::getStringUUID).toList());
         Set<String> group = hits.groups.computeIfAbsent(strike.getDedupGroup(), ignored -> new HashSet<>());
@@ -163,7 +165,7 @@ final class HumanoidLegStrikeEffects {
                 ATTACK_SOUND_VOLUME, ATTACK_SOUND_PITCH);
     }
 
-    private static List<LivingEntity> candidates(LivingEntity actor, LegStrike strike) {
+    private static List<LivingEntity> candidates(LivingEntity actor, EffectIntent effect, LegStrike strike) {
         // 先按世界实体过滤，再按腿击朝向、距离和形状稳定排序。
         double distance = strike.getDistance().getValue();
         List<LivingEntity> nearby = actor.level().getEntitiesOfClass(LivingEntity.class,
@@ -173,6 +175,10 @@ final class HumanoidLegStrikeEffects {
                         .thenComparing(LivingEntity::getStringUUID))
                 .toList();
         if (strike.getShape() == StrikeShape.SINGLE_TARGET) {
+            LivingEntity declared = declaredTarget(actor, effect, distance);
+            if (declared != null) {
+                return List.of(declared);
+            }
             LivingEntity aimed = aimed(actor, nearby, strike);
             if (aimed != null) {
                 return List.of(aimed);
@@ -193,6 +199,38 @@ final class HumanoidLegStrikeEffects {
             return false;
         }
         return !(target instanceof ArmorStand stand) || !stand.isMarker();
+    }
+
+    private static LivingEntity declaredTarget(LivingEntity actor, EffectIntent effect, double distance) {
+        if (effect.getTargetId().isEmpty()) {
+            return null;
+        }
+        UUID targetId = UUID.fromString(effect.getTargetId());
+        LivingEntity target = currentTarget(actor, targetId);
+        if (target == null) {
+            target = HumanoidFabric.findEntity(targetId);
+        }
+        if (target == null || target.level() != actor.level() || !inReach(actor, target, distance)) {
+            return null;
+        }
+        return eligible(actor, target) ? target : null;
+    }
+
+    private static boolean inReach(LivingEntity actor, LivingEntity target, double distance) {
+        // 目录距离从攻击者碰撞箱边缘量取，目标边缘进入范围即可命中。
+        // 这样目标移动一小段不会丢失声明目标。
+        return actor.getBoundingBox().inflate(distance).intersects(target.getBoundingBox());
+    }
+
+    private static LivingEntity currentTarget(LivingEntity actor, UUID targetId) {
+        if (!(actor instanceof Mob mob)) {
+            return null;
+        }
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.getUUID().equals(targetId)) {
+            return target;
+        }
+        return null;
     }
 
     private static LivingEntity aimed(LivingEntity actor, List<LivingEntity> nearby, LegStrike strike) {

@@ -14,7 +14,8 @@ import java.util.Set;
 /** 类人大脑 TOML 读取器：字段白名单逐层检查，范围非法或缺物种时在加载时拒绝。 */
 public final class HumanoidBrainConfigLoader {
     public static final String DEFAULT_RESOURCE = "/meridian-humanoid-brain.toml";
-    private static final int CONFIG_VERSION = 1;
+    private static final int CURRENT_CONFIG_VERSION = 2;
+    private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
 
     private HumanoidBrainConfigLoader() {
@@ -32,13 +33,14 @@ public final class HumanoidBrainConfigLoader {
     }
 
     public static HumanoidBrainConfig parse(String text) {
-        // 版本不符时明确报错，提示删除或合并旧文件，不做静默迁移。
+        // 版本只向前兼容一个小版本；旧配置缺少并行节时使用稳定默认策略。
         var parsed = TOML.parse(text);
         TOML.checkKeys(parsed, Set.of("config_version", "decision_interval_ticks", "log_decisions", "threat",
-                "assessment", "response", "volumes"), "");
-        if (TOML.integer(parsed, "config_version", "config_version") != CONFIG_VERSION) {
-            throw TOML.invalid("config_version 必须为 " + CONFIG_VERSION
-                    + "，请删除旧文件或按新默认值合并");
+                "assessment", "response", "volumes", "concurrency"), "");
+        int version = TOML.integer(parsed, "config_version", "config_version");
+        if (version < MIN_SUPPORTED_CONFIG_VERSION || version > CURRENT_CONFIG_VERSION) {
+            throw TOML.invalid("config_version 必须位于 " + MIN_SUPPORTED_CONFIG_VERSION + "～"
+                    + CURRENT_CONFIG_VERSION + "，请删除旧文件或按新默认值合并");
         }
         var schedule = new HumanoidBrainConfig.Schedule(
                 TOML.integer(parsed, "decision_interval_ticks", "decision_interval_ticks"), log(parsed));
@@ -46,7 +48,23 @@ public final class HumanoidBrainConfigLoader {
         var assessment = assessment(TOML.table(parsed, "assessment", "assessment"), threat.safeDistance());
         var response = response(TOML.table(parsed, "response", "response"), threat.safeDistance());
         var volumes = volumes(TOML.table(parsed, "volumes", "volumes"));
-        return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes);
+        var concurrency = concurrency(parsed);
+        return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes, concurrency);
+    }
+
+    private static HumanoidBrainConfig.ConcurrencyRules concurrency(TomlTable parsed) {
+        // 版本 1 没有并行节；缺失时保留与旧行为一致的随机保持带和可移动调息。
+        Object raw = parsed.get(List.of("concurrency"));
+        if (!(raw instanceof TomlTable table)) {
+            return HumanoidBrainConfig.ConcurrencyRules.DEFAULTS;
+        }
+        TOML.checkKeys(table, Set.of("hold_range_probability", "allow_recovery_movement"), "concurrency.");
+        double probability = ratio(table, "hold_range_probability", "concurrency");
+        Object movement = table.get(List.of("allow_recovery_movement"));
+        if (!(movement instanceof Boolean allowRecoveryMovement)) {
+            throw TOML.invalid("concurrency.allow_recovery_movement 必须是布尔值");
+        }
+        return new HumanoidBrainConfig.ConcurrencyRules(probability, allowRecoveryMovement);
     }
 
     private static HumanoidBrainConfig.DecisionLog log(TomlTable parsed) {

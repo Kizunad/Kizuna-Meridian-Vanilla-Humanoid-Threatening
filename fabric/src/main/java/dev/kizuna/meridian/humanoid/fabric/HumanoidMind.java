@@ -18,6 +18,7 @@ final class HumanoidMind {
     private Stance stance = Stance.ENGAGE;
     private LivingEntity opponent;
     private HumanoidMotion.Directive directive = HumanoidMotion.Directive.RELEASED;
+    private CastPlan castPlan;
     private long sequence;
     private boolean adapted;
     private Optional<Vec3> retreatPoint = Optional.empty();
@@ -42,6 +43,10 @@ final class HumanoidMind {
 
     /** 同一式的连续失败次数与暂停到的身体毫秒。 */
     private record Failure(int count, long blockedUntilMillis) { }
+
+    /** 蓄力峰值倒排出的下一击计划；只在目标、落点、时间和身体状态仍有效时使用。 */
+    record CastPlan(String technique, LivingEntity target, Vec3 expectedLanding, long flightMillis,
+                    long firstHitMillis, long dueMillis, long expiresMillis, String reason) { }
 
     Stance stance() {
         // 上次决策的姿态，供撤退滞回。
@@ -69,6 +74,7 @@ final class HumanoidMind {
             stance = Stance.ENGAGE;
             cornered = false;
             retreatPoint = Optional.empty();
+            castPlan = null;
         }
         opponent = next;
     }
@@ -79,6 +85,7 @@ final class HumanoidMind {
         stance = Stance.ENGAGE;
         retreatPoint = Optional.empty();
         cornered = false;
+        castPlan = null;
     }
 
     void direct(HumanoidMotion.Directive next) {
@@ -89,6 +96,24 @@ final class HumanoidMind {
     void release() {
         // 交还原版控制。
         directive = HumanoidMotion.Directive.RELEASED;
+        castPlan = null;
+    }
+
+    Optional<CastPlan> castPlan() {
+        // 当前倒排计划只读暴露给逐 tick 检查器。
+        return Optional.ofNullable(castPlan);
+    }
+
+    void planCast(CastPlan next) {
+        // 同一蓄力施放只登记一次，后续 tick 只验证而不重新抽式。
+        if (castPlan == null) {
+            castPlan = next;
+        }
+    }
+
+    void clearCastPlan() {
+        // 目标切换、受击、超时或施放失败时清理倒排计划。
+        castPlan = null;
     }
 
     void decided(long tick, Stance next, Decision decision) {

@@ -77,7 +77,12 @@ final class HumanoidWayfarerAi {
                 .toList();
         boolean escape = candidates.stream().anyMatch(known -> known.getTechnique().getId().equals(PARTHIAN));
         if (escape) {
-            return Decision.cast(Decision.Action.STRIKE, PARTHIAN, "被逼近且不足半血，回马拉开");
+            Decision decision = Decision.cast(Decision.Action.STRIKE, PARTHIAN,
+                    "被逼近且不足半血，回马拉开");
+            if (stance == HumanoidAssessment.Stance.RETREAT) {
+                return decision.withMovement(Decision.Movement.RETREAT);
+            }
+            return decision;
         }
         if (stance == HumanoidAssessment.Stance.ENGAGE && self.has(Fighter.Means.CASTING)
                 && !candidates.isEmpty() && ordinary.action() == Decision.Action.HOLD) {

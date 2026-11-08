@@ -7,15 +7,19 @@ import dev.kizuna.meridian.humanoid.server.Fighter;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
+import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig.ConcurrencyRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTactics;
+import dev.kizuna.meridian.humanoid.server.Repertoire;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeapAccess;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import dev.kizuna.meridian.technique.server.TechniqueService;
+import dev.kizuna.meridian.technique.server.TechniqueState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +39,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.phys.Vec3;
 
 /** 类人大脑：被接管实体按错相周期读敌意、评估、选战术，再由接入适配器落到原版控制上。 */
 public final class HumanoidBrain {
@@ -48,6 +53,11 @@ public final class HumanoidBrain {
 
     /** 一式及其情境评分。 */
     private record Scored(TechniqueReference reference, double score) { }
+
+    /** 移动通道计算所需的本 tick 战斗上下文。 */
+    private record MovementContext(Mob mob, HumanoidMind mind, BodySnapshot body,
+                                   HumanoidAssessment.Stance stance, Fighter self,
+                                   Decision decision) { }
 
     private HumanoidBrain() {
         // 状态按实体 UUID 保存，实体离开世界时清理。
@@ -76,12 +86,15 @@ public final class HumanoidBrain {
     }
 
     public static void tick(Mob mob, GoalSelector goals, GoalSelector targets) {
-        // 每 tick 只装接入；到错相决策时刻才读敌意与身体，飞行中不改主意。
+        // 每 tick 只装接入；真正的双通道决策仍按错相节奏运行，飞行中不改主意。
         if (config == null || !HumanoidFabric.isReady() || !managed(mob)) {
             return;
         }
         HumanoidMind mind = minds.computeIfAbsent(mob.getUUID(), ignored -> new HumanoidMind());
         HumanoidGoalAdapter.install(mob, mind, goals, targets);
+        if (checkCastPlan(mob, mind)) {
+            return;
+        }
         int interval = config.schedule().decisionIntervalTicks();
         if (((TechniqueLeapAccess) mob).meridian$getLeap() != null
                 || Math.floorMod((long) mob.tickCount + mob.getId(), interval) != 0) {
@@ -96,7 +109,7 @@ public final class HumanoidBrain {
     }
 
     private static void decide(Mob mob, HumanoidMind mind) {
-        // 先找威胁再读身体；自己施放中而对方没有来袭时不必准备身体。
+        // 先找威胁再读身体；无威胁路径只查已有会话的恢复式，不创建新身体快照。
         Optional<LivingEntity> threat = HumanoidThreats.nearest(mob, config.threat(), mind.opponent());
         if (threat.isEmpty()) {
             idle(mob, mind);
@@ -139,10 +152,216 @@ public final class HumanoidBrain {
         var encounter = new Encounter(self, other, distance, incoming, circumstances);
         Decision ordinary = HumanoidTactics.decide(encounter, stance, readout.repertoire(),
                 config.response().tactics());
-        Decision decision = HumanoidWayfarerAi.continueOrEscape(self, stance, readout, ordinary);
+        Decision techniqueDecision = HumanoidWayfarerAi.continueOrEscape(self, stance, readout, ordinary);
+        MovementContext movementContext = new MovementContext(mob, mind, body, stance, self, techniqueDecision);
+        Decision decision = movementDecision(movementContext);
         record(mob, mind, stance, decision);
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent)),
                 decision);
+        scheduleCastPlan(mob, mind, body, readout, opponent);
+    }
+
+    private static void scheduleCastPlan(Mob mob, HumanoidMind mind, BodySnapshot body,
+                                         HumanoidRepertoires.Readout readout, HumanoidOpponent opponent) {
+        // 已在执行中的准备式只登记一次峰值计划，实际起手仍由逐 tick 检查器决定。
+        if (mind.castPlan().isPresent()) {
+            return;
+        }
+        HumanoidCastPlanner.prepare(mob, body, readout, opponent, mind).ifPresent(mind::planCast);
+    }
+
+    private static boolean checkCastPlan(Mob mob, HumanoidMind mind) {
+        // 倒排计划每 tick 校验目标与身体时间，命中失效条件立即清理。
+        Optional<HumanoidMind.CastPlan> planned = mind.castPlan();
+        if (planned.isEmpty()) {
+            return false;
+        }
+        HumanoidMind.CastPlan plan = planned.get();
+        try {
+            if (invalidCastPlanTarget(mob, mind, plan)) {
+                mind.clearCastPlan();
+                return false;
+            }
+            BodySnapshot body = body(mob);
+            return evaluateCastPlan(mob, mind, body, plan);
+        } catch (RuntimeException failure) {
+            mind.clearCastPlan();
+            HumanoidFabric.report(mob, failure);
+            return false;
+        }
+    }
+
+    private static boolean evaluateCastPlan(Mob mob, HumanoidMind mind, BodySnapshot body,
+                                            HumanoidMind.CastPlan plan) {
+        // 计划到期后才尝试起手；蓄力或飞行仍在进行时保留或清理计划。
+        long now = body.settledAt().elapsedMillis();
+        if (now > plan.expiresMillis()) {
+            mind.clearCastPlan();
+            return false;
+        }
+        if (now < plan.dueMillis()) {
+            return true;
+        }
+        if (((TechniqueLeapAccess) mob).meridian$getLeap() != null) {
+            mind.clearCastPlan();
+            return false;
+        }
+        var progress = TechniqueState.read(body);
+        if (!progress.hasActiveCast()) {
+            return executeCastPlan(mob, mind, body, plan, now);
+        }
+        if (now <= progress.getActiveCast().getRecoveryEndMillis()) {
+            return true;
+        }
+        mind.clearCastPlan();
+        return false;
+    }
+
+    private static boolean invalidCastPlanTarget(Mob mob, HumanoidMind mind, HumanoidMind.CastPlan plan) {
+        // 目标切换、死亡、卸载或受击都使原来的落点和峰值时间失去意义。
+        LivingEntity currentTarget = mob.getTarget();
+        boolean targetChanged = currentTarget != null && currentTarget != plan.target();
+        boolean targetTooFar = mob.distanceTo(plan.target()) > config.threat().forgetDistance();
+        return mind.opponent().filter(target -> target == plan.target()).isEmpty()
+                || targetChanged || targetTooFar
+                || !plan.target().isAlive() || plan.target().isRemoved()
+                || plan.target().level() != mob.level() || mob.hurtTime > 0;
+    }
+
+    private static boolean executeCastPlan(Mob mob, HumanoidMind mind, BodySnapshot body,
+                                           HumanoidMind.CastPlan plan, long now) {
+        // 计划到期后重新读候选、验证落点，成功起跳才在同一 tick 起手。
+        var opponent = new HumanoidOpponent(plan.target(), observe(plan.target()));
+        var readout = HumanoidRepertoires.read(mob, body, Optional.of(opponent),
+                technique -> mind.blocked(technique, now));
+        Optional<Repertoire.Strike> strike = plannedStrike(readout, plan);
+        if (strike.isEmpty()) {
+            mind.clearCastPlan();
+            return false;
+        }
+        Vec3 landing = HumanoidActions.assaultLanding(mob, plan.target());
+        Optional<TechniqueLeaps.Preview> preview = TechniqueLeaps.preview(mob, landing);
+        if (preview.isEmpty()) {
+            mind.clearCastPlan();
+            return false;
+        }
+        HumanoidActions.Turn turn = new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent));
+        HumanoidActions.LeapPlan leapPlan = new HumanoidActions.LeapPlan(strike.get(), preview.get(),
+                plan.expectedLanding(), plan.flightMillis(), plan.firstHitMillis());
+        if (!HumanoidActions.plannedLeapSafe(turn, leapPlan)) {
+            mind.clearCastPlan();
+            return false;
+        }
+        TechniqueLeaps.Jump jump = TechniqueLeaps.leapToward(mob, landing);
+        if (jump != TechniqueLeaps.Jump.LEAP) {
+            mind.clearCastPlan();
+            return false;
+        }
+        Decision decision = Decision.cast(Decision.Action.STRIKE, plan.technique(), Decision.Movement.FOLLOW,
+                plan.reason());
+        record(mob, mind, mind.stance(), decision);
+        HumanoidActions.execute(turn, decision);
+        mind.clearCastPlan();
+        return true;
+    }
+
+    private static Optional<Repertoire.Strike> plannedStrike(HumanoidRepertoires.Readout readout,
+                                                              HumanoidMind.CastPlan plan) {
+        // 计划只接受最初选定的式与首击时刻，候选变化时回到普通决策。
+        return readout.repertoire().strikes().stream()
+                .filter(candidate -> candidate.technique().equals(plan.technique()))
+                .filter(candidate -> candidate.firstHitMillis() == plan.firstHitMillis())
+                .findFirst();
+    }
+
+    private static Decision movementDecision(MovementContext context) {
+        // 技法通道先完成选择；移动通道再按局面独立决定。
+        // 准备式保留保持跃步带和直冲两种策略。
+        HumanoidMind mind = context.mind();
+        Fighter self = context.self();
+        Decision decision = context.decision();
+        if (decision.action() == Decision.Action.PREPARE) {
+            return prepareMovement(context);
+        }
+        if (decision.action() == Decision.Action.RECOVER && mind.opponent().isPresent()) {
+            return recoveryMovement(context);
+        }
+        if (decision.action() == Decision.Action.HOLD && self.has(Fighter.Means.CASTING)) {
+            return castingMovement(context);
+        }
+        return decision;
+    }
+
+    private static Decision castingMovement(MovementContext context) {
+        // 普通施放冻结技法通道，但移动通道仍按当前姿态更新。
+        // 飞行和起跳仍由框架互斥。
+        HumanoidMind mind = context.mind();
+        BodySnapshot body = context.body();
+        HumanoidAssessment.Stance stance = context.stance();
+        Decision decision = context.decision();
+        Optional<AiRole> role = activeRole(body);
+        if (role.filter(value -> value == AiRole.AI_ROLE_PREPARE).isPresent()) {
+            return prepareMovement(context);
+        }
+        if (role.filter(value -> value == AiRole.AI_ROLE_RECOVER).isPresent()
+                && mind.opponent().isPresent()) {
+            return recoveryMovement(context);
+        }
+        if (stance == HumanoidAssessment.Stance.RETREAT && mind.retreatPoint().isPresent()) {
+            return constrain(decision.withMovement(Decision.Movement.RETREAT), ConcurrencyRules.CastPhase.STRIKE);
+        }
+        if (stance == HumanoidAssessment.Stance.ENGAGE && mind.opponent().isPresent()) {
+            return constrain(decision.withMovement(Decision.Movement.FOLLOW), ConcurrencyRules.CastPhase.STRIKE);
+        }
+        return constrain(decision.withMovement(Decision.Movement.KEEP), ConcurrencyRules.CastPhase.STRIKE);
+    }
+
+    private static Decision prepareMovement(MovementContext context) {
+        // 准备式撤退时沿退路移动，否则在保持跃步带与跟随之间确定选择。
+        Decision decision = context.decision();
+        if (context.stance() == HumanoidAssessment.Stance.RETREAT) {
+            return constrain(decision.withMovement(Decision.Movement.RETREAT),
+                    ConcurrencyRules.CastPhase.PREPARE);
+        }
+        boolean holdRange = seed(context.mob(), context.mind()).nextDouble()
+                < config.concurrency().holdRangeProbability();
+        Decision.Movement movement;
+        if (holdRange) {
+            movement = Decision.Movement.HOLD_RANGE;
+        } else {
+            movement = Decision.Movement.FOLLOW;
+        }
+        return constrain(decision.withMovement(movement), ConcurrencyRules.CastPhase.PREPARE);
+    }
+
+    private static Decision recoveryMovement(MovementContext context) {
+        // 调息时按配置选择沿退路移动或原地恢复。
+        Decision decision = context.decision();
+        Decision.Movement movement;
+        if (config.concurrency().allowRecoveryMovement()) {
+            movement = Decision.Movement.RETREAT;
+        } else {
+            movement = Decision.Movement.STAY;
+        }
+        return constrain(decision.withMovement(movement), ConcurrencyRules.CastPhase.RECOVER);
+    }
+
+    private static Decision constrain(Decision decision, ConcurrencyRules.CastPhase phase) {
+        // 执行前再次应用框架约束，避免未来新增移动分支绕过施放中禁跃规则。
+        if (config.concurrency().allows(phase, decision.movement())) {
+            return decision;
+        }
+        return decision.withMovement(Decision.Movement.KEEP);
+    }
+
+    private static Optional<AiRole> activeRole(BodySnapshot body) {
+        // 当前施放的角色从同一身体进度与目录读取，不按具体功法 ID 分支。
+        var progress = TechniqueState.read(body);
+        if (!progress.hasActiveCast()) {
+            return Optional.empty();
+        }
+        return TechniqueFabric.service().registry().find(progress.getActiveCast().getRequest().getTechnique())
+                .map(definition -> definition.getAiHints().getSupport().getRole());
     }
 
     private static Set<Encounter.Circumstance> combatCircumstances(Mob mob, HumanoidMind mind,
@@ -152,12 +371,15 @@ public final class HumanoidBrain {
         if (stance != HumanoidAssessment.Stance.RETREAT) {
             return result;
         }
+        LivingEntity opponent = mind.opponent().orElseThrow();
+        if (HumanoidThreats.pursued(mob, opponent)) {
+            result.add(Encounter.Circumstance.PURSUED);
+        }
         if (mob.onGround()) {
             double safeDistance = 0;
             if (mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
                 safeDistance = config.response().tactics().safeDistance();
             }
-            LivingEntity opponent = mind.opponent().orElseThrow();
             mind.planRetreat(HumanoidMotion.retreatPoint(mob, opponent, mind.directive(), safeDistance));
         }
         if (mind.cornered()) {
@@ -266,6 +488,10 @@ public final class HumanoidBrain {
         if (mind == null) {
             return;
         }
+        if (HumanoidTechniqueHost.castingCloseStrike(mob)) {
+            HumanoidMotion.apply(mob, HumanoidMotion.Directive.STAYING, mind.opponent(), speeds);
+            return;
+        }
         if (HumanoidTechniqueHost.castingWayfarer(mob)) {
             HumanoidMotion.apply(mob, HumanoidMotion.Directive.STAYING, mind.opponent(), speeds);
             return;
@@ -291,6 +517,9 @@ public final class HumanoidBrain {
     public static void targetChanged(Mob mob, LivingEntity previous, LivingEntity next) {
         // 原版改目标时同步敌意反查表。
         HumanoidThreats.targeted(mob, previous, next);
+        if (previous != next) {
+            Optional.ofNullable(minds.get(mob.getUUID())).ifPresent(HumanoidMind::clearCastPlan);
+        }
     }
 
     public static boolean blocksMelee(Mob mob) {

@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
+import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
@@ -67,6 +68,7 @@ public final class HumanoidTechniqueGameTest {
     private static final int VOLUME_SAMPLE_LIMIT = 1000;
     private static final int SHIELD_READY_TICKS = 6;
     private static final int KNOCK_HIT_TICKS = 25;
+    private static final int EXHAUSTION_RETREAT_WAIT_TICKS = 80;
     private static final int CLEAVE_HIT_TICKS = 32;
     private static final int FOLLOW_UP_TICKS = 64;
     private static final int RECOVERY_TICKS = 125;
@@ -386,19 +388,42 @@ public final class HumanoidTechniqueGameTest {
         context.runAfterDelay(DECISION_TICKS, () -> {
             double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();
             context.assertTrue(armRatio < exhaustedRatio, "双臂曲线未降低有效力量：" + armRatio);
+            awaitExhaustionRetreat(context, mob, target, initialDistance, exhaustedRatio,
+                    EXHAUSTION_RETREAT_WAIT_TICKS);
+        });
+    }
+
+    private static void awaitExhaustionRetreat(GameTestHelper context, Vindicator mob, LivingEntity target,
+                                               double initialDistance, double exhaustedRatio, int remainingTicks) {
+        // 等待错相决策真正选择撤退并执行一段移动，避免用固定 tick 假设实体决策相位。
+        boolean evasion = HumanoidBrain.decisions(mob.getUUID()).stream()
+                .anyMatch(logged -> logged.decision().action() == Decision.Action.RETREAT
+                        || logged.decision().action() == Decision.Action.KITE);
+        if (evasion && mob.distanceTo(target) > initialDistance + 1) {
+            double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();
+            context.assertTrue(armRatio < exhaustedRatio, "撤退决策出现时能力已恢复：" + armRatio);
             context.assertTrue(HumanoidBrain.blocksMelee(mob) && !mob.doHurtTarget(context.getLevel(), target),
                     "虚脱期间仍可近战");
             context.assertTrue(!progress(mob).hasActiveCast(), "虚脱期间仍开始功法");
-            context.assertTrue(mob.distanceTo(target) > initialDistance + 1,
-                    "虚脱后没有实际拉开距离；target=" + mob.getTarget() + "; pos=" + mob.position());
-        });
-        context.runAfterDelay(KNOCK_HIT_TICKS, () -> {
-            double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();
-            context.assertTrue(armRatio >= exhaustedRatio, "能力曲线结束后仍判为虚脱：" + armRatio);
-            mob.setNoAi(true /* aiDisabled */);
-            HumanoidTechniqueHost.removed(mob);
-            context.succeed();
-        });
+            context.runAfterDelay(KNOCK_HIT_TICKS, () -> finishExhaustion(context, mob, exhaustedRatio));
+            return;
+        }
+        if (remainingTicks == 0) {
+            context.fail("虚脱后没有实际拉开距离；target=" + mob.getTarget() + "; pos=" + mob.position()
+                    + "; decisions=" + HumanoidBrain.decisions(mob.getUUID()));
+            return;
+        }
+        context.runAfterDelay(1, () -> awaitExhaustionRetreat(context, mob, target, initialDistance,
+                exhaustedRatio, remainingTicks - 1));
+    }
+
+    private static void finishExhaustion(GameTestHelper context, Vindicator mob, double exhaustedRatio) {
+        // 曲线结束后能力恢复，随后清理实体身体会话。
+        double armRatio = HumanoidFighters.condition(body(mob)).armStrengthRatio();
+        context.assertTrue(armRatio >= exhaustedRatio, "能力曲线结束后仍判为虚脱：" + armRatio);
+        mob.setNoAi(true /* aiDisabled */);
+        HumanoidTechniqueHost.removed(mob);
+        context.succeed();
     }
 
     @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)

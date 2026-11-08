@@ -5,11 +5,14 @@ import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.Fighter;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
+import dev.kizuna.meridian.humanoid.server.Repertoire;
+import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastOutcome;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastRequest;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HorizontalDirection;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechnique;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueFailure;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
@@ -28,76 +31,89 @@ import net.minecraft.world.phys.Vec3;
 /** 把一次战术决策落到施放请求与移动指令上；施放失败按式累计，连续失败后暂停该式。 */
 final class HumanoidActions {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_brain");
+    private static final double ASSAULT_LANDING_MARGIN = 0.75;
+    private static final double LANDING_DEVIATION_TOLERANCE = 2.0;
+    private static final long FLIGHT_TIME_TOLERANCE_MILLIS = 100;
+    private static final double HOLD_RANGE_MARGIN = 0.5;
+    private static final double HOLD_RANGE_WIDTH = 4.0;
+    private static final double MILLIS_PER_SECOND = 1000.0;
 
     /** 一次决策执行所需的实体、大脑状态、身体、候选与对手。 */
     record Turn(Mob mob, HumanoidMind mind, BodySnapshot body, HumanoidRepertoires.Readout readout,
                 Optional<HumanoidOpponent> opponent) { }
+
+    /** 一次跃步安全校验所需的预测、落点与首击时刻。 */
+    record LeapPlan(Repertoire.Strike strike, TechniqueLeaps.Preview preview, Vec3 expectedLanding,
+                    long expectedFlightMillis, long firstHitMillis) { }
 
     private HumanoidActions() {
         // 纯执行，状态都在 HumanoidMind。
     }
 
     static void execute(Turn turn, Decision decision) {
-        // 不躲时先放下举着的盾；随后按动作施放或换移动指令。
-        if (decision.action() != Decision.Action.DODGE) {
+        // 两条通道在同一服务端主线程顺序执行；先处理技法，再落移动。
+        // 这样突击会先确认跃步成功，再在同一 tick 起手。
+        if (decision.movement() != Decision.Movement.DODGE) {
             lowerShield(turn.mob());
         }
+        executeTechnique(turn, decision);
+        executeMovement(turn, decision);
+    }
+
+    private static void executeTechnique(Turn turn, Decision decision) {
+        // 技法通道只负责正式功法请求，不因失败改写移动通道。
         switch (decision.action()) {
-            case INTERRUPT -> castAndFollow(turn, decision.technique().orElseThrow());
+            case INTERRUPT -> cast(turn, decision.technique().orElseThrow(), decision.movement());
             case STRIKE -> strike(turn, decision);
-            case PREPARE -> prepare(turn, decision.technique().orElseThrow());
-            case RECOVER -> recover(turn, decision.technique().orElseThrow());
-            case DODGE -> dodge(turn);
-            case ABSORB -> turn.mind().direct(HumanoidMotion.Directive.STAYING);
-            case ASSAULT -> assault(turn);
-            case KITE -> kite(turn);
-            case APPROACH -> approach(turn);
-            case RETREAT -> retreat(turn);
-            case HOLD -> hold(turn);
-            case RELEASE -> turn.mind().release();
+            case PREPARE -> prepare(turn, decision.technique().orElseThrow(), decision.movement());
+            case RECOVER -> recover(turn, decision.technique().orElseThrow(), decision.movement());
+            default -> {
+                // 纯移动动作由另一条通道执行。
+            }
         }
     }
 
-    private static void castAndFollow(Turn turn, String technique) {
-        // 行矢射击时保持站位；近战打断与打击继续贴住对手。
-        cast(turn, technique);
-        if (technique.startsWith(HumanoidWayfarerAi.PREFIX)) {
-            turn.mind().direct(HumanoidMotion.Directive.STAYING);
-            return;
+    private static void executeMovement(Turn turn, Decision decision) {
+        // 移动通道独立落地；KEEP 在施放中保留上次计划，失败施放也不把实体钉在原地。
+        switch (decision.movement()) {
+            case KEEP -> keep(turn);
+            case VANILLA -> turn.mind().release();
+            case FOLLOW -> follow(turn, decision);
+            case HOLD_RANGE -> holdRange(turn);
+            case STAY -> turn.mind().direct(HumanoidMotion.Directive.STAYING);
+            case RETREAT -> retreat(turn);
+            case ASSAULT -> assault(turn);
+            case KITE -> kite(turn);
+            case DODGE -> dodge(turn);
         }
-        turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
     }
 
     private static void strike(Turn turn, Decision decision) {
         // 在可选打击式里按情境与本实体种子抽一式；都不合适时继续接近。
         if (decision.technique().isPresent()) {
-            castAndFollow(turn, decision.technique().orElseThrow());
+            cast(turn, decision.technique().orElseThrow(), decision.movement());
             return;
         }
-        var readout = turn.readout();
-        var chosen = TechniqueSelector.choose(readout.context(), readout.strikes(),
-                HumanoidBrain.seed(turn.mob(), turn.mind()));
-        if (chosen.isEmpty()) {
-            approach(turn);
-            return;
+        Optional<String> technique = chooseStrike(turn).map(Repertoire.Strike::technique);
+        if (technique.isPresent()) {
+            cast(turn, technique.orElseThrow(), decision.movement());
         }
-        castAndFollow(turn, chosen.get().getId());
     }
 
-    private static void prepare(Turn turn, String technique) {
-        // 接敌时原地准备，免得准备期间走进轻步与跃步的最小距离；撤退时边准备边走开。
-        cast(turn, technique);
-        if (turn.mind().stance() == HumanoidAssessment.Stance.RETREAT) {
-            retreat(turn);
+    private static void prepare(Turn turn, String technique, Decision.Movement movement) {
+        // 准备式只提交技法请求，边走还是保持跃步带由移动通道决定。
+        boolean started = cast(turn, technique, movement);
+        if (!started || turn.opponent().isEmpty()) {
             return;
         }
-        turn.mind().direct(HumanoidMotion.Directive.STAYING);
+        BodySnapshot updated = BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(turn.mob()).body().snapshot());
+        HumanoidCastPlanner.prepare(turn.mob(), updated, turn.readout(), turn.opponent().orElseThrow(), turn.mind())
+                .ifPresent(turn.mind()::planCast);
     }
 
-    private static void recover(Turn turn, String technique) {
-        // 恢复式原地施放。
-        cast(turn, technique);
-        turn.mind().direct(HumanoidMotion.Directive.STAYING);
+    private static void recover(Turn turn, String technique, Decision.Movement movement) {
+        // 调息只提交技法请求，撤退姿态仍可沿退路移动。
+        cast(turn, technique, movement);
     }
 
     private static void dodge(Turn turn) {
@@ -114,19 +130,46 @@ final class HumanoidActions {
             return;
         }
         Vec3 point = exit.get().point();
-        if (TechniqueLeaps.preview(mob, point).isPresent()) {
+        boolean casting = turn.readout().means().contains(Fighter.Means.CASTING);
+        if (!casting && TechniqueLeaps.preview(mob, point).isPresent()) {
             TechniqueLeaps.leapToward(mob, point);
         }
         turn.mind().direct(HumanoidMotion.Directive.moveTo(point, HumanoidMotion.Pace.FLEE));
     }
 
     private static void assault(Turn turn) {
-        // 跃向对手身前、隔开配置的距离，落地后贴住。
+        // 先求解并确认实际起跳，再在同一 tick 起手；失败起跳不能伪造空中施放。
         LivingEntity opponent = opponentEntity(turn);
-        double standOff = HumanoidBrain.config().response().assaultStandOff();
-        Vec3 landing = opponent.position().add(HumanoidMotion.away(turn.mob(), opponent).scale(standOff));
-        TechniqueLeaps.leapToward(turn.mob(), landing);
+        Vec3 landing = assaultLanding(turn.mob(), opponent);
+        var preview = TechniqueLeaps.preview(turn.mob(), landing);
         turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
+        if (preview.isEmpty()) {
+            return;
+        }
+        TechniqueLeaps.Preview leapPreview = preview.orElseThrow();
+        long flightMillis = leapPreview.flightMillis();
+        double seconds = flightMillis / MILLIS_PER_SECOND;
+        Vec3 predictedTarget = opponent.position().add(opponent.getDeltaMovement().scale(seconds));
+        double expectedDistance = horizontalDistance(landing, predictedTarget);
+        Optional<Repertoire.Strike> strike = chooseStrike(turn, expectedDistance).filter(candidate -> {
+            LeapPlan plan = new LeapPlan(candidate, leapPreview, landing, flightMillis,
+                    candidate.firstHitMillis());
+            return plannedLeapSafe(turn, plan);
+        });
+        if (strike.isEmpty()) {
+            return;
+        }
+        TechniqueLeaps.Jump jump = TechniqueLeaps.leapToward(turn.mob(), landing);
+        if (jump != TechniqueLeaps.Jump.LEAP) {
+            return;
+        }
+        cast(turn, strike.get().technique(), Decision.Movement.FOLLOW);
+    }
+
+    static Vec3 assaultLanding(Mob mob, LivingEntity opponent) {
+        // 突击落点固定在目标身前，预报与真实起跳共用同一位置。
+        double standOff = HumanoidBrain.config().response().assaultStandOff();
+        return opponent.position().add(HumanoidMotion.away(mob, opponent).scale(standOff));
     }
 
     private static void kite(Turn turn) {
@@ -135,13 +178,34 @@ final class HumanoidActions {
         retreat(turn);
     }
 
-    private static void approach(Turn turn) {
-        // 原版会打的交给原版目标与攻击 Goal；其余由大脑跟住对手。
-        if (HumanoidFighters.vanillaMeans(turn.mob()).contains(Fighter.Means.VANILLA_OFFENSE)) {
+    private static void follow(Turn turn, Decision decision) {
+        // 明确交还原版攻击的动作释放移动控制，其余施放或追击继续由大脑跟住对手。
+        boolean vanillaOffense = HumanoidFighters.vanillaMeans(turn.mob())
+                .contains(Fighter.Means.VANILLA_OFFENSE);
+        boolean ordinaryAttack = decision.action() == Decision.Action.APPROACH
+                || decision.action() == Decision.Action.STRIKE && decision.technique().isEmpty();
+        if (vanillaOffense && (turn.readout().repertoire().strikes().isEmpty() || ordinaryAttack)) {
             turn.mind().release();
             return;
         }
         turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
+    }
+
+    private static void holdRange(Turn turn) {
+        // 距离带下界保护跃步最小距离，上界给直接接近留下确定性余量。
+        double reach = turn.readout().repertoire().strikes().stream()
+                .mapToDouble(Repertoire.Strike::reach).max().orElse(0);
+        double minimum = Math.max(reach, turn.readout().repertoire().timing().leapMinimumDistance())
+                + HOLD_RANGE_MARGIN;
+        double maximum = minimum + HOLD_RANGE_WIDTH;
+        turn.mind().direct(HumanoidMotion.Directive.holdRange(minimum, maximum));
+    }
+
+    private static void keep(Turn turn) {
+        // 技法进行中保留移动计划；没有施放时 HOLD 退化为原地等待。
+        if (!turn.readout().means().contains(Fighter.Means.CASTING)) {
+            turn.mind().direct(HumanoidMotion.Directive.STAYING);
+        }
     }
 
     private static void retreat(Turn turn) {
@@ -152,25 +216,19 @@ final class HumanoidActions {
         turn.mind().direct(directive);
     }
 
-    private static void hold(Turn turn) {
-        // 施放中保持当前指令；否则原地不动。
-        if (turn.readout().means().contains(Fighter.Means.CASTING)) {
-            return;
-        }
-        turn.mind().direct(HumanoidMotion.Directive.STAYING);
-    }
-
-    private static void cast(Turn turn, String technique) {
-        // 僵直中不发请求；有对手时以它为目标，失败按式累计。
+    private static boolean cast(Turn turn, String technique, Decision.Movement movement) {
+        // 僵直中不发请求；有对手时以它为目标，并把移动通道转换为 INPUT 水平向量。
         Mob mob = turn.mob();
         var service = TechniqueFabric.service();
         if (service.staggerRemainingMillis(mob.getUUID()) > 0) {
-            return;
+            return false;
         }
+        HorizontalDirection direction = direction(turn, movement);
         var request = CastRequest.newBuilder()
                 .setBodyId(turn.body().id().value())
                 .setTechnique(reference(turn, technique))
-                .setCastId(UUID.randomUUID().toString());
+                .setCastId(UUID.randomUUID().toString())
+                .setDirection(direction);
         turn.opponent().ifPresent(opponent -> request.setTargetId(opponent.entity().getStringUUID()));
         CastOutcome outcome = castWithWeapon(turn, technique, request.build());
         if (failed(outcome)) {
@@ -178,9 +236,105 @@ final class HumanoidActions {
             long now = turn.body().settledAt().elapsedMillis();
             turn.mind().failed(technique, now, rules.failureLimit(), rules.failureBlockMillis());
             logFailure(mob, technique, outcome);
-            return;
+            return false;
         }
         turn.mind().succeeded(technique);
+        return true;
+    }
+
+    private static HorizontalDirection direction(Turn turn, Decision.Movement movement) {
+        // INPUT 冲量沿移动意图取水平向量；没有目标时沿实体当前朝向。
+        Vec3 vector;
+        if (turn.opponent().isEmpty()) {
+            vector = turn.mob().getLookAngle().multiply(1, 0, 1);
+        } else {
+            LivingEntity opponent = turn.opponent().orElseThrow().entity();
+            if (movement == Decision.Movement.RETREAT || movement == Decision.Movement.KITE
+                    || movement == Decision.Movement.DODGE) {
+                vector = HumanoidMotion.away(turn.mob(), opponent);
+            } else if (movement == Decision.Movement.FOLLOW || movement == Decision.Movement.ASSAULT) {
+                vector = opponent.position().subtract(turn.mob().position()).multiply(1, 0, 1);
+            } else {
+                vector = turn.mob().getLookAngle().multiply(1, 0, 1);
+            }
+        }
+        Vec3 normalized;
+        if (vector.lengthSqr() == 0) {
+            normalized = Vec3.ZERO;
+        } else {
+            normalized = vector.normalize();
+        }
+        return HorizontalDirection.newBuilder()
+                .setX(normalized.x)
+                .setZ(normalized.z)
+                .build();
+    }
+
+    private static Optional<Repertoire.Strike> chooseStrike(Turn turn) {
+        // 选择器只抽一次，再从同一份候选映射到首击与距离事实。
+        return chooseStrike(turn, turn.readout().context());
+    }
+
+    private static Optional<Repertoire.Strike> chooseStrike(Turn turn, double expectedDistance) {
+        // 突击按预计落点的距离重新计算权重，避免用起跳前距离误筛长距离式。
+        var situation = turn.readout().context().situation();
+        var adjustedSituation = new TechniqueSelector.Situation(situation.nowMillis(), situation.selfHpRatio(),
+                situation.selfQiRatio(), expectedDistance, situation.targetState(),
+                situation.effectiveLegForceNewtons());
+        var adjustedContext = new TechniqueSelector.Context(turn.readout().context().registry(), adjustedSituation,
+                turn.readout().context().availability(), turn.readout().context().combat());
+        return chooseStrike(turn, adjustedContext);
+    }
+
+    private static Optional<Repertoire.Strike> chooseStrike(Turn turn, TechniqueSelector.Context context) {
+        // 选择器只抽一次，再从同一份候选映射到首击与距离事实。
+        var chosen = TechniqueSelector.choose(context, turn.readout().strikes(),
+                HumanoidBrain.seed(turn.mob(), turn.mind()));
+        return chosen.flatMap(reference -> turn.readout().repertoire().strikes().stream()
+                .filter(strike -> strike.technique().equals(reference.getId()))
+                .findFirst());
+    }
+
+    static boolean plannedLeapSafe(Turn turn, LeapPlan plan) {
+        // 落点偏差、目标移动和来袭覆盖均在提交跃步前验证。
+        Repertoire.Strike strike = plan.strike();
+        TechniqueLeaps.Preview preview = plan.preview();
+        Vec3 expectedLanding = plan.expectedLanding();
+        long expectedFlightMillis = plan.expectedFlightMillis();
+        long firstHitMillis = plan.firstHitMillis();
+        if (preview.landing().distanceTo(expectedLanding) > LANDING_DEVIATION_TOLERANCE) {
+            return false;
+        }
+        long flightDifference = Math.abs(preview.flightMillis() - expectedFlightMillis);
+        if (flightDifference > FLIGHT_TIME_TOLERANCE_MILLIS) {
+            return false;
+        }
+        LivingEntity opponent = opponentEntity(turn);
+        long horizonMillis = preview.flightMillis() + firstHitMillis;
+        double seconds = horizonMillis / MILLIS_PER_SECOND;
+        Vec3 predictedTarget = opponent.position().add(opponent.getDeltaMovement().scale(seconds));
+        double landingDistance = horizontalDistance(preview.landing(), predictedTarget);
+        if (landingDistance > strike.reach() + ASSAULT_LANDING_MARGIN) {
+            return false;
+        }
+        return !overlappingIncoming(turn, horizonMillis);
+    }
+
+    private static boolean overlappingIncoming(Turn turn, long horizonMillis) {
+        return turn.opponent().flatMap(HumanoidOpponent::cast)
+                .flatMap(forecast -> forecast.strikes().stream()
+                        .filter(window -> window.millisUntilHit() <= horizonMillis)
+                        .filter(window -> HumanoidStrikeEstimates.covers(turn.mob(), opponentEntity(turn),
+                                forecast.active(), window.strike()))
+                        .findFirst())
+                .isPresent();
+    }
+
+    private static double horizontalDistance(Vec3 first, Vec3 second) {
+        // 落点与目标运动只比较水平距离，符合功法打击的平面范围判定。
+        double dx = first.x - second.x;
+        double dz = first.z - second.z;
+        return Math.hypot(dx, dz);
     }
 
     private static CastOutcome castWithWeapon(Turn turn, String technique, CastRequest request) {

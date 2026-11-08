@@ -8,7 +8,7 @@ public record Encounter(Fighter self, Fighter opponent, double distance, Optiona
                         Set<Circumstance> circumstances) {
     /** 自身运动与受击状态。 */
     public enum Circumstance {
-        LEAPING, ON_GROUND, UNDER_ATTACK, RETREAT_BLOCKED, DEFENSIVE_STRIKE, EXHAUSTED_ARMS
+        LEAPING, ON_GROUND, UNDER_ATTACK, RETREAT_BLOCKED, DEFENSIVE_STRIKE, PURSUED, EXHAUSTED_ARMS
     }
 
     /** 对方正在施放的式对我的预报；毫秒都从本次决策起算，剂量比为预计剂量占我最弱存活部位当前 HP。 */

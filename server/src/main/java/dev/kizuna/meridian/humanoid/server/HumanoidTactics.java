@@ -27,7 +27,8 @@ public final class HumanoidTactics {
     }
 
     public static Decision decide(Encounter encounter, Stance stance, Repertoire repertoire, TacticRules rules) {
-        // 飞行中不改主意；来袭应对优先，施放中只能躲或抗，其余按姿态展开。
+        // 飞行中不改主意；来袭应对优先，普通施放冻结技法通道。
+        // 承接窗口允许继续选式。
         if (encounter.has(Circumstance.LEAPING)) {
             return Decision.of(Action.HOLD, "跃步飞行中");
         }
@@ -35,7 +36,7 @@ public final class HumanoidTactics {
         if (response.isPresent()) {
             return response.get();
         }
-        if (encounter.self().has(Fighter.Means.CASTING)) {
+        if (encounter.self().has(Fighter.Means.CASTING) && !repertoire.timing().followUpAvailable()) {
             return Decision.of(Action.HOLD, "施放中");
         }
         if (stance == Stance.RETREAT) {
@@ -88,6 +89,9 @@ public final class HumanoidTactics {
                 && incoming.has(Incoming.Trait.INTERRUPTIBLE)) {
             Optional<Decision> interrupt = interrupt(encounter.distance(), incoming, repertoire.strikes(), reaction);
             if (interrupt.isPresent()) {
+                if (stance == Stance.RETREAT) {
+                    return Optional.of(interrupt.get().withMovement(Decision.Movement.RETREAT));
+                }
                 return interrupt;
             }
         }
@@ -127,11 +131,12 @@ public final class HumanoidTactics {
         var distance = OptionalDouble.of(encounter.distance());
         Fighter self = encounter.self();
         if (canStrike(encounter) && (encounter.has(Circumstance.RETREAT_BLOCKED)
-                || encounter.has(Circumstance.DEFENSIVE_STRIKE))) {
+                || encounter.has(Circumstance.DEFENSIVE_STRIKE) || encounter.has(Circumstance.PURSUED))) {
             boolean withinReach = repertoire.strikes().stream()
                     .anyMatch(strike -> encounter.distance() <= strike.reach());
             if (withinReach) {
-                return Decision.of(Action.STRIKE, "退避受阻或追兵近身，施放防守反击");
+                return Decision.of(Action.STRIKE, "退避受阻或追兵近身，施放防守反击")
+                        .withMovement(Decision.Movement.RETREAT);
             }
         }
         if (encounter.has(Circumstance.RETREAT_BLOCKED)) {

@@ -1,8 +1,12 @@
 # 类人大脑：决策节奏、敌意记忆、威胁评估、来袭应对与学卷表。数值均为初版可调值。
-# 已有文件不会被新默认值覆盖；config_version 不符时加载失败，请删除旧文件或按新默认值合并。
-config_version = 1
+# 已有文件不会被新默认值覆盖；旧版本缺少并行节时使用兼容默认值。
+config_version = 2
 decision_interval_ticks = 10   # 每个实体按 ID 错相，每隔这么多 tick 决策一次
 log_decisions = false          # true 时每次决策写一行日志（动作与理由）
+
+[concurrency]
+hold_range_probability = 0.5   # 接敌准备时保持跃步带的概率，剩余情况直接接近
+allow_recovery_movement = true # 调息时允许沿撤退路线继续移动
 
 [threat]
 memory_seconds = 30            # 攻击过我或同伴者保持为敌人的秒数

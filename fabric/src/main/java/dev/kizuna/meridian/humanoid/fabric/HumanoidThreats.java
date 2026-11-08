@@ -152,6 +152,14 @@ final class HumanoidThreats {
         return close >= SURROUNDED_COUNT;
     }
 
+    static boolean pursued(Mob mob, LivingEntity threat) {
+        // 双方速度都朝向撤退者时视为追击，撤退通道允许在仍有命中窗口时反击。
+        var towardMob = mob.position().subtract(threat.position());
+        return towardMob.lengthSqr() > 0
+                && threat.getDeltaMovement().dot(towardMob) > 0
+                && mob.getDeltaMovement().dot(towardMob) > 0;
+    }
+
     static int enemyCount(Mob mob, LivingEntity selected) {
         // 主动腿法只在当前威胁集合中只有选定目标时启用；远处可见敌人也计入。
         double radius = HumanoidBrain.config().threat().forgetDistance();

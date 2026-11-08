@@ -29,9 +29,18 @@ public record Repertoire(List<Strike> strikes, List<Support> supports, Timing ti
     /** 辅助式的持物要求。 */
     public enum Requirement { MELEE_WEAPON }
 
-    /** 轻身剩余、自己下一击剩余、走出来袭范围所需毫秒，以及跃步追击的最小距离。 */
+    /**
+     * 轻身剩余、自己下一击剩余、走出来袭范围所需毫秒、跃步追击的最小距离。
+     * 承接窗口表示当前施放中还能否继续选择打击式。
+     */
     public record Timing(long lightBodyRemainingMillis, long ownNextHitMillis, long exitMillis,
-                         double leapMinimumDistance) { }
+                         double leapMinimumDistance, boolean followUpAvailable) {
+        public Timing(long lightBodyRemainingMillis, long ownNextHitMillis, long exitMillis,
+                      double leapMinimumDistance) {
+            // 旧的纯战术构造器默认没有承接窗口，正式读出会显式填充窗口事实。
+            this(lightBodyRemainingMillis, ownNextHitMillis, exitMillis, leapMinimumDistance, false);
+        }
+    }
 
     public Repertoire {
         // 候选列表只读。

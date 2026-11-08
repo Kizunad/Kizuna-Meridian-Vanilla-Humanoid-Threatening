@@ -1,6 +1,5 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import com.google.protobuf.Any;
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
@@ -13,6 +12,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.MovementAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueActivityCommit;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostRequest;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostResponse;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
@@ -167,17 +167,33 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
                 .isPresent();
     }
 
+    static boolean castingCloseStrike(LivingEntity entity) {
+        // 近战打击的首击依赖施放前的距离，起手后停止导航但继续面向当前目标。
+        return activeDefinition(entity).map(HumanoidTechniqueHost::hasCloseStrike).orElse(false);
+    }
+
+    private static Optional<TechniqueDefinition> activeDefinition(LivingEntity entity) {
+        // 只从已发布进度读取当前式，不结清身体时间或创建新会话。
+        return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
+                .flatMap(progress -> TechniqueFabric.service().registry()
+                        .find(progress.getActiveCast().getRequest().getTechnique()));
+    }
+
+    private static boolean hasCloseStrike(TechniqueDefinition definition) {
+        // 腿法与武器打击都需要首击时保持距离；行矢另由 castingWayfarer 处理。
+        return definition.getEffectsList().stream()
+                .anyMatch(effect -> effect.hasLegStrike() || effect.hasWeaponStrike());
+    }
+
     private static Optional<TechniqueProgress> publishedProgress(LivingEntity entity) {
-        // 已发布会话快照里的功法进度；没有会话或没有进度时为空。
+        // 已发布会话快照里的功法进度；没有会话时为空。
+        // 类型和时间由 Framework 统一校验。
         Session session = sessions.get(entity.getUUID());
         if (session == null) {
             return Optional.empty();
         }
-        Any payload = session.body().snapshot().getAddonProgressMap().get(TechniqueState.KEY);
-        if (payload == null || !payload.is(TechniqueProgress.class)) {
-            return Optional.empty();
-        }
-        return Optional.of(TechniqueState.decode(payload.getValue().toByteArray()));
+        BodySnapshot body = BodyProtobuf.fromMessage(session.body().snapshot());
+        return Optional.of(TechniqueState.read(body));
     }
 
     static boolean hasSession(LivingEntity entity) {
