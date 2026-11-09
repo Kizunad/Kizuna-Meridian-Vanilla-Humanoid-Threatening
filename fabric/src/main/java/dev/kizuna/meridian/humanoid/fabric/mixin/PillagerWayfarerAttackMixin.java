@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBrain;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.illager.Pillager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,7 +15,8 @@ public abstract class PillagerWayfarerAttackMixin {
     @Inject(method = "performRangedAttack", at = @At("HEAD"), cancellable = true)
     private void meridian$blockVanillaShot(LivingEntity target, float power, CallbackInfo callback) {
         // 已上弦原版弩不能在功法期间另射一发，原有上弦组件因此保持不变。
-        if (HumanoidBrain.blocksRanged((Pillager) (Object) this)) {
+        Pillager pillager = (Pillager) (Object) this;
+        if (HumanoidBrain.blocksRanged(pillager) || HumanoidCharmController.protects(pillager, target)) {
             callback.cancel();
         }
     }

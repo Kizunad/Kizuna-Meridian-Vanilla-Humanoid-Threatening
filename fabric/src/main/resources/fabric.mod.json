@@ -9,6 +9,8 @@
   "environment": "*",
   "entrypoints": {
     "main": ["dev.kizuna.meridian.humanoid.fabric.HumanoidFabric"],
+    "meridian_brewing_charm_controller": ["dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController"],
+    "meridian_player_control_driver": ["dev.kizuna.meridian.humanoid.fabric.HumanoidPlayerDriver"],
     "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"],
     "meridian_activity_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidActivityHost"],
     "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"]
@@ -22,6 +24,7 @@
     "kizuna_players_animation_mobs": "*",
     "meridian_framework": "*",
     "meridian_human_host": "*",
+    "meridian_brewing": "*",
     "meridian_technique": "*",
     "meridian_door_breaker": "*",
     "meridian_peddler": "*",

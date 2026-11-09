@@ -41,3 +41,8 @@ kizunaWorkspace.includeSource('human', [
         server: 'dev.kizuna.meridian.human:server',
         shared: 'dev.kizuna.meridian.human:shared'
 ])
+kizunaWorkspace.includeSource('brewing', [
+        fabric: 'dev.kizuna.meridian.brewing:fabric',
+        server: 'dev.kizuna.meridian.brewing:server',
+        shared: 'dev.kizuna.meridian.brewing:shared'
+])

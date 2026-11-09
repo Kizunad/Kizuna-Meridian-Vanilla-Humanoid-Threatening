@@ -274,7 +274,12 @@ public final class HumanoidBodyState {
 
     BodyMessages.BodySnapshot snapshot() {
         // Store 只返回已提交快照；不存在身体属于内部一致性错误。
-        return BodyProtobuf.toMessage(store.find(new BodyId(bodyId)).orElseThrow());
+        return BodyProtobuf.toMessage(currentBody());
+    }
+
+    BodySnapshot currentBody() {
+        // 同宿主的只读属性投影直接使用已提交的不可变快照，避免逐 tick 编解码完整协议。
+        return store.find(new BodyId(bodyId)).orElseThrow();
     }
 
     BodyMessages.BodySnapshot debugQi(DebugQi debugQi, BodyMessages.TimeCursor now) {

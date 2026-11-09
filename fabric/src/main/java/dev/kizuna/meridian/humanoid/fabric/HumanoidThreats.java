@@ -139,6 +139,9 @@ final class HumanoidThreats {
 
     static boolean hittable(LivingEntity actor, LivingEntity target) {
         // 打击不伤同伴，除非对方正是我的敌人。
+        if (HumanoidCharmController.controlled(actor)) {
+            return target != actor && !HumanoidCharmController.protects(actor, target);
+        }
         return !allied(actor, target) || enemy(actor, target);
     }
 

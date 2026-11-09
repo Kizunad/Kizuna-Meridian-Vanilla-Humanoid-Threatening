@@ -7,6 +7,7 @@ description = '原版生人经脉身体的 Fabric 健康宿主。'
 repositories {
     maven { url = 'https://maven.fabricmc.net/' }
     mavenCentral()
+    flatDir { dirs new File(kizunaWorkspace.directory('pathfinding'), 'core/build/libs') }
 }
 
 dependencies {
@@ -20,6 +21,11 @@ dependencies {
     compileOnly('dev.kizuna.meridian.human:fabric') { transitive = false }
 
     implementation project(':server')
+    implementation 'dev.kizuna.meridian.brewing:fabric'
+    implementation 'dev.kizuna.meridian.brewing:server'
+    implementation 'dev.kizuna.meridian.brewing:shared'
+    // 寻路核心是无 Minecraft 依赖的 Java 17 库；26.2 不装入其 1.20.1 Fabric 适配器。
+    include implementation('dev.kizuna.navigation:kizuna-pathfinding-framework-core:0.1.0-SNAPSHOT')
     include project(':server')
     include implementation('local.meridian:server')
     // 身体变体生成直接调用 Qi-Variants 的纯 Java 库；它没有自己的模组 JAR，安装 JAR 由本模组嵌套。

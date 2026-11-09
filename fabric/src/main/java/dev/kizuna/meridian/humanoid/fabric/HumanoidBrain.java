@@ -91,6 +91,9 @@ public final class HumanoidBrain {
             return;
         }
         HumanoidMind mind = minds.computeIfAbsent(mob.getUUID(), ignored -> new HumanoidMind());
+        if (HumanoidCharmController.controlled(mob) && HumanoidCharmController.mortal(mob)) {
+            return;
+        }
         HumanoidGoalAdapter.install(mob, mind, goals, targets);
         if (checkCastPlan(mob, mind)) {
             return;
@@ -110,7 +113,12 @@ public final class HumanoidBrain {
 
     private static void decide(Mob mob, HumanoidMind mind) {
         // 先找威胁再读身体；无威胁路径只查已有会话的恢复式，不创建新身体快照。
-        Optional<LivingEntity> threat = HumanoidThreats.nearest(mob, config.threat(), mind.opponent());
+        Optional<LivingEntity> threat;
+        if (HumanoidCharmController.controlled(mob)) {
+            threat = Optional.ofNullable(HumanoidCharmController.opponent(mob));
+        } else {
+            threat = HumanoidThreats.nearest(mob, config.threat(), mind.opponent());
+        }
         if (threat.isEmpty()) {
             idle(mob, mind);
             return;
@@ -474,6 +482,9 @@ public final class HumanoidBrain {
 
     static boolean directing(Mob mob) {
         // 大脑给了非原版指令，或施放中仍有对手要盯。
+        if (HumanoidCharmController.controlled(mob) && HumanoidCharmController.opponent(mob) == null) {
+            return true;
+        }
         HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null || !managed(mob)) {
             return false;
@@ -484,6 +495,9 @@ public final class HumanoidBrain {
 
     static void move(Mob mob, HumanoidMotion.Speeds speeds) {
         // 施放打击时面向对手缓行；其余执行当前指令。
+        if (HumanoidCharmController.follow(mob)) {
+            return;
+        }
         HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null) {
             return;
@@ -524,6 +538,9 @@ public final class HumanoidBrain {
 
     public static boolean blocksMelee(Mob mob) {
         // 施放中不叠原版近战；撤退只有实际逃离时屏蔽攻击，无路自卫交还原版后允许出手。
+        if (HumanoidRestrictions.locked(mob)) {
+            return true;
+        }
         HumanoidMind mind = minds.get(mob.getUUID());
         if (mind == null) {
             return HumanoidTechniqueHost.isCasting(mob);
@@ -535,7 +552,7 @@ public final class HumanoidBrain {
 
     public static boolean blocksRanged(Mob mob) {
         // 原版弓弩拉弦和射击不能与行矢效果重复；结束、打断和卸载后自然恢复。
-        return HumanoidTechniqueHost.castingWayfarer(mob);
+        return HumanoidRestrictions.locked(mob) || HumanoidTechniqueHost.castingWayfarer(mob);
     }
 
     static List<HumanoidMind.Logged> decisions(UUID entity) {
@@ -552,6 +569,16 @@ public final class HumanoidBrain {
         // 实体离开世界后不残留大脑状态。
         minds.remove(entity);
         observed.remove(entity);
+    }
+
+    static void releaseControl(UUID entity) {
+        // 切换指挥来源时撤旧目标和倒排计划，保留已经安装的 Goal，避免重复安装。
+        HumanoidMind mind = minds.get(entity);
+        if (mind != null) {
+            mind.disengage();
+            mind.clearCastPlan();
+            mind.release();
+        }
     }
 
     static void clear() {

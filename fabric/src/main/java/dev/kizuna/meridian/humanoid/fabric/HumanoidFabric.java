@@ -64,6 +64,8 @@ public final class HumanoidFabric implements ModInitializer {
         config = HumanoidConfigLoader.load(configDirectory.resolve("meridian-humanoid.toml"));
         var brainConfig = HumanoidBrainConfigLoader.load(configDirectory.resolve("meridian-humanoid-brain.toml"));
         HumanoidBrain.configure(brainConfig);
+        HumanoidCharmController.initialize();
+        HumanoidRestrictions.initialize();
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
         TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
         content = installContent();
