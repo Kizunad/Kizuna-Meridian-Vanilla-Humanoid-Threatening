@@ -34,7 +34,8 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
         DOOR_BREAKER_ONLY("door_breaker_only"),
         VILLAGER_WITHOUT_VOLUMES("villager_without_volumes"),
         PILLAGER_WITHOUT_VOLUMES("pillager_without_volumes"),
-        PILLAGER_BASIC_VOLUMES("pillager_basic_volumes");
+        PILLAGER_BASIC_VOLUMES("pillager_basic_volumes"),
+        WAYFARER_SHOOTING_WINDOW("wayfarer_shooting_window");
 
         private final String path;
         private final MapCodec<VolumesEnvironment> codec;
@@ -49,6 +50,7 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
         void install() {
             // 破门旧用例只发破门卷；撤退与原版射击用例清空对应物种的学卷表。
             switch (this) {
+                case WAYFARER_SHOOTING_WINDOW -> HumanoidBrainTestConfigs.holdRangeDuringPreparation();
                 case DOOR_BREAKER_ONLY -> HumanoidBrainTestConfigs.doorBreakerOnly();
                 case VILLAGER_WITHOUT_VOLUMES ->
                         HumanoidBrainTestConfigs.withVolumes(HumanoidSpecies.VILLAGER.entityId(), List.of());

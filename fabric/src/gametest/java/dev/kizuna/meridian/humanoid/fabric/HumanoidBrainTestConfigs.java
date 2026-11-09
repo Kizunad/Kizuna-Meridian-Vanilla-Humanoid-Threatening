@@ -50,6 +50,15 @@ final class HumanoidBrainTestConfigs {
         previous = null;
     }
 
+    static void holdRangeDuringPreparation() {
+        // 发箭回归固定准备式的距离窗口，防止随机跟随走入八米内而永久失去连弩候选。
+        HumanoidBrainConfig current = HumanoidBrain.config();
+        previous = current;
+        var concurrency = new HumanoidBrainConfig.ConcurrencyRules(1, current.concurrency().allowRecoveryMovement());
+        HumanoidBrain.configure(new HumanoidBrainConfig(current.schedule(), current.threat(), current.assessment(),
+                current.response(), current.volumes(), concurrency));
+    }
+
     private static VolumeTable doorBreakerVolumes(VolumeTable table) {
         // 物种与档位不变，只过滤每档的卷。
         var species = new HashMap<String, Map<HumanoidTier, List<VolumeTable.Grant>>>();

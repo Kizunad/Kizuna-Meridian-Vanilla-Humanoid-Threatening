@@ -9,6 +9,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidActivityGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCharmGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidWitchBrewGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidSpawnGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidBrainGameTest",

@@ -32,6 +32,7 @@ import static dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerTestSupport.*;
 public final class HumanoidWayfarerNaturalAiGameTest {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_test");
     private static final String LEGACY_ENVIRONMENT = "meridian_humanoid_test:pillager_basic_volumes";
+    private static final String SHOOTING_ENVIRONMENT = "meridian_humanoid_test:wayfarer_shooting_window";
     private static final int OBSERVATION_TICKS = 600;
     private static final int TIMEOUT = OBSERVATION_TICKS + 20;
     private static final double TARGET_DISTANCE = 12;
@@ -45,13 +46,13 @@ public final class HumanoidWayfarerNaturalAiGameTest {
 
     private enum Shooting { WAYFARER, VANILLA, VANILLA_AFTER_WAYFARER }
 
-    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE)
+    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE, environment = SHOOTING_ENVIRONMENT)
     public void wanderingPillagerNaturallyCastsAndShoots(GameTestHelper context) {
         // 游炁默认只学弩卷，必须由自然决策产生真实行矢箭。
         observe(context, HumanoidTier.WANDERING_QI, Shooting.WAYFARER);
     }
 
-    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE)
+    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE, environment = SHOOTING_ENVIRONMENT)
     public void trueQiPillagerNaturallyCastsAndShoots(GameTestHelper context) {
         // 真炁默认可换备用弓；依然要求真实 AI 完整走到行矢发箭。
         observe(context, HumanoidTier.TRUE_QI, Shooting.WAYFARER);
@@ -63,7 +64,7 @@ public final class HumanoidWayfarerNaturalAiGameTest {
         observe(context, HumanoidTier.TRUE_QI, Shooting.VANILLA);
     }
 
-    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE)
+    @GameTest(maxTicks = TIMEOUT, structure = STRUCTURE, environment = SHOOTING_ENVIRONMENT)
     public void completedWayfarerCastReleasesVanillaCrossbowGoal(GameTestHelper context) {
         // 自然连弩完整结束后，将目标移入没有弩式候选的距离，原版 Goal 必须恢复上弦与发箭。
         observe(context, HumanoidTier.WANDERING_QI, Shooting.VANILLA_AFTER_WAYFARER);
