@@ -10,6 +10,7 @@
   "entrypoints": {
     "main": ["dev.kizuna.meridian.humanoid.fabric.HumanoidFabric"],
     "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"],
+    "meridian_activity_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidActivityHost"],
     "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"]
   },
   "mixins": ["meridian_humanoid.mixins.json"],

@@ -36,6 +36,7 @@ public final class HumanoidBodyState {
     private final String bodyId;
     private final String regionSource;
     private long targetMillis;
+    private String trustedActivityCaller;
 
     private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
                                String regionSource, long initialTargetMillis, HumanoidSpecies species) {
@@ -48,6 +49,10 @@ public final class HumanoidBodyState {
         var installedContent = HumanoidFabric.content();
         commands = new BodyCommandHandler<>(
                 (caller, command) -> {
+                    if (caller.equals(trustedActivityCaller)
+                            && command.hasExecuteActivity() && command.getBodyId().equals(bodyId)) {
+                        return Optional.of(caller);
+                    }
                     if (caller.equals(TechniqueHost.CALLER_ID)
                             && command.hasExecuteActivity() && command.getBodyId().equals(bodyId)) {
                         return Optional.of(caller);
@@ -224,6 +229,20 @@ public final class HumanoidBodyState {
                 .setExecuteActivity(request.getActivity())
                 .build();
         return recoveryResponse(request.getRequestId(), command);
+    }
+
+    MeridianMessages.ResponseEnvelope applyAddonActivity(String callerId, MeridianMessages.RequestEnvelope request) {
+        // 身体已由健康路由推进时钟；保留请求版本，仅在本次调用范围授权附属来源。
+        if (trustedActivityCaller != null) {
+            throw new HumanoidHealthFailure(MeridianMessages.FailureCode.ACCESS_DENIED);
+        }
+        trustedActivityCaller = callerId;
+        try {
+            byte[] payload = MeridianProtocol.encodeRequest(request);
+            return MeridianProtocol.decodeResponse(commands.handleActivity(callerId, payload));
+        } finally {
+            trustedActivityCaller = null;
+        }
     }
 
     long submitRecovery(String requestId, MeridianMessages.BodyCommand command) {
