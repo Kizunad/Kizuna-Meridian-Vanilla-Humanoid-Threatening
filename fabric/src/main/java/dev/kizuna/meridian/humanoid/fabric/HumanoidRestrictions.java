@@ -65,6 +65,7 @@ public final class HumanoidRestrictions {
 
     public static boolean blocksDrinking(LivingEntity entity) {
         // 女巫的内置自喝不走 startUsingItem，因此显式以药水语义检查。
-        return blocksUse(entity, new ItemStack(Items.POTION));
+        return HumanoidWitchHands.occupied(entity) || HumanoidTechniqueHost.hasActiveCast(entity)
+                || blocksUse(entity, new ItemStack(Items.POTION));
     }
 }

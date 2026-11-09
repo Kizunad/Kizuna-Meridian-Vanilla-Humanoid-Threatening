@@ -25,6 +25,7 @@
     "meridian_framework": "*",
     "meridian_human_host": "*",
     "meridian_brewing": "*",
+    "meridian_witch": "*",
     "meridian_technique": "*",
     "meridian_door_breaker": "*",
     "meridian_peddler": "*",

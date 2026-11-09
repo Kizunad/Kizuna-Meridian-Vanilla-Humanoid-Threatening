@@ -50,6 +50,7 @@ import net.minecraft.world.phys.Vec3;
 public final class HumanoidCharmGameTest {
     private static final int TIMEOUT = 200;
     private static final int ACTION_TICKS = 45;
+    private static final int HIT_WINDOW_TICKS = 100;
     private static final int FOLLOW_TICKS = 30;
     private static final int LOCK_TICKS = 8;
     private static final int TEMPO_TICKS = 20;
@@ -80,22 +81,32 @@ public final class HumanoidCharmGameTest {
         context.assertTrue(subject.getTarget() == target, "修炼者没有改打施药者目标");
         context.assertTrue(!subject.doHurtTarget(context.getLevel(), caster), "受控者伤到了施药者");
         subject.setNoAi(false /* noAi */);
-        context.runAfterDelay(ACTION_TICKS, () -> {
-            var body = BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(subject).body().snapshot());
-            var progress = TechniqueState.read(body);
-            boolean used = progress.hasActiveCast()
-                    || progress.getCooldownsMap().keySet().stream()
-                    .anyMatch(id -> id.startsWith("meridian_door_breaker:"));
-            context.assertTrue(used, "受控修炼者没有实际施放自己的功法：" + HumanoidBrain.decisions(subject.getUUID()));
-            context.assertTrue(target.getHealth() < TARGET_HP, "受控功法没有伤到新目标");
-            caster.setTarget(null);
-            target.discard();
-            double distance = subject.distanceTo(caster);
-            context.runAfterDelay(FOLLOW_TICKS, () -> {
-                context.assertTrue(subject.distanceTo(caster) < distance, "无目标时没有跟随施药者");
-                cleanup(subject, caster);
-                context.succeed();
-            });
+        awaitControlledHit(context, subject, caster, target, 0);
+    }
+
+    private static void awaitControlledHit(GameTestHelper context, Vindicator subject, Witch caster, Mob target,
+                                           int elapsed) {
+        // 大脑在已学打击式里按权重挑式，最慢的合门要 2.3 s 才出手；逐 tick 等到打中或超出最慢式的窗口。
+        if (target.getHealth() >= TARGET_HP && elapsed < HIT_WINDOW_TICKS) {
+            context.runAfterDelay(1, () -> awaitControlledHit(context, subject, caster, target, elapsed + 1));
+            return;
+        }
+        var body = BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(subject).body().snapshot());
+        var progress = TechniqueState.read(body);
+        boolean used = progress.hasActiveCast()
+                || progress.getCooldownsMap().keySet().stream()
+                .anyMatch(id -> id.startsWith("meridian_door_breaker:"));
+        context.assertTrue(used, "受控修炼者没有实际施放自己的功法：" + HumanoidBrain.decisions(subject.getUUID()));
+        context.assertTrue(target.getHealth() < TARGET_HP, "受控功法没有伤到新目标：active=" + progress.hasActiveCast()
+                + " cooldowns=" + progress.getCooldownsMap().keySet()
+                + " decisions=" + HumanoidBrain.decisions(subject.getUUID()));
+        caster.setTarget(null);
+        target.discard();
+        double distance = subject.distanceTo(caster);
+        context.runAfterDelay(FOLLOW_TICKS, () -> {
+            context.assertTrue(subject.distanceTo(caster) < distance, "无目标时没有跟随施药者");
+            cleanup(subject, caster);
+            context.succeed();
         });
     }
 
@@ -306,7 +317,14 @@ public final class HumanoidCharmGameTest {
         mob.setPersistenceRequired();
         HumanoidSpeciesBirths.birth(mob, tier);
         context.getLevel().addFreshEntity(mob);
+        alignDecisionPhase(mob);
         return mob;
+    }
+
+    private static void alignDecisionPhase(Mob mob) {
+        // 测试夹具固定下一次大脑决策相位，实体 ID 不改变受控功法观察窗口。
+        int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
+        mob.tickCount = Math.floorMod(-mob.getId() - 1, interval);
     }
 
     private static Mob target(GameTestHelper context) {

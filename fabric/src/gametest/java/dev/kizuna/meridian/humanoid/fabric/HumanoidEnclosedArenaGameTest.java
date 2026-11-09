@@ -123,7 +123,14 @@ public final class HumanoidEnclosedArenaGameTest {
         HumanoidSpeciesBirths.birth(mob, tier);
         context.assertTrue(context.getLevel().addFreshEntity(mob), "竞技场实体未加入世界：" + name);
         HumanoidTechniqueHost.prepare(mob);
+        alignDecisionPhase(mob);
         return mob;
+    }
+
+    private static void alignDecisionPhase(Mob mob) {
+        // 测试夹具固定下一次大脑决策相位，实体 ID 不影响观察窗口内的真实行为。
+        int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
+        mob.tickCount = Math.floorMod(-mob.getId() - 1, interval);
     }
 
     private static double health(Mob mob) {

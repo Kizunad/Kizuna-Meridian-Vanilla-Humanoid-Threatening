@@ -119,11 +119,14 @@ true_qi = [
 
 [volumes."minecraft:witch"]
 wandering_qi = [
+  { volume = "meridian_witch:guard", chance = 1.0 },
   { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
 ]
 true_qi = [
+  { volume = "meridian_witch:guard", chance = 1.0 },
+  { volume = "meridian_witch:seed", chance = 1.0 },
   { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },

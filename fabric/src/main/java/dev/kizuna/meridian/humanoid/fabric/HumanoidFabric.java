@@ -66,6 +66,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidBrain.configure(brainConfig);
         HumanoidCharmController.initialize();
         HumanoidRestrictions.initialize();
+        HumanoidWitchAi.initialize(configDirectory);
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
         TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
         content = installContent();

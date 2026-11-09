@@ -147,7 +147,8 @@ public final class HumanoidBodyGenerator {
         HumanoidVariant variant = request.variant();
         BodyMessages.BodyStructure original = template.getStructure();
         HumanoidConfig.SpeciesProfile profile = config.profile(request.species());
-        Set<String> opened = openedMeridians(original, variant, profile, random, opening);
+        Set<String> sampled = openedMeridians(original, variant, profile, random, opening);
+        Set<String> opened = witchMeridians(request.species(), variant, original, sampled, opening);
         String mainAttribute = variants.sample(request.region().eligibleShares(variants),
                         variant.maximumAttributeTier(), random)
                 .orElse(NONE_ATTRIBUTE);
@@ -314,6 +315,33 @@ public final class HumanoidBodyGenerator {
                 .setCondition(MeridianCondition.INTACT)
                 .setOpening(opening)
                 .build();
+    }
+
+    private static Set<String> witchMeridians(HumanoidSpecies species, HumanoidVariant variant,
+                                              BodyMessages.BodyStructure structure, Set<String> sampled,
+                                              Opening opening) {
+        // 女巫按经脉标签保证手足开脉；凡人使用 NONE 开脉模式，不补经脉。
+        if (species != HumanoidSpecies.WITCH || opening == Opening.NONE) {
+            return sampled;
+        }
+        var opened = new HashSet<>(sampled);
+        ensureMeridian(opened, structure, "human:hand_meridian");
+        if (variant == HumanoidVariant.WANDERING_QI) {
+            ensureMeridian(opened, structure, "human:foot_meridian");
+        }
+        return Set.copyOf(opened);
+    }
+
+    private static void ensureMeridian(Set<String> opened, BodyMessages.BodyStructure structure, String tag) {
+        // 缺该标签才从内容定义补一条，不新增随机抽样，其他物种的出生序列保持稳定。
+        var definitions = structure.getMeridiansList().stream()
+                .filter(meridian -> meridian.getTagsList().contains(tag)).toList();
+        if (definitions.stream().map(BodyMessages.MeridianDefinition::getId).anyMatch(opened::contains)) {
+            return;
+        }
+        if (!definitions.isEmpty()) {
+            opened.add(definitions.getFirst().getId());
+        }
     }
 
     private Set<String> openedMeridians(BodyMessages.BodyStructure structure, HumanoidVariant variant,

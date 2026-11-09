@@ -2,6 +2,8 @@
 def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
 def reproClasses = [
         full: ['HumanoidGameTest', 'HumanoidActivityGameTest', 'HumanoidCharmGameTest', 'HumanoidWitchBrewGameTest',
+               'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
+               'HumanoidWitchVanillaGameTest',
                'HumanoidTechniqueGameTest',
                'HumanoidBrainGameTest', 'HumanoidSpawnGameTest',
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',

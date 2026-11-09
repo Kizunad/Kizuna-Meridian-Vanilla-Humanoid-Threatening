@@ -32,7 +32,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final int CUSTOM_INTERVAL = 7;
     private static final double DEFAULT_SAFE_DISTANCE = 12;
     private static final double LOWER_CHANCE = 0.1;
-    private static final int DEFAULT_VOLUME_COUNT = 12;
+    private static final int DEFAULT_VOLUME_COUNT = 14;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
     private static final int POPULATION = 2000;
     private static final double RATE_TOLERANCE = 0.03;

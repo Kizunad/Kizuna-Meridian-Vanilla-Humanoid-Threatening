@@ -3,6 +3,7 @@ package dev.kizuna.meridian.humanoid.server;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlTable;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -10,6 +11,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 
 /** 类人大脑 TOML 读取器：字段白名单逐层检查，范围非法或缺物种时在加载时拒绝。 */
 public final class HumanoidBrainConfigLoader {
@@ -17,6 +21,7 @@ public final class HumanoidBrainConfigLoader {
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
+    private static final Logger LOGGER = System.getLogger("meridian_humanoid_brain_config");
 
     private HumanoidBrainConfigLoader() {
         // 配置加载器不持有服务器实例或可变配置。
@@ -29,7 +34,32 @@ public final class HumanoidBrainConfigLoader {
 
     public static HumanoidBrainConfig load(Path path) {
         // 首次加载导出默认文件；已有文件只读取，不覆盖运营方调整。
-        return parse(TOML.readOrExport(path, DEFAULT_RESOURCE));
+        boolean existing = path != null && Files.exists(path);
+        HumanoidBrainConfig loaded = parse(TOML.readOrExport(path, DEFAULT_RESOURCE));
+        if (existing) {
+            logMissingDefaultVolumes(path, loaded.volumes());
+        }
+        return loaded;
+    }
+
+    private static void logMissingDefaultVolumes(Path path, VolumeTable configured) {
+        // 只提示默认表中新出现且运营文件缺少的卷，不自动修改已有文件。
+        VolumeTable defaults = defaults().volumes();
+        for (var species : defaults.species().entrySet()) {
+            var configuredTiers = configured.species().getOrDefault(species.getKey(), Map.of());
+            for (var tier : species.getValue().entrySet()) {
+                var configuredGrants = configuredTiers.getOrDefault(tier.getKey(), List.of());
+                Set<String> configuredVolumes = configuredGrants.stream()
+                        .map(VolumeTable.Grant::volume).collect(Collectors.toSet());
+                List<String> missing = tier.getValue().stream().map(VolumeTable.Grant::volume)
+                        .filter(volume -> !configuredVolumes.contains(volume)).distinct().toList();
+                if (!missing.isEmpty()) {
+                    LOGGER.log(Level.WARNING, "学卷配置 " + path + " 缺少物种 " + species.getKey() + " 档位 "
+                            + tier.getKey().id() + " 的默认卷 " + missing
+                            + "；请将这些卷条目补入对应数组，程序不会自动修改文件");
+                }
+            }
+        }
     }
 
     public static HumanoidBrainConfig parse(String text) {

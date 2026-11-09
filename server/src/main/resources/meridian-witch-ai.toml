@@ -1,0 +1,51 @@
+# 女巫行药诀 AI：所有距离、阈值和声音参数集中在此文件。
+
+[quality]
+wandering = 1
+true_qi = 2
+
+[healing]
+anoint_hp_ratio = 0.6
+imbibe_hp_ratio = 0.7
+ally_hp_ratio = 0.6
+
+[range]
+enemy_radius = 8
+ally_radius = 14
+ally_enemy_clearance = 3.5
+throw_min_distance = 4
+throw_max_distance = 14
+fan_distance = 3.5
+trigger_distance = 16
+
+[charm]
+residue_trigger_dose = 0.6
+close_distance = 2
+crowd_radius = 5
+crowd_count = 2
+brain_ceiling = 400
+direct_cooldown_ticks = 160
+
+[environment]
+running_speed_per_tick = 0.08
+dark_light_ceiling = 7
+insect_radius = 8
+heavy_armor_defense = 5
+
+[aim]
+head_height = 0.9
+torso_height = 0.65
+legs_height = 0.25
+
+[sound]
+celebrate_delay_ticks = 10
+volume = 1
+pitch = 1
+
+[vanilla]
+short_distance = 2
+short_speed = 0.45
+long_speed = 0.75
+scatter = 8
+lob_height = 0.2
+target_eye_offset = 1.1

@@ -38,6 +38,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Witch;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.phys.Vec3;
 
@@ -112,7 +113,11 @@ public final class HumanoidBrain {
     }
 
     private static void decide(Mob mob, HumanoidMind mind) {
-        // 先找威胁再读身体；无威胁路径只查已有会话的恢复式，不创建新身体快照。
+        // 女巫先处理行药诀；其他生物再找威胁，无威胁路径只查已有会话的恢复式。
+        if (mob instanceof Witch witch && HumanoidWitchAi.decide(witch)) {
+            mind.release();
+            return;
+        }
         Optional<LivingEntity> threat;
         if (HumanoidCharmController.controlled(mob)) {
             threat = Optional.ofNullable(HumanoidCharmController.opponent(mob));
@@ -552,7 +557,8 @@ public final class HumanoidBrain {
 
     public static boolean blocksRanged(Mob mob) {
         // 原版弓弩拉弦和射击不能与行矢效果重复；结束、打断和卸载后自然恢复。
-        return HumanoidRestrictions.locked(mob) || HumanoidTechniqueHost.castingWayfarer(mob);
+        return HumanoidRestrictions.locked(mob) || HumanoidTechniqueHost.castingWayfarer(mob)
+                || mob instanceof Witch && HumanoidTechniqueHost.hasActiveCast(mob);
     }
 
     static List<HumanoidMind.Logged> decisions(UUID entity) {

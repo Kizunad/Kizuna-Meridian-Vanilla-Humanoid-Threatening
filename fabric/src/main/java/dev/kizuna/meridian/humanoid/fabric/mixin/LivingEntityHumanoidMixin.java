@@ -2,6 +2,8 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidWitchHands;
+import net.minecraft.world.damagesource.DamageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,6 +39,24 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private boolean meridian$loadFailed;
     @Unique private boolean meridian$loadFailureLogged;
     @Unique private boolean meridian$releaseQueued;
+
+    @Inject(method = "die", at = @At("HEAD"))
+    private void meridian$restoreWitchHand(DamageSource source, CallbackInfo callback) {
+        // 掉落计算前恢复原物，临时巫药不能替代原主手掉落。
+        HumanoidWitchHands.restore((LivingEntity) (Object) this);
+    }
+
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    private void meridian$saveWitchHand(ValueOutput output, CallbackInfo callback) {
+        // 区块写盘先于卸载事件，显式保留正在借用的原主手。
+        HumanoidWitchHands.save((LivingEntity) (Object) this, output);
+    }
+
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    private void meridian$loadWitchHand(ValueInput input, CallbackInfo callback) {
+        // 原版装备读取后覆盖临时药瓶，旧施放由功法宿主恢复。
+        HumanoidWitchHands.load((LivingEntity) (Object) this, input);
+    }
 
     @Override
     public HumanoidBodyState meridian$humanoidBody() {
