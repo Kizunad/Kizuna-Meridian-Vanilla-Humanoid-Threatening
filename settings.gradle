@@ -34,6 +34,12 @@ kizunaWorkspace.includeSource('vanilla-damage', [
         server: 'dev.kizuna.meridian.vanilla:server'
 ])
 kizunaWorkspace.includeSource('players-animation-mobs', ['': 'dev.kizuna:kizuna-players-animation-mobs-addon'])
+// 组合的炼药客户端按真实坐标依赖 bs3d client，而经 Human 嵌套的 Progression 只登记 bs3d server；
+// 同一仓库只按最先登记的规则替换，嵌套构建在 includeBuild 时即登记，所以 bs3d 要在 Human 之前组合并列出两个模块。
+kizunaWorkspace.includeSource('bs3d', [
+        client: 'dev.kizuna.backpack3d:client',
+        server: 'dev.kizuna.backpack3d:server'
+])
 // 规则代码只用 Human 公开的 server/shared 库；类人身体快照登记到 Human 公开的 /meridian body status 视图，
 // 所以 Human 的 Fabric 模块也以源码组合，仅在编译期可见，运行时由完整装配按清单装入。
 kizunaWorkspace.includeSource('human', [
