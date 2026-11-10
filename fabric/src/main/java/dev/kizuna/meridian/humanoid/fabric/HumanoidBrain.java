@@ -99,17 +99,26 @@ public final class HumanoidBrain {
         if (checkCastPlan(mob, mind)) {
             return;
         }
-        int interval = config.schedule().decisionIntervalTicks();
-        if (((TechniqueLeapAccess) mob).meridian$getLeap() != null
-                || Math.floorMod((long) mob.tickCount + mob.getId(), interval) != 0) {
+        if (((TechniqueLeapAccess) mob).meridian$getLeap() != null || !decisionDue(mob, mind)) {
             return;
         }
+        mind.clearStaggerWait();
         try {
             decide(mob, mind);
         } catch (RuntimeException failure) {
             mind.release();
             HumanoidFabric.report(mob, failure);
         }
+    }
+
+    private static boolean decisionDue(Mob mob, HumanoidMind mind) {
+        // 按 ID 错相每个间隔决策一次；选中的式因僵直没发出去时，僵直一结束就补一次。
+        // 原版近战约一秒一击、每击僵直将近一秒，固定节拍会一直落在僵直里。
+        int interval = config.schedule().decisionIntervalTicks();
+        if (Math.floorMod((long) mob.tickCount + mob.getId(), interval) == 0) {
+            return true;
+        }
+        return mind.awaitingStaggerEnd() && TechniqueFabric.service().staggerRemainingMillis(mob.getUUID()) == 0;
     }
 
     private static void decide(Mob mob, HumanoidMind mind) {
@@ -379,7 +388,8 @@ public final class HumanoidBrain {
 
     private static Set<Encounter.Circumstance> combatCircumstances(Mob mob, HumanoidMind mind,
                                                                   HumanoidAssessment.Stance stance, Fighter self) {
-        // 受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角。
+        // 原版攻击者受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角；
+        // 学会防守腿法的一开始就要退到安全距离，短距离来回拉开不算有退路；腿力不够出腿也一样。
         var result = circumstances(mob);
         if (stance != HumanoidAssessment.Stance.RETREAT) {
             return result;
@@ -390,7 +400,8 @@ public final class HumanoidBrain {
         }
         if (mob.onGround()) {
             double safeDistance = 0;
-            if (mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
+            if (self.has(Fighter.Means.KNOWN_DEFENSE)
+                    || mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
                 safeDistance = config.response().tactics().safeDistance();
             }
             mind.planRetreat(HumanoidMotion.retreatPoint(mob, opponent, mind.directive(), safeDistance));

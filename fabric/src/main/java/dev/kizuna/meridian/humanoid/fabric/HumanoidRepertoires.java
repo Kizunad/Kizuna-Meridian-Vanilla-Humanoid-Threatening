@@ -132,11 +132,20 @@ final class HumanoidRepertoires {
     }
 
     private static Set<Means> means(Source source, List<Ready> ready) {
-        // 会一个绑定、费用与持物都通过的打击式即算可施放，冷却中也算；有当前施放另记，不限速的式也算。
+        // 会一个绑定、费用与持物都通过的打击式即算可施放，冷却中也算；防守腿法学会即另记一项，
+        // 可施放还要腿力过门槛，前后方处境不看；有当前施放另记，不限速的式也算。
         var means = EnumSet.noneOf(Means.class);
         if (ready.stream().anyMatch(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED
                 && firstStrike(entry.definition()).isPresent())) {
             means.add(Means.CASTABLE_STRIKE);
+        }
+        if (source.progress().getKnownList().stream()
+                .anyMatch(known -> PEDDLER_DEFENSES.contains(known.getTechnique().getId()))) {
+            means.add(Means.KNOWN_DEFENSE);
+        }
+        if (HumanoidFighters.legForceNewtons(source.body()) >= PEDDLER_MINIMUM_LEG_FORCE && ready.stream()
+                .anyMatch(entry -> PEDDLER_DEFENSES.contains(entry.known().getTechnique().getId()))) {
+            means.add(Means.CASTABLE_DEFENSE);
         }
         if (source.progress().hasActiveCast()) {
             means.add(Means.CASTING);

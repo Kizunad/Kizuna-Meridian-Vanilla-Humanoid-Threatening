@@ -81,6 +81,7 @@ final class HumanoidActions {
             case FOLLOW -> follow(turn, decision);
             case HOLD_RANGE -> holdRange(turn);
             case STAY -> turn.mind().direct(HumanoidMotion.Directive.STAYING);
+            case FACE -> turn.mind().direct(HumanoidMotion.Directive.FACING);
             case RETREAT -> retreat(turn);
             case ASSAULT -> assault(turn);
             case KITE -> kite(turn);
@@ -217,10 +218,11 @@ final class HumanoidActions {
     }
 
     private static boolean cast(Turn turn, String technique, Decision.Movement movement) {
-        // 僵直中不发请求；有对手时以它为目标，并把移动通道转换为 INPUT 水平向量。
+        // 僵直中不发请求，记下等僵直结束补决策；有对手时以它为目标，并把移动通道转换为 INPUT 水平向量。
         Mob mob = turn.mob();
         var service = TechniqueFabric.service();
         if (service.staggerRemainingMillis(mob.getUUID()) > 0) {
+            turn.mind().castBlockedByStagger();
             return false;
         }
         HorizontalDirection direction = direction(turn, movement);

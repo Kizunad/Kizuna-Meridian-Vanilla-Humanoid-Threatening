@@ -23,8 +23,8 @@ final class HumanoidMotion {
     private static final double ARRIVED_DISTANCE = 1;
     private static final double SUPPORT_PROBE_DEPTH = 0.1;
 
-    /** 指令里的移动方式：交还原版、跟随对手、保持距离带、走到某点、原地不动。 */
-    enum Movement { VANILLA, FOLLOW, HOLD_RANGE, MOVE_TO, STAY }
+    /** 指令里的移动方式：交还原版、跟随对手、保持距离带、走到某点、原地不动、原地转身面向对手。 */
+    enum Movement { VANILLA, FOLLOW, HOLD_RANGE, MOVE_TO, STAY, FACE }
 
     /** 导航快慢：接近与逃离，各接入方式给出自己的倍率。 */
     enum Pace { APPROACH, FLEE }
@@ -46,6 +46,8 @@ final class HumanoidMotion {
         static final Directive FOLLOWING = new Directive(Movement.FOLLOW, Optional.empty(), Pace.APPROACH,
                 Optional.empty());
         static final Directive STAYING = new Directive(Movement.STAY, Optional.empty(), Pace.APPROACH,
+                Optional.empty());
+        static final Directive FACING = new Directive(Movement.FACE, Optional.empty(), Pace.APPROACH,
                 Optional.empty());
 
         static Directive moveTo(Vec3 destination, Pace pace) {
@@ -99,6 +101,11 @@ final class HumanoidMotion {
                 }
             }
             case STAY -> mob.getNavigation().stop();
+            case FACE -> {
+                // 视线控制只转头；身前、身后和打击扇区按身体朝向算，站着不走时要自己把身体转过去。
+                mob.getNavigation().stop();
+                opponent.ifPresent(target -> mob.lookAt(target, LOOK_YAW_SPEED, LOOK_PITCH_SPEED));
+            }
             case VANILLA -> {
                 // 原版控制自己移动。
             }

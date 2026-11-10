@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import org.tomlj.Toml;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlTable;
 
@@ -20,6 +21,8 @@ public final class HumanoidBrainConfigLoader {
     public static final String DEFAULT_RESOURCE = "/meridian-humanoid-brain.toml";
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
+    private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
+    private static final String VOLUMES = "volumes";
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
     private static final Logger LOGGER = System.getLogger("meridian_humanoid_brain_config");
 
@@ -35,11 +38,32 @@ public final class HumanoidBrainConfigLoader {
     public static HumanoidBrainConfig load(Path path) {
         // 首次加载导出默认文件；已有文件只读取，不覆盖运营方调整。
         boolean existing = path != null && Files.exists(path);
-        HumanoidBrainConfig loaded = parse(TOML.readOrExport(path, DEFAULT_RESOURCE));
+        String text = TOML.readOrExport(path, DEFAULT_RESOURCE);
+        HumanoidBrainConfig loaded = parse(text);
         if (existing) {
+            logMissingDefaultKeys(path, missingDefaultKeys(text));
             logMissingDefaultVolumes(path, loaded.volumes());
         }
         return loaded;
+    }
+
+    static List<String> missingDefaultKeys(String text) {
+        // 默认资源里有、给定文本里缺的键；能加载的文本只会缺可省键。学卷表按卷单独比较。
+        TomlTable configured = TOML.parse(text);
+        return TOML.parse(TOML.resource(DEFAULT_RESOURCE)).keyPathSet().stream()
+                .filter(keyPath -> !keyPath.getFirst().equals(VOLUMES))
+                .filter(keyPath -> !configured.contains(keyPath))
+                .map(Toml::joinKeyPath)
+                .sorted()
+                .toList();
+    }
+
+    private static void logMissingDefaultKeys(Path path, List<String> missing) {
+        // 旧导出文件不会自动补新键，启动时提示一次，缺的键按 JAR 默认值运行。
+        if (!missing.isEmpty()) {
+            LOGGER.log(Level.WARNING, "类人大脑配置 " + path + " 缺少默认键 " + missing
+                    + "；这些键按默认值运行，请照默认文件补入，程序不会自动修改文件");
+        }
     }
 
     private static void logMissingDefaultVolumes(Path path, VolumeTable configured) {
@@ -66,7 +90,7 @@ public final class HumanoidBrainConfigLoader {
         // 版本只向前兼容一个小版本；旧配置缺少并行节时使用稳定默认策略。
         var parsed = TOML.parse(text);
         TOML.checkKeys(parsed, Set.of("config_version", "decision_interval_ticks", "log_decisions", "threat",
-                "assessment", "response", "volumes", "concurrency"), "");
+                "assessment", "response", VOLUMES, "concurrency"), "");
         int version = TOML.integer(parsed, "config_version", "config_version");
         if (version < MIN_SUPPORTED_CONFIG_VERSION || version > CURRENT_CONFIG_VERSION) {
             throw TOML.invalid("config_version 必须位于 " + MIN_SUPPORTED_CONFIG_VERSION + "～"
@@ -77,7 +101,7 @@ public final class HumanoidBrainConfigLoader {
         var threat = threat(TOML.table(parsed, "threat", "threat"));
         var assessment = assessment(TOML.table(parsed, "assessment", "assessment"), threat.safeDistance());
         var response = response(TOML.table(parsed, "response", "response"), threat.safeDistance());
-        var volumes = volumes(TOML.table(parsed, "volumes", "volumes"));
+        var volumes = volumes(TOML.table(parsed, VOLUMES, VOLUMES));
         var concurrency = concurrency(parsed);
         return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes, concurrency);
     }
@@ -137,19 +161,29 @@ public final class HumanoidBrainConfigLoader {
     }
 
     private static HumanoidBrainConfig.ResponseRules response(TomlTable table, double safeDistance) {
-        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次。
+        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次，站定距离为正。
         TOML.checkKeys(table, Set.of("reaction_window_millis", "interrupt_margin_millis", "absorb_own_hit_millis",
                 "absorb_dose_ratio", "dodge_margin_millis", "assault_stand_off", "failure_limit",
-                "failure_block_millis"), "response.");
+                "failure_block_millis", CORNERED_STAND_DISTANCE), "response.");
         var reaction = new TacticRules.Reaction(millis(table, "reaction_window_millis"),
                 millis(table, "interrupt_margin_millis"),
                 millis(table, "absorb_own_hit_millis"),
                 ratio(table, "absorb_dose_ratio", "response"),
                 millis(table, "dodge_margin_millis"));
-        return new HumanoidBrainConfig.ResponseRules(new TacticRules(reaction, safeDistance),
+        var tactics = new TacticRules(reaction, safeDistance, corneredStandDistance(table));
+        return new HumanoidBrainConfig.ResponseRules(tactics,
                 positive(table, "assault_stand_off", "response"),
                 TOML.integer(table, "failure_limit", "response.failure_limit"),
                 millis(table, "failure_block_millis"));
+    }
+
+    private static double corneredStandDistance(TomlTable table) {
+        // 这个键在旧导出文件里没有：缺失时读 JAR 默认资源的同名键，load 启动时另行提示。
+        TomlTable source = table;
+        if (!table.contains(CORNERED_STAND_DISTANCE)) {
+            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "response", "response");
+        }
+        return positive(source, CORNERED_STAND_DISTANCE, "response");
     }
 
     private static VolumeTable volumes(TomlTable table) {

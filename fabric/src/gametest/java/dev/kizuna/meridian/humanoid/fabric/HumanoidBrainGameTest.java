@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.humanoid.server.Decision;
+import dev.kizuna.meridian.humanoid.server.Encounter;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
@@ -46,6 +47,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -78,7 +80,6 @@ public final class HumanoidBrainGameTest {
     private static final String CHARGE = BASIC_PREFIX + "charge";
     private static final String LIGHT_STEP = BASIC_PREFIX + "light_step";
     private static final String BREATH = BASIC_PREFIX + "breath";
-    private static final String KNOCK = DOOR_BREAKER_PREFIX + "knock";
     private static final BlockPos SUBJECT_POS = new BlockPos(2, 0, 2);
     private static final BlockPos NEAR_POS = new BlockPos(2, 0, 4);
     private static final BlockPos MIDDLE_POS = new BlockPos(2, 0, 7);
@@ -141,7 +142,8 @@ public final class HumanoidBrainGameTest {
     @GameTest(maxTicks = LONG_TIMEOUT,
             environment = ARMED_VILLAGER_BATCH)
     public void trueQiVillagerWithUpperVolumeEngagesAndKnocks(GameTestHelper context) {
-        // 学了破门上卷、持斧的真炁村民对游炁卫道士对敌，施放叩门并打伤对方。
+        // 学了破门上卷、持斧的真炁村民对游炁卫道士对敌，用上卷的式打伤对方。上卷叩门、撞门、劈门按权重抽，
+        // 先抽到撞门再抽到劈门时，一记劈中头就能在叩门出现前打死卫道士，所以不限定叩门，打死也算打伤。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, "armed", SUBJECT_POS);
         villager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
@@ -153,8 +155,9 @@ public final class HumanoidBrainGameTest {
         hunter.setTarget(villager);
         double hp = partHpRatio(hunter);
         var watch = new Watch(villager);
-        arena.await(ENGAGE_TICKS, () -> watch.observe().cast(KNOCK) && partHpRatio(hunter) < hp,
-                () -> "村民没有对敌叩门伤到卫道士：" + watch + " / " + decisions(villager), () -> {
+        arena.await(ENGAGE_TICKS, () -> watch.observe().castAny(DOOR_BREAKER_PREFIX) && hurt(hunter, hp),
+                () -> "村民没有用破门上卷伤到卫道士：" + watch + " 卫道士 " + condition(hunter) + " / "
+                        + decisions(villager), () -> {
                     context.assertTrue(watch.saw(Decision.Action.STRIKE) || watch.saw(Decision.Action.INTERRUPT),
                             "村民没有对敌出手：" + watch);
                     arena.finish();
@@ -309,8 +312,11 @@ public final class HumanoidBrainGameTest {
     }
 
     private static boolean duelOver(List<Watch> watches) {
-        // 每 tick 记录双方，任一方倒下即结束。
-        watches.forEach(Watch::observe);
+        // 每 tick 记录双方，并记下各自有没有被对方来袭罩住；任一方倒下即结束。
+        for (Watch watch : watches) {
+            watch.observe();
+            watches.stream().filter(other -> other != watch).forEach(other -> watch.observeCover(other.mob()));
+        }
         return watches.stream().anyMatch(watch -> !watch.mob().isAlive());
     }
 
@@ -331,8 +337,9 @@ public final class HumanoidBrainGameTest {
     }
 
     private static void assertDuel(GameTestHelper context, List<Watch> watches) {
-        // 至少一方被破门打击式打中过；双方都起手过打击式时各自应对过来袭；双方都蓄过力，同一式连续失败不到三次。
-        // 整场撤退是评估结果：撤退方一直拉开，来袭罩不到它，不要求应对；双方都撤时可以谁也不起手、谁也没打中。
+        // 至少一方被破门打击式打中过；真被来袭罩住过的一方应对过；双方都蓄过力，同一式连续失败不到三次。
+        // 速胜局里胜方可能还没被罩到就打倒了对手，撤退方一直拉开也罩不到，这两种都不要求应对；
+        // 双方都撤时可以谁也不起手、谁也没打中。
         // 两只卫道士是原版同伴，互为目标才打得到，命中断言守住「同伴但正是我的敌人」交给宿主判定。
         boolean struck = watches.stream().anyMatch(watch -> watch.castAny(DOOR_BREAKER_PREFIX));
         boolean hit = watches.stream().anyMatch(Watch::struckByTechnique);
@@ -340,20 +347,13 @@ public final class HumanoidBrainGameTest {
         context.assertTrue(struck || bothRetreated, "双方都没有起手打击式，也不是都在撤退：" + watches);
         context.assertTrue(hit || bothRetreated, "双方都没有被打击式打中过，也不是都在撤退：" + watches);
         for (Watch watch : watches) {
-            if (watch.castAny(DOOR_BREAKER_PREFIX) && opponentStruck(watch, watches)) {
+            if (watch.covered()) {
                 String duel = watches + " / " + decisions(watch.mob());
-                context.assertTrue(watch.sawAny(RESPONSES), "双方交过手，这一方却没有打断、躲或硬抗：" + duel);
+                context.assertTrue(watch.sawAny(RESPONSES), "这一方被来袭罩住过，却没有打断、躲或硬抗：" + duel);
             }
             context.assertTrue(watch.cast(CHARGE), "一方开打前没有蓄力：" + watch);
             context.assertTrue(watch.failureStreak() < FAILURE_STREAK_LIMIT, "同一式连续失败三次以上：" + watch);
         }
-    }
-
-    private static boolean opponentStruck(Watch watch, List<Watch> watches) {
-        // 另一方施放过破门目录的打击式。
-        return watches.stream()
-                .filter(other -> other != watch)
-                .anyMatch(other -> other.castAny(DOOR_BREAKER_PREFIX));
     }
 
     private static boolean lastActionIs(Mob mob, Decision.Action action) {
@@ -375,6 +375,19 @@ public final class HumanoidBrainGameTest {
         // 原版大脑重新跑任务，或已有日常走路目标。
         var brain = villager.getBrain();
         return !brain.getRunningBehaviors().isEmpty() || brain.hasMemoryValue(MemoryModuleType.WALK_TARGET);
+    }
+
+    private static boolean hurt(Mob mob, double initialHpRatio) {
+        // 倒下或权威身体完好率比开始时低；倒下后不再读身体。
+        return !mob.isAlive() || partHpRatio(mob) < initialHpRatio;
+    }
+
+    private static String condition(Mob mob) {
+        // 失败信息里列出存活与完好率，区分没打中和打完了。
+        if (!mob.isAlive()) {
+            return "已倒下";
+        }
+        return String.format(Locale.ROOT, "存活，完好率 %.3f", partHpRatio(mob));
     }
 
     private static double partHpRatio(Mob mob) {
@@ -611,7 +624,7 @@ public final class HumanoidBrainGameTest {
         }
     }
 
-    /** 逐 tick 记下一只实体出现过的式、决策动作、跃步、被打击式打中、虚脱后的拉开与失败连击。 */
+    /** 逐 tick 记下一只实体出现过的式、决策动作、跃步、被打击式打中、被来袭罩住、虚脱后的拉开与失败连击。 */
     private static final class Watch {
         private final Mob mob;
         private final double exhaustedRatio;
@@ -623,6 +636,8 @@ public final class HumanoidBrainGameTest {
         private boolean struckByTechnique;
         private boolean kitedAfterExhaustion;
         private int failureStreak;
+        private int coveredRun;
+        private boolean covered;
 
         private Watch(Mob mob) {
             // 不关心虚脱的用例把门槛设为零。
@@ -667,6 +682,31 @@ public final class HumanoidBrainGameTest {
                 }
             }
             return this;
+        }
+
+        void observeCover(Mob opponent) {
+            // 对手下一击在反应窗口内罩住我，且连续超过一个决策间隔，大脑必有一次决策看到它；估计和大脑应对用的是同一份。
+            // 跃步飞行中大脑不决策，这段不计。
+            var body = ((HumanoidEntityAccess) mob).meridian$humanoidBody();
+            if (body == null || !mob.isAlive() || ((TechniqueLeapAccess) mob).meridian$getLeap() != null) {
+                coveredRun = 0;
+                return;
+            }
+            var observed = new HumanoidOpponent(opponent, TechniqueFabric.service().observe(opponent.getUUID()));
+            long window = HumanoidBrain.config().response().tactics().reaction().windowMillis();
+            boolean coveredNow = HumanoidStrikeEstimates.incoming(mob, BodyProtobuf.fromMessage(body.snapshot()),
+                            observed)
+                    .filter(incoming -> incoming.has(Encounter.Incoming.Trait.COVERS)
+                            && incoming.millisUntilHit() <= window)
+                    .isPresent();
+            if (!coveredNow) {
+                coveredRun = 0;
+                return;
+            }
+            coveredRun++;
+            if (coveredRun > HumanoidBrain.config().schedule().decisionIntervalTicks()) {
+                covered = true;
+            }
         }
 
         private void observeExhaustion(long now) {
@@ -734,12 +774,17 @@ public final class HumanoidBrainGameTest {
             return failureStreak;
         }
 
+        boolean covered() {
+            // 是否被对方来袭罩住过一个决策间隔以上。
+            return covered;
+        }
+
         @Override
         public String toString() {
             // 失败信息用的摘要。
             return mob.getStringUUID() + " alive=" + mob.isAlive() + " hp=" + mob.getHealth()
                     + " techniques=" + techniques + " actions=" + actions + " leaped=" + leaped
-                    + " struck=" + struckByTechnique
+                    + " struck=" + struckByTechnique + " covered=" + covered
                     + " exhaustedTick=" + exhaustedTick + " kited=" + kitedAfterExhaustion
                     + " failureStreak=" + failureStreak;
         }

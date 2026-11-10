@@ -246,18 +246,20 @@ public final class HumanoidEnclosedArenaGameTest {
         }
 
         private String describe(Mob mob) {
+            // 位置和寻路目标都减去结构原点的绝对坐标；GameTest 网格在远处，绝对坐标看着像跑去了远点。
+            BlockPos origin = context.absolutePos(BlockPos.ZERO);
             var navigation = mob.getNavigation();
             var path = navigation.getPath();
             String destination = "none";
             if (path != null) {
-                destination = path.getTarget() + "/reachable=" + path.canReach();
+                destination = path.getTarget().subtract(origin) + "/reachable=" + path.canReach();
             }
             var decisions = HumanoidBrain.decisions(mob.getUUID());
             String decision = "none";
             if (!decisions.isEmpty()) {
                 decision = decisions.getLast().decision().toString();
             }
-            Vec3 relative = mob.position().subtract(Vec3.atLowerCornerOf(context.absolutePos(BlockPos.ZERO)));
+            Vec3 relative = mob.position().subtract(Vec3.atLowerCornerOf(origin));
             var snapshot = ((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot();
             var body = BodyProtobuf.fromMessage(snapshot);
             return mob.getType() + " hp=" + health(mob) + " pos=" + relative

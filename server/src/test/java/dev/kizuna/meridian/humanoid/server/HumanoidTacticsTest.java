@@ -204,6 +204,42 @@ public class HumanoidTacticsTest {
     }
 
     @Test
+    public void corneredDefenderStepsInOrStandsInsteadOfBackingOff() {
+        // 会防守式却没退路：够得着就出手；够不着时远了迎上去，进了站定距离就站住转身；已在安全距离外不往回走。
+        // 退路还在时照旧走开。
+        var defender = new Fighter(1, FULL,
+                EnumSet.of(Means.CASTABLE_STRIKE, Means.KNOWN_DEFENSE, Means.CASTABLE_DEFENSE));
+        Set<Circumstance> blocked = Set.of(Circumstance.ON_GROUND, Circumstance.RETREAT_BLOCKED);
+        double stand = RULES.corneredStandDistance();
+        Decision strike = decide(new Encounter(defender, AXE, CLOSE, Optional.empty(), blocked), Stance.RETREAT,
+                strikes(KNOCK_STRIKE));
+        assertEquals(Action.STRIKE, strike.action());
+        var far = new Encounter(defender, AXE, MID, Optional.empty(), blocked);
+        var near = new Encounter(defender, AXE, stand, Optional.empty(), blocked);
+        var safe = new Encounter(defender, AXE, SAFE, Optional.empty(), blocked);
+        assertEquals(Action.APPROACH, decide(far, Stance.RETREAT, strikes()).action());
+        Decision standing = decide(near, Stance.RETREAT, strikes());
+        assertEquals(Action.HOLD, standing.action());
+        assertEquals(Decision.Movement.FACE, standing.movement());
+        Decision away = decide(safe, Stance.RETREAT, strikes());
+        assertEquals(Action.HOLD, away.action());
+        assertEquals(Decision.Movement.KEEP, away.movement());
+        assertEquals(Action.RETREAT, decide(calm(defender, MID), Stance.RETREAT, strikes()).action());
+    }
+
+    @Test
+    public void corneredDefenderBelowLegGateFacesInsteadOfKiting() {
+        // 学会防守腿法但腿力没过门槛：没退路时轻身在身也不跃步拉开，原地转身等着；退路还在时照旧跃步。
+        var tired = new Fighter(1, FULL, EnumSet.of(Means.KNOWN_DEFENSE));
+        Set<Circumstance> blocked = Set.of(Circumstance.ON_GROUND, Circumstance.RETREAT_BLOCKED);
+        var cornered = new Encounter(tired, AXE, MID, Optional.empty(), blocked);
+        Decision waiting = decide(cornered, Stance.RETREAT, supports(LIGHT_BODY));
+        assertEquals(Action.HOLD, waiting.action());
+        assertEquals(Decision.Movement.FACE, waiting.movement());
+        assertEquals(Action.KITE, decide(calm(tired, MID), Stance.RETREAT, supports(LIGHT_BODY)).action());
+    }
+
+    @Test
     public void unreachableExitCannotBecomeInstantDodgeThroughOverflow() {
         // 无出口用最大时长表示，不能因加躲避余量溢出而被判成瞬间可达。
         var incoming = new Incoming(INCOMING_HIT, 0, HEAVY_DOSE, Set.of(Incoming.Trait.COVERS));

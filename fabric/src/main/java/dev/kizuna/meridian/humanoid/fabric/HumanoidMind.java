@@ -23,6 +23,7 @@ final class HumanoidMind {
     private boolean adapted;
     private Optional<Vec3> retreatPoint = Optional.empty();
     private boolean cornered;
+    private boolean awaitingStaggerEnd;
 
     Optional<Vec3> retreatPoint() {
         return retreatPoint;
@@ -36,6 +37,20 @@ final class HumanoidMind {
 
     boolean cornered() {
         return cornered;
+    }
+
+    void castBlockedByStagger() {
+        // 选中的式因僵直没发出去；僵直一结束补一次决策，不白等下一个节拍。
+        awaitingStaggerEnd = true;
+    }
+
+    boolean awaitingStaggerEnd() {
+        return awaitingStaggerEnd;
+    }
+
+    void clearStaggerWait() {
+        // 每次决策都重新判断；这次还被僵直挡住时由施放入口再登记。
+        awaitingStaggerEnd = false;
     }
 
     /** 一条决策记录：世界 tick、当时的对手与决策。 */

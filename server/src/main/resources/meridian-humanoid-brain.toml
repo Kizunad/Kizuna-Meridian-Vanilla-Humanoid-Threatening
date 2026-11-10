@@ -1,5 +1,5 @@
 # 类人大脑：决策节奏、敌意记忆、威胁评估、来袭应对与学卷表。数值均为初版可调值。
-# 已有文件不会被新默认值覆盖；旧版本缺少并行节时使用兼容默认值。
+# 已有文件不会被新默认值覆盖；旧版本缺少并行节或后加的键时按默认值运行，启动日志会列出缺的键。
 config_version = 2
 decision_interval_ticks = 10   # 每个实体按 ID 错相，每隔这么多 tick 决策一次
 log_decisions = false          # true 时每次决策写一行日志（动作与理由）
@@ -12,7 +12,7 @@ allow_recovery_movement = true # 调息时允许沿撤退路线继续移动
 memory_seconds = 30            # 攻击过我或同伴者保持为敌人的秒数
 ally_radius = 16               # 同伴受击时一起敌对攻击者的半径（格）
 forget_distance = 32           # 敌人远于此且看不见即放下（格）
-safe_distance = 12             # 撤退要拉开到的距离（格）
+safe_distance = 12             # 撤退要拉开到的距离（格）；会防守腿法的生物找不到能退到这么远的可达路线就算没退路
 
 [assessment]
 # 战力 = 境界档 × realm + 会可施放打击式 × strike + 持武器 × armed
@@ -39,6 +39,7 @@ dodge_margin_millis = 100      # 走出范围要比命中早出这么多才躲
 assault_stand_off = 1.5        # 突击落点在目标身前的距离（格）
 failure_limit = 2              # 同一式连续施放失败这么多次后暂停尝试
 failure_block_millis = 5000    # 暂停时长；冷却更长时以冷却为准
+cornered_stand_distance = 2.0  # 会防守腿法却没退路时，对手远于此就迎上去，进了此距离就站定等它进招（格）
 
 # 学卷表：每个物种按出生档位（mortal 凡人、wandering_qi 游炁、true_qi 真炁）写明学哪几卷与概率；
 # 档位每档写全，不从低档继承；未写的档不学卷，默认各物种都不写 mortal，凡人一卷不学。

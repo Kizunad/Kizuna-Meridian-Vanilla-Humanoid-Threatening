@@ -9,9 +9,9 @@ public record Decision(Action action, Optional<String> technique, Movement movem
         HOLD, INTERRUPT, DODGE, ABSORB, ASSAULT, KITE, PREPARE, RECOVER, STRIKE, APPROACH, RETREAT, RELEASE
     }
 
-    /** 技法与移动同时决定时使用的移动通道；KEEP 表示保留上一个移动计划。 */
+    /** 技法与移动同时决定时使用的移动通道；KEEP 表示保留上一个移动计划，FACE 表示原地转身面向对手。 */
     public enum Movement {
-        KEEP, VANILLA, FOLLOW, HOLD_RANGE, STAY, RETREAT, ASSAULT, KITE, DODGE
+        KEEP, VANILLA, FOLLOW, HOLD_RANGE, STAY, FACE, RETREAT, ASSAULT, KITE, DODGE
     }
 
     public Decision {

@@ -31,6 +31,9 @@ public class HumanoidBrainConfigLoaderTest {
     private static final int DEFAULT_INTERVAL = 10;
     private static final int CUSTOM_INTERVAL = 7;
     private static final double DEFAULT_SAFE_DISTANCE = 12;
+    private static final double DEFAULT_STAND_DISTANCE = 2;
+    private static final double CUSTOM_STAND_DISTANCE = 3;
+    private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
     private static final double LOWER_CHANCE = 0.1;
     private static final int DEFAULT_VOLUME_COUNT = 14;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
@@ -49,6 +52,7 @@ public class HumanoidBrainConfigLoaderTest {
         assertEquals(HumanoidBrainConfig.DecisionLog.QUIET, config.schedule().log());
         assertEquals(DEFAULT_SAFE_DISTANCE, config.response().tactics().safeDistance(), TOLERANCE);
         assertEquals(DEFAULT_SAFE_DISTANCE, config.assessment().recovery().distance(), TOLERANCE);
+        assertEquals(DEFAULT_STAND_DISTANCE, config.response().tactics().corneredStandDistance(), TOLERANCE);
         assertEquals(0.5, config.concurrency().holdRangeProbability(), TOLERANCE);
         assertTrue(config.concurrency().allowRecoveryMovement());
         assertEquals(DEFAULT_VOLUME_COUNT, config.volumes().allVolumes().size());
@@ -72,6 +76,19 @@ public class HumanoidBrainConfigLoaderTest {
         HumanoidBrainConfig config = HumanoidBrainConfigLoader.parse(legacy);
         assertEquals(0.5, config.concurrency().holdRangeProbability(), TOLERANCE);
         assertTrue(config.concurrency().allowRecoveryMovement());
+    }
+
+    @Test
+    public void oldFileWithoutStandDistanceRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有站定距离：按默认值运行，并列入启动提示的缺键清单；写了就用写的值，默认文件不缺键。
+        String old = replace(STAND_DISTANCE_LINE, "");
+        var tactics = HumanoidBrainConfigLoader.parse(old).response().tactics();
+        assertEquals(DEFAULT_STAND_DISTANCE, tactics.corneredStandDistance(), TOLERANCE);
+        assertEquals(List.of("response.cornered_stand_distance"), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        assertEquals(List.of(), HumanoidBrainConfigLoader.missingDefaultKeys(DEFAULT_TEXT));
+        String custom = replace(STAND_DISTANCE_LINE, "cornered_stand_distance = " + CUSTOM_STAND_DISTANCE);
+        var customTactics = HumanoidBrainConfigLoader.parse(custom).response().tactics();
+        assertEquals(CUSTOM_STAND_DISTANCE, customTactics.corneredStandDistance(), TOLERANCE);
     }
 
     @Test
@@ -155,7 +172,7 @@ public class HumanoidBrainConfigLoaderTest {
 
     @Test
     public void invalidConfigsAreRejected() {
-        // 版本、未知字段、缺物种、概率越界、无命名空间卷、未知档位、负权重和零失败次数都在加载时拒绝。
+        // 版本、未知字段、缺物种、概率越界、无命名空间卷、未知档位、负权重、零失败次数和零站定距离都在加载时拒绝。
         var invalid = Map.of(
                 "版本", replace("config_version = 2", "config_version = 3"),
                 "顶层未知字段", replace("log_decisions = false", "log_decisions = false\nunknown = 1"),
@@ -166,7 +183,8 @@ public class HumanoidBrainConfigLoaderTest {
                 "无命名空间卷", replace(LOWER, "lower"),
                 "未知档位", replace("[volumes.\"minecraft:witch\"]", "[volumes.\"minecraft:witch\"]\ngolden_core = []"),
                 "负权重", replace("qi_weight = 0.25", "qi_weight = -0.25"),
-                "零失败次数", replace("failure_limit = 2", "failure_limit = 0"));
+                "零失败次数", replace("failure_limit = 2", "failure_limit = 0"),
+                "零站定距离", replace(STAND_DISTANCE_LINE, "cornered_stand_distance = 0"));
         invalid.forEach((label, text) -> {
             var failure = assertThrows(label, IllegalArgumentException.class,
                     () -> HumanoidBrainConfigLoader.parse(text));
