@@ -24,6 +24,8 @@ public class HumanoidBrainConfigLoaderTest {
     private static final String VINDICATOR = "minecraft:vindicator";
     private static final String WANDERING_TRADER = "minecraft:wandering_trader";
     private static final String LOWER = "meridian_door_breaker:lower";
+    private static final String EVOKER = "minecraft:evoker";
+    private static final String NOURISH = "meridian_evoker:nourish";
     private static final String BREATH = "meridian_basic_techniques:breath_volume";
     private static final String ROAD = "meridian_peddler:road";
     private static final String AMBUSH = "meridian_peddler:ambush";
@@ -35,7 +37,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double CUSTOM_STAND_DISTANCE = 3;
     private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
     private static final double LOWER_CHANCE = 0.1;
-    private static final int DEFAULT_VOLUME_COUNT = 14;
+    private static final int DEFAULT_VOLUME_COUNT = 15;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
     private static final int POPULATION = 2000;
     private static final double RATE_TOLERANCE = 0.03;
@@ -59,6 +61,10 @@ public class HumanoidBrainConfigLoaderTest {
         var trueQi = config.volumes().species().get(VINDICATOR).get(HumanoidTier.TRUE_QI);
         assertEquals(TRUE_QI_VINDICATOR_VOLUMES, trueQi.size());
         assertTrue(trueQi.contains(new VolumeTable.Grant(LOWER, LOWER_CHANCE)));
+        // 唤魔者两档都学五脏诀《养》，卷轴掉落按「死者会这一卷」判定。
+        for (HumanoidTier tier : List.of(HumanoidTier.WANDERING_QI, HumanoidTier.TRUE_QI)) {
+            assertTrue(config.volumes().species().get(EVOKER).get(tier).contains(new VolumeTable.Grant(NOURISH, 1)));
+        }
         for (HumanoidSpecies species : HumanoidSpecies.values()) {
             assertTrue(config.volumes().species().containsKey(species.entityId()));
         }
