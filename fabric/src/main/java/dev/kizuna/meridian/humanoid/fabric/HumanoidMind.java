@@ -24,6 +24,8 @@ final class HumanoidMind {
     private Optional<Vec3> retreatPoint = Optional.empty();
     private boolean cornered;
     private boolean awaitingStaggerEnd;
+    private boolean pathed;
+    private int pathedTick;
 
     Optional<Vec3> retreatPoint() {
         return retreatPoint;
@@ -37,6 +39,17 @@ final class HumanoidMind {
 
     boolean cornered() {
         return cornered;
+    }
+
+    void pathed(int tick) {
+        // 记下这次寻路发生在实体的第几个 tick。
+        pathed = true;
+        pathedTick = tick;
+    }
+
+    boolean pathedWithin(int tick, int ticks) {
+        // 距上次寻路还不到 ticks 个 tick；从没寻过路，或实体 tick 计数被重置过，都算不在间隔内。
+        return pathed && tick >= pathedTick && tick - pathedTick < ticks;
     }
 
     void castBlockedByStagger() {

@@ -11,11 +11,13 @@ import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
 import net.minecraft.world.phys.Vec3;
 
-/** 把大脑指令落到原版导航与朝向上；每 tick 由接入适配器调用，路径按固定节奏重算。 */
+/** 把大脑指令落到原版导航与朝向上；每 tick 由接入适配器调用，路径按固定节奏重算，上次寻路的时刻记在 HumanoidMind。 */
 final class HumanoidMotion {
     private static final float LOOK_YAW_SPEED = 30;
     private static final float LOOK_PITCH_SPEED = 30;
     private static final int PATH_REFRESH_TICKS = 10;
+    /** 导航空闲（贴身、已到、无路）时两次寻路之间至少隔这么多 tick；原版近战目标是 4 到 10 tick。 */
+    private static final int IDLE_REPATH_TICKS = 5;
     private static final int RETREAT_HORIZONTAL_RANGE = 16;
     private static final int RETREAT_VERTICAL_RANGE = 7;
     private static final int[] RETREAT_STEPS = {RETREAT_HORIZONTAL_RANGE, 8, 4, 2};
@@ -77,20 +79,22 @@ final class HumanoidMotion {
         // 纯执行，不保存指令。
     }
 
-    static void apply(Mob mob, Directive directive, Optional<LivingEntity> opponent, Speeds speeds) {
+    static void apply(Mob mob, HumanoidMind mind, Directive directive, Speeds speeds) {
         // 有对手时始终看着它；跟随与走点按节奏重算路径，原地时停下导航。
+        Optional<LivingEntity> opponent = mind.opponent();
         opponent.ifPresent(target -> mob.getLookControl().setLookAt(target, LOOK_YAW_SPEED, LOOK_PITCH_SPEED));
-        boolean refresh = mob.getNavigation().isDone() || mob.tickCount % PATH_REFRESH_TICKS == 0;
+        boolean refresh = pathDue(mob, mind);
         switch (directive.movement()) {
             case FOLLOW -> {
                 if (refresh && opponent.isPresent()) {
                     mob.getNavigation().moveTo(opponent.get(), speeds.of(directive.pace()));
+                    mind.pathed(mob.tickCount);
                 }
             }
             case HOLD_RANGE -> {
                 if (opponent.isPresent()) {
                     Range range = directive.range().orElseThrow();
-                    applyHoldRange(mob, opponent.get(), range, speeds);
+                    applyHoldRange(mob, mind, range, speeds);
                 }
             }
             case MOVE_TO -> {
@@ -98,6 +102,7 @@ final class HumanoidMotion {
                 if (refresh && mob.position().distanceToSqr(destination) > ARRIVED_DISTANCE * ARRIVED_DISTANCE) {
                     mob.getNavigation().moveTo(destination.x, destination.y, destination.z,
                             speeds.of(directive.pace()));
+                    mind.pathed(mob.tickCount);
                 }
             }
             case STAY -> mob.getNavigation().stop();
@@ -112,14 +117,24 @@ final class HumanoidMotion {
         }
     }
 
-    private static void applyHoldRange(Mob mob, LivingEntity opponent, Range range, Speeds speeds) {
+    private static boolean pathDue(Mob mob, HumanoidMind mind) {
+        // 固定节拍照旧重算；导航空闲时也重算，但离上次寻路太近就等一等。
+        // 贴身或无路时导航一直空闲，不加这个间隔就会每 tick 寻一次路。
+        if (mob.tickCount % PATH_REFRESH_TICKS == 0) {
+            return true;
+        }
+        return mob.getNavigation().isDone() && !mind.pathedWithin(mob.tickCount, IDLE_REPATH_TICKS);
+    }
+
+    private static void applyHoldRange(Mob mob, HumanoidMind mind, Range range, Speeds speeds) {
         // 太近时退到带外，太远时接近，处于带内停止导航保护后续跃步距离。
+        LivingEntity opponent = mind.opponent().orElseThrow();
         double distance = distance(mob, opponent);
         if (distance < range.minimum()) {
-            boolean refresh = mob.getNavigation().isDone() || mob.tickCount % PATH_REFRESH_TICKS == 0;
-            if (refresh) {
+            if (pathDue(mob, mind)) {
                 Vec3 destination = opponent.position().add(away(mob, opponent).scale(range.minimum()));
                 mob.getNavigation().moveTo(destination.x, destination.y, destination.z, speeds.flee());
+                mind.pathed(mob.tickCount);
             }
             return;
         }
@@ -127,9 +142,9 @@ final class HumanoidMotion {
             mob.getNavigation().stop();
             return;
         }
-        boolean refresh = mob.getNavigation().isDone() || mob.tickCount % PATH_REFRESH_TICKS == 0;
-        if (refresh) {
+        if (pathDue(mob, mind)) {
             mob.getNavigation().moveTo(opponent, speeds.approach());
+            mind.pathed(mob.tickCount);
         }
     }
 

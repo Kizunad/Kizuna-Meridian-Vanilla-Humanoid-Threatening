@@ -11,7 +11,6 @@ import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig.ConcurrencyRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTactics;
 import dev.kizuna.meridian.humanoid.server.Repertoire;
-import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeapAccess;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
@@ -193,7 +192,7 @@ public final class HumanoidBrain {
     }
 
     private static boolean checkCastPlan(Mob mob, HumanoidMind mind) {
-        // 倒排计划每 tick 校验目标与身体时间，命中失效条件立即清理。
+        // 倒排计划每 tick 校验目标与身体时间，命中失效条件立即清理；到点以后才结清并读身体。
         Optional<HumanoidMind.CastPlan> planned = mind.castPlan();
         if (planned.isEmpty()) {
             return false;
@@ -204,6 +203,9 @@ public final class HumanoidBrain {
                 mind.clearCastPlan();
                 return false;
             }
+            if (castPlanWaiting(mob, plan)) {
+                return true;
+            }
             BodySnapshot body = body(mob);
             return evaluateCastPlan(mob, mind, body, plan);
         } catch (RuntimeException failure) {
@@ -211,6 +213,17 @@ public final class HumanoidBrain {
             HumanoidFabric.report(mob, failure);
             return false;
         }
+    }
+
+    private static boolean castPlanWaiting(Mob mob, HumanoidMind.CastPlan plan) {
+        // 还没到点、也没过期时只比较身体时钟，不结清也不读身体；时钟答不出就照旧读身体。
+        // 这个时钟与结清后读到的 settled_at 是同一个数，所以到点的那个 tick 不变。
+        var clock = HumanoidTechniqueHost.clockMillis(mob);
+        if (clock.isEmpty()) {
+            return false;
+        }
+        long now = clock.getAsLong();
+        return now <= plan.expiresMillis() && now < plan.dueMillis();
     }
 
     private static boolean evaluateCastPlan(Mob mob, HumanoidMind mind, BodySnapshot body,
@@ -437,7 +450,7 @@ public final class HumanoidBrain {
 
     private static BodySnapshot body(Mob mob) {
         // 经可信宿主结清时间后的当前快照，学卷也在此补发。
-        return BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(mob).body().snapshot());
+        return HumanoidTechniqueHost.prepare(mob).body().currentBody();
     }
 
     private static Optional<TechniqueService.Observation> observe(LivingEntity entity) {
@@ -519,19 +532,19 @@ public final class HumanoidBrain {
             return;
         }
         if (HumanoidTechniqueHost.castingCloseStrike(mob)) {
-            HumanoidMotion.apply(mob, HumanoidMotion.Directive.STAYING, mind.opponent(), speeds);
+            HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;
         }
         if (HumanoidTechniqueHost.castingWayfarer(mob)) {
-            HumanoidMotion.apply(mob, HumanoidMotion.Directive.STAYING, mind.opponent(), speeds);
+            HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;
         }
         var directive = mind.directive();
         if (directive == HumanoidMotion.Directive.RELEASED) {
-            HumanoidMotion.apply(mob, HumanoidMotion.Directive.FOLLOWING, mind.opponent(), speeds);
+            HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.FOLLOWING, speeds);
             return;
         }
-        HumanoidMotion.apply(mob, directive, mind.opponent(), speeds);
+        HumanoidMotion.apply(mob, mind, directive, speeds);
     }
 
     static Optional<LivingEntity> opponent(Mob mob) {

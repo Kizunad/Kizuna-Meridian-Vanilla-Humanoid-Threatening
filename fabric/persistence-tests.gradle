@@ -9,8 +9,12 @@ def reproClasses = [
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
                'HumanoidPeddlerGameTest', 'HumanoidWayfarerGameTest', 'HumanoidWayfarerAiGameTest',
                'HumanoidWayfarerProjectileGameTest', 'HumanoidWayfarerDecisionGameTest',
-               'HumanoidWayfarerNaturalAiGameTest', 'HumanoidEnclosedArenaGameTest'],
+               'HumanoidWayfarerNaturalAiGameTest', 'HumanoidEnclosedArenaGameTest',
+               'HumanoidBodyCacheGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
+        cache: ['HumanoidBodyCacheGameTest'],
+        // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。
+        perf: ['HumanoidCrowdPerfGameTest'],
         normal: ['HumanoidAuditReproGameTest'],
         'bad-ledger': ['BadLedgerReproGameTest'],
         'release-before': ['ReleaseCrashBeforeGameTest'],

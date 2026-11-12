@@ -3,7 +3,6 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
-import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
@@ -16,15 +15,16 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefi
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostRequest;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostResponse;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
+import dev.kizuna.meridian.technique.server.TechniqueBodyStamp;
 import dev.kizuna.meridian.technique.server.TechniqueErrors;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueHostEntrypoint;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueRecoveryHost;
-import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.LivingEntity;
@@ -76,7 +76,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         Session session = prepare(entity);
         HumanoidBodyState body = session.body();
         if (request.hasInspect()) {
-            if (body.snapshot().getVitality().getDead()) {
+            if (body.currentBody().vitality().dead()) {
                 recover(entity, session);
             }
             response.setBody(body.snapshot());
@@ -98,6 +98,40 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
             response.setEffectAccepted(true /* effectAccepted */);
         }
         return encode(response);
+    }
+
+    @Override
+    public Optional<TechniqueBodyStamp> bodyStamp(UUID entityUuid) {
+        // 只在 inspect 会原样成功的状态下报读数；其余情况为空，功法服务退回 inspect。
+        var server = HumanoidFabric.server();
+        if (server == null || !server.isSameThread() || !HumanoidFabric.isReady()) {
+            return Optional.empty();
+        }
+        LivingEntity entity = HumanoidFabric.findEntity(entityUuid);
+        if (entity == null || !HumanoidFabric.isClaimed(entity)) {
+            return Optional.empty();
+        }
+        OptionalLong clock = clockMillis(entity);
+        if (clock.isEmpty()) {
+            return Optional.empty();
+        }
+        long revision = sessions.get(entityUuid).body().currentBody().revision();
+        return Optional.of(new TechniqueBodyStamp(revision, clock.getAsLong()));
+    }
+
+    static OptionalLong clockMillis(LivingEntity entity) {
+        // 身体要已绑定、会话已发布、学卷已发完：这些都由 prepare 完成，缺任何一项都得走 prepare。
+        var access = (HumanoidEntityAccess) entity;
+        Session session = sessions.get(entity.getUUID());
+        if (session == null || !session.volumesAssigned || access.meridian$humanoidLoadFailed()
+                || access.meridian$humanoidLoading() || access.meridian$humanoidBody() != session.body()) {
+            return OptionalLong.empty();
+        }
+        try {
+            return session.body().projectedClockMillis(HumanoidFabric.now());
+        } catch (HumanoidEnvironmentClient.Unavailable unavailable) {
+            return OptionalLong.empty();
+        }
     }
 
     static Session prepare(LivingEntity entity) {
@@ -122,7 +156,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     private static void assignVolumes(LivingEntity entity, Session session) {
         // 学卷触发宿主递归查询时复用会话；失败保留下一次绑定的重试机会。
         if (session.volumesAssigned || session.assigning || HumanoidBrain.config() == null
-                || session.body().snapshot().getVitality().getDead()) {
+                || session.body().currentBody().vitality().dead()) {
             return;
         }
         session.assigning = true;
@@ -187,13 +221,12 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static Optional<TechniqueProgress> publishedProgress(LivingEntity entity) {
         // 已发布会话快照里的功法进度；没有会话时为空。
-        // 类型和时间由 Framework 统一校验。
+        // 直接读已提交的快照，进度按快照缓存，不为了看「在不在施放」转一遍协议。
         Session session = sessions.get(entity.getUUID());
         if (session == null) {
             return Optional.empty();
         }
-        BodySnapshot body = BodyProtobuf.fromMessage(session.body().snapshot());
-        return Optional.of(TechniqueState.read(body));
+        return Optional.of(session.body().techniqueProgress());
     }
 
     static boolean hasSession(LivingEntity entity) {
@@ -210,7 +243,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     static void damaged(LivingEntity entity) {
         // 健康结算后只处理死亡，用可信恢复入口结束残留活动；受击打断由伤害附属按僵直统一判定。
         Session session = sessions.get(entity.getUUID());
-        if (session != null && session.body().snapshot().getVitality().getDead()) {
+        if (session != null && session.body().currentBody().vitality().dead()) {
             recover(entity, session);
         }
     }
@@ -241,8 +274,8 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         TechniqueFabric.service().recoverOnLoad(entity.getUUID(), new TechniqueRecoveryHost() {
             @Override
             public BodySnapshot snapshot() {
-                // 转换当前权威快照，不建立平行状态。
-                return BodyProtobuf.fromMessage(session.body().snapshot());
+                // 直接交出当前权威快照，不建立平行状态。
+                return session.body().currentBody();
             }
 
             @Override

@@ -16,13 +16,16 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
 import dev.kizuna.meridian.server.BodyCommandHandler;
 import dev.kizuna.meridian.server.InMemoryBodyStore;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostRequest;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.server.TechniqueErrors;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
+import dev.kizuna.meridian.technique.server.TechniqueState;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
 
@@ -37,6 +40,14 @@ public final class HumanoidBodyState {
     private final String regionSource;
     private long targetMillis;
     private String trustedActivityCaller;
+    /**
+     * 按已提交身体缓存的协议消息和功法进度。Store 每提交一次命令就换上一份新的不可变快照（版本加一），
+     * 所以只要 Store 里还是 cachedBody / progressBody 这同一份快照，缓存就是当前版本；换了就重算。
+     */
+    private BodySnapshot cachedBody;
+    private BodyMessages.BodySnapshot cachedMessage;
+    private BodySnapshot progressBody;
+    private TechniqueProgress cachedProgress;
 
     private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
                                String regionSource, long initialTargetMillis, HumanoidSpecies species) {
@@ -171,13 +182,13 @@ public final class HumanoidBodyState {
             throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
         targetMillis = Math.max(targetMillis, now.getElapsedMillis());
-        BodyMessages.BodySnapshot body = snapshot();
-        if (body.getSettledAt().getElapsedMillis() >= targetMillis || body.getVitality().getDead()) {
+        BodySnapshot body = currentBody();
+        if (body.settledAt().elapsedMillis() >= targetMillis || body.vitality().dead()) {
             return BodyMessages.QiInventory.getDefaultInstance();
         }
         var command = MeridianMessages.BodyCommand.newBuilder()
                 .setBodyId(bodyId)
-                .setExpectedRevision(body.getRevision())
+                .setExpectedRevision(body.revision())
                 .setAdvanceTime(MeridianMessages.AdvanceTime.getDefaultInstance())
                 .build();
         String requestId = UUID.randomUUID().toString();
@@ -187,11 +198,25 @@ public final class HumanoidBodyState {
                 .setBodyCommand(command)
                 .build();
         submit(request);
-        return store.receipts().stream().filter(receipt -> receipt.getRequestId().equals(requestId)
-                        && receipt.hasTimeAdvance())
+        return receipt(requestId).filter(MeridianMessages.CommandReceipt::hasTimeAdvance)
                 .map(MeridianMessages.CommandReceipt::getTimeAdvance)
                 .map(MeridianMessages.TimeAdvanceResult::getReleasedQi)
-                .findFirst().orElse(BodyMessages.QiInventory.getDefaultInstance());
+                .orElse(BodyMessages.QiInventory.getDefaultInstance());
+    }
+
+    /**
+     * 此刻结清以后身体时钟会停在哪一毫秒；只算不结清，和 settle(now) 之后 settled_at 的毫秒数是同一个数：
+     * 世界时钟、已经请求过的结清目标、已结清游标三者里最晚的那个。
+     * 时钟域对不上或身体已死（时钟不再前进）时为空，调用方改走会结清的完整路径。
+     */
+    OptionalLong projectedClockMillis(BodyMessages.TimeCursor now) {
+        // 不改 targetMillis：这里只是读数，结清目标仍由真正的查询或健康效果推进。
+        BodySnapshot body = currentBody();
+        if (!sameClock(now) || body.vitality().dead()) {
+            return OptionalLong.empty();
+        }
+        long requested = Math.max(targetMillis, now.getElapsedMillis());
+        return OptionalLong.of(Math.max(requested, body.settledAt().elapsedMillis()));
     }
 
     BodyMessages.QiInventory apply(MeridianMessages.RequestEnvelope request, BodyMessages.TimeCursor now) {
@@ -273,8 +298,23 @@ public final class HumanoidBodyState {
     }
 
     BodyMessages.BodySnapshot snapshot() {
-        // Store 只返回已提交快照；不存在身体属于内部一致性错误。
-        return BodyProtobuf.toMessage(currentBody());
+        // Store 只返回已提交快照；同一份快照的协议消息只转一次，提交换了快照才重转。
+        BodySnapshot body = currentBody();
+        if (body != cachedBody) {
+            cachedMessage = BodyProtobuf.toMessage(body);
+            cachedBody = body;
+        }
+        return cachedMessage;
+    }
+
+    TechniqueProgress techniqueProgress() {
+        // 功法进度随身体保存；同一份快照只解一次，提交换了快照才重解。
+        BodySnapshot body = currentBody();
+        if (body != progressBody) {
+            cachedProgress = TechniqueState.read(body);
+            progressBody = body;
+        }
+        return cachedProgress;
     }
 
     BodySnapshot currentBody() {
@@ -288,10 +328,9 @@ public final class HumanoidBodyState {
             throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
         targetMillis = Math.max(targetMillis, now.getElapsedMillis());
-        BodyMessages.BodySnapshot body = snapshot();
         MeridianMessages.BodyCommand command = MeridianMessages.BodyCommand.newBuilder()
                 .setBodyId(bodyId)
-                .setExpectedRevision(body.getRevision())
+                .setExpectedRevision(currentBody().revision())
                 .setDebugQi(debugQi)
                 .build();
         String requestId = UUID.randomUUID().toString();
@@ -311,8 +350,13 @@ public final class HumanoidBodyState {
 
     Optional<HealthMessages.HealthResult> healthReceipt(String requestId) {
         // 回执事实与当前身体同一 Store 读取，避免重新执行 HumanDamage。
-        return store.receipts().stream().filter(receipt -> receipt.getRequestId().equals(requestId)
-                && receipt.hasHealth()).map(MeridianMessages.CommandReceipt::getHealth).findFirst();
+        return receipt(requestId).filter(MeridianMessages.CommandReceipt::hasHealth)
+                .map(MeridianMessages.CommandReceipt::getHealth);
+    }
+
+    private Optional<MeridianMessages.CommandReceipt> receipt(String requestId) {
+        // 时间推进和健康效果都以身体自己的身份提交；按「调用方 + 请求 ID」直接取，不遍历这具身体的全部回执。
+        return store.transact(new BodyId(bodyId), transaction -> transaction.receipt(bodyId, requestId));
     }
 
     public String regionSource() {
@@ -372,7 +416,7 @@ public final class HumanoidBodyState {
         if (now == null) {
             return false;
         }
-        var settledAt = snapshot().getSettledAt();
+        var settledAt = BodyProtobuf.toTime(currentBody().settledAt());
         return now.getDomain().equals(settledAt.getDomain())
                 && now.getEpoch().equals(settledAt.getEpoch())
                 && now.getElapsedMillis() >= 0;

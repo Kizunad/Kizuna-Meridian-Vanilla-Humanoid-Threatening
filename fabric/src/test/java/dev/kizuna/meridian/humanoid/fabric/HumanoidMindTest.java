@@ -12,6 +12,8 @@ public final class HumanoidMindTest {
     private static final long FIRST_HIT_MILLIS = 900;
     private static final long DUE_MILLIS = 2700;
     private static final long EXPIRES_MILLIS = 3200;
+    private static final int PATHED_TICK = 40;
+    private static final int REPATH_TICKS = 5;
 
     @Test
     public void targetSwitchDisengageAndReleaseClearCastPlan() {
@@ -40,6 +42,18 @@ public final class HumanoidMindTest {
         assertTrue(mind.castPlan().filter(initial::equals).isPresent());
         mind.clearCastPlan();
         assertFalse(mind.castPlan().isPresent());
+    }
+
+    @Test
+    public void idleRepathWaitsOutMinimumInterval() {
+        // 导航空闲时两次寻路之间要隔够 tick；没寻过路或实体 tick 被重置都不算在间隔内。
+        HumanoidMind mind = new HumanoidMind();
+        assertFalse(mind.pathedWithin(PATHED_TICK, REPATH_TICKS));
+        mind.pathed(PATHED_TICK);
+        assertTrue(mind.pathedWithin(PATHED_TICK, REPATH_TICKS));
+        assertTrue(mind.pathedWithin(PATHED_TICK + REPATH_TICKS - 1, REPATH_TICKS));
+        assertFalse(mind.pathedWithin(PATHED_TICK + REPATH_TICKS, REPATH_TICKS));
+        assertFalse(mind.pathedWithin(PATHED_TICK - 1, REPATH_TICKS));
     }
 
     private static HumanoidMind.CastPlan plan() {

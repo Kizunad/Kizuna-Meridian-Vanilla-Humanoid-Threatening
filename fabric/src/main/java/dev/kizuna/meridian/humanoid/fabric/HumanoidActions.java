@@ -6,7 +6,6 @@ import dev.kizuna.meridian.humanoid.server.Fighter;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.humanoid.server.Repertoire;
-import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
@@ -107,7 +106,7 @@ final class HumanoidActions {
         if (!started || turn.opponent().isEmpty()) {
             return;
         }
-        BodySnapshot updated = BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(turn.mob()).body().snapshot());
+        BodySnapshot updated = HumanoidTechniqueHost.prepare(turn.mob()).body().currentBody();
         HumanoidCastPlanner.prepare(turn.mob(), updated, turn.readout(), turn.opponent().orElseThrow(), turn.mind())
                 .ifPresent(turn.mind()::planCast);
     }
