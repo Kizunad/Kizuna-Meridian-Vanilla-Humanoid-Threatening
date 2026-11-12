@@ -17,6 +17,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HeldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechnique;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ModuleKind;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueEffect;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueBinding;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
@@ -40,7 +41,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 
-/** 本次决策的候选式与时机：绑定、费用、冷却与持物都通过的打击式和辅助式，以及轻身、下一击与走出范围的毫秒。 */
+/** 本次决策的候选式与时机：绑定、费用、做功、冷却与持物都通过的打击式和辅助式，以及轻身、下一击与走出范围的毫秒。 */
 final class HumanoidRepertoires {
     private static final double WALK_BLOCKS_PER_SECOND_PER_SPEED = 43.17;
     private static final double PEDDLER_MINIMUM_LEG_FORCE = 3000;
@@ -70,7 +71,7 @@ final class HumanoidRepertoires {
     private record Source(Mob mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress,
                           Optional<HumanoidWayfarerFacts.Target> target) { }
 
-    /** 绑定、费用与持物都通过的一式；书没有持物规则时选定手为空。 */
+    /** 绑定、费用、做功与持物都通过的一式；书没有持物规则时选定手为空。 */
     private record Ready(KnownTechnique known, TechniqueDefinition definition, BindingOutcome binding,
                          Optional<Hand> hand, Optional<HeldItemRules> rules,
                          Optional<HumanoidWayfarerWeapons.Exchange> exchange) {
@@ -132,7 +133,7 @@ final class HumanoidRepertoires {
     }
 
     private static Set<Means> means(Source source, List<Ready> ready) {
-        // 会一个绑定、费用与持物都通过的打击式即算可施放，冷却中也算；防守腿法学会即另记一项，
+        // 会一个绑定、费用、做功与持物都通过的打击式即算可施放，冷却中也算；防守腿法学会即另记一项，
         // 可施放还要腿力过门槛，前后方处境不看；有当前施放另记，不限速的式也算。
         var means = EnumSet.noneOf(Means.class);
         if (ready.stream().anyMatch(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED
@@ -261,7 +262,7 @@ final class HumanoidRepertoires {
     }
 
     private static List<Ready> ready(Source source, HeldItems items, Predicate<String> blocked) {
-        // 逐式绑定并检查费用与持物；目录里找不到的旧版本跳过。
+        // 逐式绑定并检查费用、做功与持物；目录里找不到的旧版本跳过。
         BodySnapshot body = source.body();
         TechniqueRegistry registry = source.registry();
         var ready = new ArrayList<Ready>();
@@ -282,13 +283,19 @@ final class HumanoidRepertoires {
             }
             BindingOutcome binding = TechniqueBinder.bind(body, definition,
                     hand.orElse(Hand.HAND_UNSPECIFIED), preview.getMainHandSide());
-            if (!binding.hasBinding()
-                    || !TechniqueAvailability.affordable(body, definition, binding.getBinding())) {
+            if (!binding.hasBinding() || !payable(body, definition, binding.getBinding())) {
                 continue;
             }
             ready.add(new Ready(known, definition, binding, hand, rules, exchange));
         }
         return ready;
+    }
+
+    static boolean payable(BodySnapshot body, TechniqueDefinition definition, TechniqueBinding binding) {
+        // 读候选共用的身体预检：真元付得起，组织和器官也做得了这一式的功；
+        // 腿肌累了出不了功的式不进候选，免得照选照失败、攒够连续失败次数被暂停。
+        return TechniqueAvailability.affordable(body, definition, binding)
+                && TechniqueAvailability.workable(body, definition, binding);
     }
 
     private static List<Repertoire.Strike> strikes(Source source, List<Ready> strikes,

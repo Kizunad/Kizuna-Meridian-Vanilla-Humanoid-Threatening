@@ -1,10 +1,13 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
@@ -36,6 +39,10 @@ public final class HumanoidEnclosedArenaGameTest {
     private static final BlockPos SECOND = new BlockPos(7, 1, 7);
     private static final BlockPos CORNER = new BlockPos(1, 1, 1);
     private static final BlockPos PURSUER = new BlockPos(3, 1, 3);
+    private static final Set<Decision.Movement> EVASIONS =
+            EnumSet.of(Decision.Movement.RETREAT, Decision.Movement.KITE, Decision.Movement.DODGE);
+    private static final Set<Decision.Action> PURSUITS = EnumSet.of(Decision.Action.APPROACH,
+            Decision.Action.ASSAULT, Decision.Action.STRIKE, Decision.Action.INTERRUPT, Decision.Action.RELEASE);
 
     private enum Expectation { DUEL, PEDDLER_DEFENDS, PEDDLER_HITS }
 
@@ -149,6 +156,7 @@ public final class HumanoidEnclosedArenaGameTest {
         private double secondHealth;
         private int ticks;
         private int quietTicks;
+        private int chaseTicks;
         private int damageEvents;
         private boolean firstAttacked;
         private boolean secondAttacked;
@@ -170,8 +178,9 @@ public final class HumanoidEnclosedArenaGameTest {
             firstAttacked |= first.swinging || first.isUsingItem() || offensive(firstCasts);
             secondAttacked |= second.swinging || second.isUsingItem() || offensive(secondCasts);
             if (ticks % SAMPLE_TICKS == 0) {
-                LOGGER.info("arena={} tick={} quiet={} damage={} first={} second={}",
-                        first.getStringUUID(), ticks, quietTicks, damageEvents, describe(first), describe(second));
+                LOGGER.info("arena={} tick={} quiet={} chase={} damage={} first={} second={}",
+                        first.getStringUUID(), ticks, quietTicks, chaseTicks, damageEvents, describe(first),
+                        describe(second));
             }
             if (!first.isAlive() || !second.isAlive() || ticks == OBSERVATION_TICKS) {
                 finish();
@@ -186,17 +195,49 @@ public final class HumanoidEnclosedArenaGameTest {
         }
 
         private void observeDamage() {
+            // 有伤害就清零静默；一方在躲、另一方正追着它打的 tick 只停表不清零，其余无伤害的 tick 计静默。
             double currentFirst = health(first);
             double currentSecond = health(second);
             if (currentFirst < firstHealth || currentSecond < secondHealth) {
                 quietTicks = 0;
                 damageEvents++;
+            } else if (chase()) {
+                chaseTicks++;
             } else {
                 quietTicks++;
             }
             secondHurt |= currentSecond < secondHealth;
             firstHealth = currentFirst;
             secondHealth = currentSecond;
+        }
+
+        private boolean chase() {
+            // 躲开追打是有效防守，不是双方都卡住的僵持：商人腿力不够时绕着躲，对手的长招一次次落空。
+            return evading(first, second) || evading(second, first);
+        }
+
+        private static boolean evading(Mob evader, Mob chaser) {
+            // 各看最后一条决策：躲的一方在拉开或闪避，追的一方正对着它接近、突击、打击、打断或交给原版攻击；
+            // 起手到收式期间大脑不再记决策，追的一方沿用起手那一条。
+            Optional<HumanoidMind.Logged> fled = last(evader);
+            Optional<HumanoidMind.Logged> chased = last(chaser);
+            if (fled.isEmpty() || chased.isEmpty()) {
+                return false;
+            }
+            HumanoidMind.Logged pursuit = chased.get();
+            boolean away = EVASIONS.contains(fled.get().decision().movement());
+            boolean pressing = PURSUITS.contains(pursuit.decision().action());
+            boolean atEvader = pursuit.opponent().filter(evader::equals).isPresent();
+            return away && pressing && atEvader;
+        }
+
+        private static Optional<HumanoidMind.Logged> last(Mob mob) {
+            // 决策环形记录的最后一条；还没决策过时为空。
+            var decisions = HumanoidBrain.decisions(mob.getUUID());
+            if (decisions.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(decisions.getLast());
         }
 
         private static void observeCast(Mob mob, Set<String> casts) {

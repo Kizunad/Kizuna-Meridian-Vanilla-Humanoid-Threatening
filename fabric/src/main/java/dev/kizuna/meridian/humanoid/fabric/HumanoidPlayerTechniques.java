@@ -8,7 +8,6 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Hand;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TargetDistanceBand;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Category;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
-import dev.kizuna.meridian.technique.server.TechniqueAvailability;
 import dev.kizuna.meridian.technique.server.TechniqueBinder;
 import dev.kizuna.meridian.technique.server.TechniqueHeldItems;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
@@ -49,7 +48,7 @@ final class HumanoidPlayerTechniques {
     }
 
     private static Map<TechniqueReference, BindingOutcome> bindings(ControlRequest input, BodySnapshot body) {
-        // 修炼类直接排除；有持物规则时只认当前双手，不自动换装备或消耗物品。
+        // 修炼类直接排除；有持物规则时只认当前双手，不自动换装备或消耗物品；绑得上、付得起也做得了功的才进候选。
         var registry = TechniqueFabric.service().registry();
         var heldItems = input.getHeldItems();
         var result = new HashMap<TechniqueReference, BindingOutcome>();
@@ -71,7 +70,7 @@ final class HumanoidPlayerTechniques {
             }
             var binding = TechniqueBinder.bind(body, definition, hand.orElse(Hand.HAND_UNSPECIFIED),
                     heldItems.getMainHandSide());
-            if (binding.hasBinding() && TechniqueAvailability.affordable(body, definition, binding.getBinding())) {
+            if (binding.hasBinding() && HumanoidRepertoires.payable(body, definition, binding.getBinding())) {
                 result.put(reference, binding);
             }
         }

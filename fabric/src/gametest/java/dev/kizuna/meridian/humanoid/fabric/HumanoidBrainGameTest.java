@@ -75,8 +75,12 @@ public final class HumanoidBrainGameTest {
     private static final BlockPos RETREAT_NEAR = new BlockPos(20, 0, 22);
     private static final BlockPos RETREAT_MIDDLE = new BlockPos(20, 0, 25);
     private static final String EXHAUSTION_BATCH = "meridian_humanoid_test:brain_exhaustion";
+    private static final String SPENT_LEGS_BATCH = "meridian_humanoid_test:brain_spent_legs";
     private static final String BASIC_PREFIX = "meridian_basic_techniques:";
     private static final String DOOR_BREAKER_PREFIX = "meridian_door_breaker:";
+    private static final String KNOCK = DOOR_BREAKER_PREFIX + "knock";
+    /** 破门中卷里要六块腿肌各出 100 W 的两式。 */
+    private static final List<String> LEG_WORK = List.of(DOOR_BREAKER_PREFIX + "ram", DOOR_BREAKER_PREFIX + "close");
     private static final String CHARGE = BASIC_PREFIX + "charge";
     private static final String LIGHT_STEP = BASIC_PREFIX + "light_step";
     private static final String BREATH = BASIC_PREFIX + "breath";
@@ -110,9 +114,12 @@ public final class HumanoidBrainGameTest {
     private static final double RETREAT_GAIN = 2;
     private static final double TARGET_HEALTH = 1000;
     private static final double FATIGUED_STRENGTH = 0.3;
+    /** 腿肌里最强的臀大肌 650 W，乘 0.1 也只有 65 W，到不了撞门、掩门每块腿肌要的 100 W。 */
+    private static final double SPENT_PEAK = 0.1;
     private static final long FATIGUE_MILLIS = 30_000;
     private static final long NIGHT_TIME = 13_000;
     private static final Set<String> ARM_MUSCLES = Set.of(HumanoidFighters.ARM_MUSCLE);
+    private static final Set<String> LEG_MUSCLES = Set.of(HumanoidFighters.LEG_MUSCLE);
     private static final Set<String> LIMB_MUSCLES = Set.of(HumanoidFighters.ARM_MUSCLE, HumanoidFighters.LEG_MUSCLE);
     private static final Set<Decision.Action> RESPONSES = EnumSet.of(Decision.Action.INTERRUPT,
             Decision.Action.DODGE, Decision.Action.ABSORB);
@@ -187,7 +194,7 @@ public final class HumanoidBrainGameTest {
         Vindicator exhausted = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "exhausted",
                 RETREAT_SUBJECT);
         exhausted.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
-        fatigue(exhausted, HumanoidSpecies.VINDICATOR, ARM_MUSCLES);
+        fatigue(exhausted, HumanoidSpecies.VINDICATOR, ARM_MUSCLES, FATIGUED_STRENGTH);
         Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "exhausted-hunter",
                 RETREAT_NEAR);
         hunter.setNoAi(true /* aiDisabled */);
@@ -201,12 +208,40 @@ public final class HumanoidBrainGameTest {
                 });
     }
 
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = SPENT_LEGS_BATCH)
+    public void spentLegsKeepLegWorkOutOfCandidates(GameTestHelper context) {
+        // 腿肌出不了功的持斧真炁卫道士：撞门、掩门照样绑得上、付得起真元，但做功预检不过，不进候选，
+        // 免得照选照失败、攒够连续失败次数被暂停；只用双臂的叩门照旧在候选里。
+        var arena = new Arena(context);
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "spent-legs", SUBJECT_POS);
+        vindicator.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+        HumanoidTechniqueHost.prepare(vindicator);
+        List<String> rested = candidates(vindicator);
+        context.assertTrue(rested.containsAll(LEG_WORK), "腿没累时撞门、掩门就不在候选里：" + rested);
+        fatigue(vindicator, HumanoidSpecies.VINDICATOR, LEG_MUSCLES, SPENT_PEAK);
+        var body = BodyProtobuf.fromMessage(((HumanoidEntityAccess) vindicator).meridian$humanoidBody().snapshot());
+        var registry = TechniqueFabric.service().registry();
+        for (String id : LEG_WORK) {
+            TechniqueDefinition definition = registry.findLatest(id).orElseThrow();
+            BindingOutcome outcome = TechniqueBinder.bind(body, definition);
+            context.assertTrue(outcome.hasBinding(), id + " 腿累了就绑不上：" + bindingSummary(body, definition));
+            var binding = outcome.getBinding();
+            context.assertTrue(TechniqueAvailability.affordable(body, definition, binding), id + " 腿累了就付不起真元");
+            context.assertTrue(!TechniqueAvailability.workable(body, definition, binding),
+                    id + " 腿肌出不了 100 W 仍判做得了功");
+        }
+        List<String> spent = candidates(vindicator);
+        context.assertTrue(spent.stream().noneMatch(LEG_WORK::contains), "腿累了撞门、掩门仍进候选：" + spent);
+        context.assertTrue(spent.contains(KNOCK), "腿累了连只用双臂的叩门也不在候选里：" + spent);
+        arena.finish();
+    }
+
     @GameTest(maxTicks = SHORT_TIMEOUT, environment = BREATH_BATCH)
     public void idleFatiguedVillagerBreathes(GameTestHelper context) {
         // 无威胁时四肢疲劳达到调息门槛，村民自行调息。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "breath", SUBJECT_POS);
-        fatigue(villager, HumanoidSpecies.VILLAGER, LIMB_MUSCLES);
+        fatigue(villager, HumanoidSpecies.VILLAGER, LIMB_MUSCLES, FATIGUED_STRENGTH);
         var watch = new Watch(villager);
         arena.await(BREATH_TICKS, () -> watch.observe().cast(BREATH),
                 () -> "疲劳村民无威胁时没有调息：" + watch + " / " + decisions(villager) + " / "
@@ -413,6 +448,15 @@ public final class HumanoidBrainGameTest {
         return result;
     }
 
+    private static List<String> candidates(Mob mob) {
+        // 读候选时绑得上、付得起、做得了功也持物合规的式；不看对手、冷却与选式权重。
+        var body = BodyProtobuf.fromMessage(((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot());
+        var readout = HumanoidRepertoires.read(mob, body, Optional.empty(), technique -> false);
+        return readout.context().availability().bindings().keySet().stream()
+                .map(reference -> reference.getId())
+                .toList();
+    }
+
     private static BlockPos bed(GameTestHelper context) {
         // 在村民旁放一张朝东的床，返回床头的世界坐标。
         var state = Blocks.BED.pick(DyeColor.RED).defaultBlockState().setValue(BedBlock.FACING, Direction.EAST);
@@ -422,10 +466,10 @@ public final class HumanoidBrainGameTest {
         return context.absolutePos(headPos);
     }
 
-    private static void fatigue(Mob mob, HumanoidSpecies species, Set<String> muscles) {
+    private static void fatigue(Mob mob, HumanoidSpecies species, Set<String> muscles, double peak) {
         // 先准备会话学卷，再把带疲劳的快照恢复成唯一 Store 并重新准备会话。
         HumanoidTechniqueHost.prepare(mob);
-        var fatigued = fatigued(((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot(), muscles);
+        var fatigued = fatigued(((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot(), muscles, peak);
         HumanoidTechniqueHost.removed(mob);
         bind(mob, species, fatigued);
         HumanoidTechniqueHost.prepare(mob);
@@ -460,8 +504,10 @@ public final class HumanoidBrainGameTest {
         return "通过 付得起=" + TechniqueAvailability.affordable(body, definition, outcome.getBinding());
     }
 
-    private static BodyMessages.BodySnapshot fatigued(BodyMessages.BodySnapshot body, Set<String> muscles) {
-        // 指定标签的肌肉施加一段恒定的力量下降，疲劳比高于调息门槛，较强一臂也低于虚脱门槛。
+    private static BodyMessages.BodySnapshot fatigued(BodyMessages.BodySnapshot body, Set<String> muscles,
+                                                      double peak) {
+        // 指定标签的肌肉施加一段恒定的力量与功率下降；取 FATIGUED_STRENGTH 时疲劳比高于调息门槛，
+        // 较强一臂也低于虚脱门槛。
         var result = body.toBuilder();
         var start = BodyMessages.CurvePoint.newBuilder()
                 .setOffsetMillis(0)
@@ -480,8 +526,8 @@ public final class HumanoidBrainGameTest {
                     .setSource("gametest:fatigue")
                     .setTissueId(tissue.getId())
                     .setStartMillis(body.getSettledAt().getElapsedMillis())
-                    .setStrengthPeak(FATIGUED_STRENGTH)
-                    .setBurstPeak(FATIGUED_STRENGTH)
+                    .setStrengthPeak(peak)
+                    .setBurstPeak(peak)
                     .setEndurancePeak(1)
                     .setRecoveryPeak(1)
                     .addCurve(start)

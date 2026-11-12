@@ -12,7 +12,6 @@ import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.BrewPartGroup;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Hand;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
-import dev.kizuna.meridian.technique.server.TechniqueAvailability;
 import dev.kizuna.meridian.technique.server.TechniqueBinder;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.nio.file.Path;
@@ -241,7 +240,7 @@ final class HumanoidWitchAi {
     }
 
     private static Optional<TechniqueReference> available(Turn turn, String id) {
-        // 候选必须真的学会、冷却已过、身体可绑定且费用足够，随后正式起手再次核验。
+        // 候选必须真的学会、冷却已过、身体可绑定、费用足够且做得了功，随后正式起手再次核验。
         var body = BodyProtobuf.fromMessage(turn.body());
         var progress = TechniqueState.read(body);
         var reference = progress.getKnownList().stream().map(known -> known.getTechnique())
@@ -253,7 +252,7 @@ final class HumanoidWitchAi {
         var definition = TechniqueFabric.service().registry().find(reference.orElseThrow()).orElseThrow();
         var items = HumanoidWayfarerWeapons.inspect(turn.witch());
         var binding = TechniqueBinder.bind(body, definition, Hand.HAND_UNSPECIFIED, items.getMainHandSide());
-        if (!binding.hasBinding() || !TechniqueAvailability.affordable(body, definition, binding.getBinding())) {
+        if (!binding.hasBinding() || !HumanoidRepertoires.payable(body, definition, binding.getBinding())) {
             return Optional.empty();
         }
         return reference;

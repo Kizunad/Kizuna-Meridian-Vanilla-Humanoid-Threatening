@@ -403,7 +403,8 @@ public final class HumanoidBrain {
     private static Set<Encounter.Circumstance> combatCircumstances(Mob mob, HumanoidMind mind,
                                                                   HumanoidAssessment.Stance stance, Fighter self) {
         // 原版攻击者受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角；
-        // 学会防守腿法的一开始就要退到安全距离，短距离来回拉开不算有退路；腿力不够出腿也一样。
+        // 腿力够出防守腿法的要退到安全距离，短距离来回拉开不算有退路，退不开就迎上去出腿；
+        // 腿力不够时照旧找短退点躲开拉距离，连短退点都没有才算受困。
         var result = circumstances(mob);
         if (stance != HumanoidAssessment.Stance.RETREAT) {
             return result;
@@ -414,7 +415,7 @@ public final class HumanoidBrain {
         }
         if (mob.onGround()) {
             double safeDistance = 0;
-            if (self.has(Fighter.Means.KNOWN_DEFENSE)
+            if (self.has(Fighter.Means.CASTABLE_DEFENSE)
                     || mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
                 safeDistance = config.response().tactics().safeDistance();
             }

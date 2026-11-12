@@ -14,8 +14,8 @@ public record Fighter(int tier, Condition condition, Set<Means> means) {
                             double armStrengthRatio, double legStrengthRatio) { }
 
     /**
-     * 进攻手段与当前状态；判断的是能力和持物，不是物种。学会防守式指学会了一个防守腿法，不看腿力、费用与冷却，
-     * 有它的一方要退到安全距离才算有退路；可施放防守式另要腿力、绑定、费用与持物都通过，冷却中也算。
+     * 进攻手段与当前状态；判断的是能力和持物，不是物种。学会防守式指学会了一个防守腿法，不看腿力、费用与冷却；
+     * 可施放防守式另要腿力、绑定、费用、做功与持物都通过，冷却中也算，有它的一方要退到安全距离才算有退路。
      */
     public enum Means {
         CASTABLE_STRIKE, KNOWN_DEFENSE, CASTABLE_DEFENSE, VANILLA_OFFENSE, MELEE_WEAPON, RANGED_WEAPON, SHIELD,

@@ -158,7 +158,8 @@ public final class HumanoidTactics {
     private static Decision cornered(Encounter encounter, Repertoire repertoire, OptionalDouble distance,
                                      TacticRules rules) {
         // 没有可达退路时，先用满足目录距离的恢复式；原版攻击者随后自卫，不能永远朝墙走；
-        // 会防守式的转身迎敌，等对手进身前距离再出腿；学会了但腿力等门槛没过的原地转身等着，不再跃步拉开。
+        // 会防守式的转身迎敌，等对手进身前距离再出腿；学会了但腿力等门槛没过的，
+        // 只有连短退点都找不到才走到这里，原地转身等着。
         var recovery = support(encounter.self(), repertoire, RECOVER_SUPPORT, distance);
         if (recovery.isPresent()) {
             return Decision.cast(Action.RECOVER, recovery.get().technique(), "无可达退路，利用间隙恢复");
