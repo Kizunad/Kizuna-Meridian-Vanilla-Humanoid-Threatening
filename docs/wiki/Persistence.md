@@ -80,7 +80,7 @@ Human 和 Humanoid 通过必装的 `meridian_environment_host` 入口（Framewor
 
 Human 首次受理只登记内存并返回 `persisted=false`，END_SERVER_TICK 合并保存所有未确认释放和待保存遗忘。成功后更新持久 ID 集合；重复请求只查询该集合，不写盘。普通世界保存与合并保存共用 `lastSaveTick`，**运行中一个 tick 最多尝试一次 Human 持久保存，失败也算一次**。正常关服在停止 tick 后提交最终脏状态。
 
-Humanoid 每 tick 重试原请求，收到 true 后才从待释放转成待遗忘，并合并保存自己的文件。正常磁盘下，从 Human 内存受理到 Humanoid 收到释放确认最多两个服务器 tick，20 TPS 下约 100 毫秒；边界包含两个模组回调顺序和当 tick 已执行世界保存的情况。单次文件保存仍在主线程，耗时会拉长 tick。磁盘故障、暂停或低 TPS 没有有限墙钟延迟保证。
+Humanoid 每 tick 重试原请求，收到 true 后才从待释放转成待遗忘，并合并保存自己的文件。正常磁盘下，从 Human 内存受理到 Humanoid 收到释放确认最多两个服务器 tick，20 TPS 下约 100 毫秒；边界包含两个模组回调顺序和当 tick 已执行世界保存的情况。Human 的编码、压缩和 fsync 在写盘线程上做，趁两 tick 之间的空闲写，下一 tick 开始前写完；空闲不够时下一 tick 开头等剩下的部分。Humanoid 自己的文件仍在主线程保存，耗时会拉长 tick。磁盘故障、暂停或低 TPS 没有有限墙钟延迟保证。
 
 ### 持久删除后遗忘
 

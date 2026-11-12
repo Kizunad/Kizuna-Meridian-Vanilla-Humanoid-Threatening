@@ -21,6 +21,8 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHost
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Unit;
+import dev.kizuna.meridian.technique.server.TechniqueCastEndReason;
+import dev.kizuna.meridian.technique.server.TechniqueCastEnded;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueService;
@@ -48,8 +50,10 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.Vec3;
 import dev.kizuna.playeranimation.mobs.MobAnimationServer;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
@@ -92,6 +96,10 @@ public final class HumanoidTechniqueGameTest {
     private static final double EPSILON = 0.000001;
     private static final double MOVEMENT_MULTIPLIER = 0.4;
     private static final long MILLIS_PER_TICK = 50;
+    private static final long MILLIS_PER_SECOND = 1000;
+    /** 寿元只剩 3 个 tick；检查放在第 6 个 tick，远早于劈门第 32 tick 的出手。 */
+    private static final long LIFESPAN_LEFT_MILLIS = 3 * MILLIS_PER_TICK;
+    private static final int LIFESPAN_END_TICKS = 6;
     private static final int FINISH_MARGIN_TICKS = 2;
     private static final String PREFIX = "meridian_door_breaker:";
 
@@ -383,6 +391,9 @@ public final class HumanoidTechniqueGameTest {
         BodyMessages.BodySnapshot exhausted = exhaustedBody(snapshot(mob));
         bind(mob, exhausted);
         mob.setTarget(target);
+        // 大脑在放开 AI 后的第一个 tick 就决策。否则首次决策前原版近战会先把卫道士走到牛身上，
+        // 第一段退路只比当时的距离多一格，停下时不到判定线，要等下一轮决策才拉开，那时虚脱可能已经结束。
+        alignDecisionPhase(mob);
         mob.setNoAi(false /* aiDisabled */);
         double exhaustedRatio = HumanoidBrain.config().assessment().retreat().armStrengthRatio();
         context.runAfterDelay(DECISION_TICKS, () -> {
@@ -393,9 +404,15 @@ public final class HumanoidTechniqueGameTest {
         });
     }
 
+    private static void alignDecisionPhase(Mob mob) {
+        // 测试夹具固定下一次大脑决策相位，实体 ID 不影响虚脱窗口内的真实行为。
+        int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
+        mob.tickCount = Math.floorMod(-mob.getId() - 1, interval);
+    }
+
     private static void awaitExhaustionRetreat(GameTestHelper context, Vindicator mob, LivingEntity target,
                                                double initialDistance, double exhaustedRatio, int remainingTicks) {
-        // 等待错相决策真正选择撤退并执行一段移动，避免用固定 tick 假设实体决策相位。
+        // 等撤退决策真正执行出一段移动再判定，不假设拉开距离要用几个 tick。
         boolean evasion = HumanoidBrain.decisions(mob.getUUID()).stream()
                 .anyMatch(logged -> logged.decision().action() == Decision.Action.RETREAT
                         || logged.decision().action() == Decision.Action.KITE);
@@ -448,6 +465,40 @@ public final class HumanoidTechniqueGameTest {
             context.assertTrue(target.getHealth() == health, "恢复补发了离线伤害");
             context.succeed();
         });
+    }
+
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void lifespanEndingDuringWarmupEndsCastAtOnce(GameTestHelper context) {
+        // 寿元在长起手中途用完，期间没有别的到期事件：施放要在寿元终点前后就以 DIED 结束，不能等到出手那一刻。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        HumanoidTechniqueHost.removed(mob);
+        bind(mob, shortLived(snapshot(mob), LIFESPAN_LEFT_MILLIS));
+        HumanoidTechniqueHost.prepare(mob);
+        var ended = new ArrayList<TechniqueCastEnded>();
+        Consumer<TechniqueCastEnded> listener = event -> {
+            if (event.entityUuid().equals(mob.getUUID())) {
+                ended.add(event);
+            }
+        };
+        TechniqueFabric.service().addCastEndListener(listener);
+        start(context, mob, "cleave", target);
+        context.runAfterDelay(LIFESPAN_END_TICKS, () -> {
+            TechniqueFabric.service().removeCastEndListener(listener);
+            context.assertTrue(ended.size() == 1 && ended.get(0).reason() == TechniqueCastEndReason.DIED,
+                    "寿元用完后施放没有立即以死亡结束：" + ended);
+            context.assertTrue(snapshot(mob).getVitality().getDead(), "寿元用完没有提交死亡");
+            mob.discard();
+            context.succeed();
+        });
+    }
+
+    private static BodyMessages.BodySnapshot shortLived(BodyMessages.BodySnapshot body, long leftMillis) {
+        // 把寿命上限压到只剩这么多毫秒；年龄和已耗寿元不动，身体仍是活的。
+        var vitality = body.getVitality();
+        double limit = vitality.getAgeSeconds() + vitality.getSpentLifespanSeconds()
+                + leftMillis / (double) MILLIS_PER_SECOND;
+        return body.toBuilder().setVitality(vitality.toBuilder().setLifespanLimitSeconds(limit)).build();
     }
 
     @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)

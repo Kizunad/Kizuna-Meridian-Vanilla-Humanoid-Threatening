@@ -179,16 +179,17 @@ public final class HumanoidBrain {
         record(mob, mind, stance, decision);
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent)),
                 decision);
-        scheduleCastPlan(mob, mind, body, readout, opponent);
+        scheduleCastPlan(mob, mind, readout, opponent);
     }
 
-    private static void scheduleCastPlan(Mob mob, HumanoidMind mind, BodySnapshot body,
-                                         HumanoidRepertoires.Readout readout, HumanoidOpponent opponent) {
+    private static void scheduleCastPlan(Mob mob, HumanoidMind mind, HumanoidRepertoires.Readout readout,
+                                         HumanoidOpponent opponent) {
         // 已在执行中的准备式只登记一次峰值计划，实际起手仍由逐 tick 检查器决定。
+        // 身体在这里重新读：刚执行的动作可能起了新式，决策前读到的那份里还是上一次施放，不能拿它倒排。
         if (mind.castPlan().isPresent()) {
             return;
         }
-        HumanoidCastPlanner.prepare(mob, body, readout, opponent, mind).ifPresent(mind::planCast);
+        HumanoidCastPlanner.prepare(mob, body(mob), readout, opponent, mind).ifPresent(mind::planCast);
     }
 
     private static boolean checkCastPlan(Mob mob, HumanoidMind mind) {

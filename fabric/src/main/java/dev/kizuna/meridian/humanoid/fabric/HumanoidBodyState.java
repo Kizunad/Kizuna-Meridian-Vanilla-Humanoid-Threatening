@@ -2,7 +2,9 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodyId;
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.core.BodyTimeAdvancement;
 import dev.kizuna.meridian.core.QiInventory;
+import dev.kizuna.meridian.core.TimeCursor;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
@@ -33,6 +35,9 @@ import java.util.random.RandomGenerator;
 public final class HumanoidBodyState {
     private static final int MAX_SAVED_RECEIPTS = 32;
     private static final String DEBUG_CALLER_ID = "meridian_debug:command";
+    /** 类人身体的老化倍率：身体时钟走一秒，年龄长一秒。 */
+    private static final double AGING_RATE = 1;
+    private static final long NO_LIFESPAN_END = Long.MAX_VALUE;
 
     private final InMemoryBodyStore store;
     private final BodyCommandHandler<String> commands;
@@ -48,6 +53,9 @@ public final class HumanoidBodyState {
     private BodyMessages.BodySnapshot cachedMessage;
     private BodySnapshot progressBody;
     private TechniqueProgress cachedProgress;
+    /** 同样按已提交身体缓存：这份身体的寿元在身体时钟的哪一毫秒用完；没有终点时是 NO_LIFESPAN_END。 */
+    private BodySnapshot lifespanBody;
+    private long lifespanEndMillis;
 
     private HumanoidBodyState(BodyMessages.BodySnapshot saved, List<MeridianMessages.CommandReceipt> receipts,
                                String regionSource, long initialTargetMillis, HumanoidSpecies species) {
@@ -94,7 +102,7 @@ public final class HumanoidBodyState {
         return MeridianMessages.TimeAdvancePlan.newBuilder()
                 .setTarget(target)
                 .setMode(MeridianMessages.TimeAdvanceMode.ACTIVE)
-                .setBiologicalSecondsPerSimulationSecond(1)
+                .setBiologicalSecondsPerSimulationSecond(AGING_RATE)
                 .build();
     }
 
@@ -207,7 +215,8 @@ public final class HumanoidBodyState {
     /**
      * 此刻结清以后身体时钟会停在哪一毫秒；只算不结清，和 settle(now) 之后 settled_at 的毫秒数是同一个数：
      * 世界时钟、已经请求过的结清目标、已结清游标三者里最晚的那个。
-     * 时钟域对不上或身体已死（时钟不再前进）时为空，调用方改走会结清的完整路径。
+     * 下面几种情况为空，调用方改走会结清的完整路径：时钟域对不上；身体已死（时钟不再前进）；
+     * 寿元在这个时刻或之前用完（真正结清会停在寿元终点并判死，时钟到不了这里）。
      */
     OptionalLong projectedClockMillis(BodyMessages.TimeCursor now) {
         // 不改 targetMillis：这里只是读数，结清目标仍由真正的查询或健康效果推进。
@@ -216,7 +225,22 @@ public final class HumanoidBodyState {
             return OptionalLong.empty();
         }
         long requested = Math.max(targetMillis, now.getElapsedMillis());
-        return OptionalLong.of(Math.max(requested, body.settledAt().elapsedMillis()));
+        long projected = Math.max(requested, body.settledAt().elapsedMillis());
+        if (lifespanEndMillis(body) <= projected) {
+            return OptionalLong.empty();
+        }
+        return OptionalLong.of(projected);
+    }
+
+    private long lifespanEndMillis(BodySnapshot body) {
+        // 寿元终点只由这份快照的年龄、寿命和已结清游标决定，同一份快照只算一次。
+        if (body != lifespanBody) {
+            lifespanEndMillis = BodyTimeAdvancement.nextLifespanBoundary(body, AGING_RATE)
+                    .map(TimeCursor::elapsedMillis)
+                    .orElse(NO_LIFESPAN_END);
+            lifespanBody = body;
+        }
+        return lifespanEndMillis;
     }
 
     BodyMessages.QiInventory apply(MeridianMessages.RequestEnvelope request, BodyMessages.TimeCursor now) {

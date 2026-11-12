@@ -24,6 +24,7 @@ import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_
 public final class HumanoidBodyCacheGameTest {
     private static final int POSITION = 2;
     private static final int WAIT_TICKS = 5;
+    private static final double SPARE_LIFESPAN_SECONDS = 1;
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void snapshotFollowsEveryCommit(GameTestHelper context) {
@@ -86,6 +87,44 @@ public final class HumanoidBodyCacheGameTest {
             }
             context.succeed();
         });
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void lightClockIsWithheldOnceLifespanIsUsedUp(GameTestHelper context) {
+        // 寿元已经用完、身体还没被结清判死：真正结清会停在寿元终点并判死，所以轻量时钟必须答不出，
+        // 让调用方去走会结清的路径。同样换一具身体、寿元还剩一秒时照常报数。
+        Mob mob = spawn(context);
+        try {
+            HumanoidBodyState spare = rebindWithLifespanLeft(mob, SPARE_LIFESPAN_SECONDS);
+            context.assertTrue(!spare.currentBody().vitality().dead(), "寿元未尽的身体不该是死的");
+            context.assertTrue(HumanoidTechniqueHost.clockMillis(mob).isPresent(), "寿元未尽的活体没有报出时钟");
+
+            HumanoidBodyState exhausted = rebindWithLifespanLeft(mob, 0);
+            context.assertTrue(!exhausted.currentBody().vitality().dead(), "同一毫秒内不该已经结清判死");
+            context.assertTrue(HumanoidTechniqueHost.clockMillis(mob).isEmpty(), "寿元用完后仍报出轻量时钟");
+        } finally {
+            mob.discard();
+        }
+        context.succeed();
+    }
+
+    private static HumanoidBodyState rebindWithLifespanLeft(Mob mob, double secondsLeft) {
+        // 把寿命上限压到只剩这么多秒，换成一具新读档的身体并重新发布会话；年龄和已耗寿元不动。
+        var access = (HumanoidEntityAccess) mob;
+        var living = access.meridian$humanoidBody().snapshot();
+        var vitality = living.getVitality();
+        double limit = vitality.getAgeSeconds() + vitality.getSpentLifespanSeconds() + secondsLeft;
+        var shortened = living.toBuilder()
+                .setVitality(vitality.toBuilder().setLifespanLimitSeconds(limit))
+                .build();
+        HumanoidTechniqueHost.removed(mob);
+        var saved = new HumanoidBodyState.SavedBody(mob.getUUID(), shortened.toByteArray(), new byte[0][],
+                HumanoidFabric.region(mob).sourceId());
+        HumanoidBodyState body = HumanoidBodyState.restore(mob.getUUID(), saved, HumanoidFabric.now(),
+                HumanoidSpecies.VINDICATOR);
+        access.meridian$humanoidBody(body);
+        HumanoidTechniqueHost.prepare(mob);
+        return body;
     }
 
     private static Mob spawn(GameTestHelper context) {
