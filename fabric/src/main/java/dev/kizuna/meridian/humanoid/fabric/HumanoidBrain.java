@@ -402,9 +402,7 @@ public final class HumanoidBrain {
 
     private static Set<Encounter.Circumstance> combatCircumstances(Mob mob, HumanoidMind mind,
                                                                   HumanoidAssessment.Stance stance, Fighter self) {
-        // 原版攻击者受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角；
-        // 腿力够出防守腿法的要退到安全距离，短距离来回拉开不算有退路，退不开就迎上去出腿；
-        // 腿力不够时照旧找短退点躲开拉距离，连短退点都没有才算受困。
+        // 退路怎么找见 escape；连一个可去的点都没有才算受困。
         var result = circumstances(mob);
         if (stance != HumanoidAssessment.Stance.RETREAT) {
             return result;
@@ -414,17 +412,35 @@ public final class HumanoidBrain {
             result.add(Encounter.Circumstance.PURSUED);
         }
         if (mob.onGround()) {
-            double safeDistance = 0;
-            if (self.has(Fighter.Means.CASTABLE_DEFENSE)
-                    || mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
-                safeDistance = config.response().tactics().safeDistance();
-            }
-            mind.planRetreat(HumanoidMotion.retreatPoint(mob, opponent, mind.directive(), safeDistance));
+            mind.planRetreat(escape(mob, opponent, mind, self));
         }
         if (mind.cornered()) {
             result.add(Encounter.Circumstance.RETREAT_BLOCKED);
         }
         return result;
+    }
+
+    private static Optional<Vec3> escape(Mob mob, LivingEntity opponent, HumanoidMind mind, Fighter self) {
+        // 原版攻击者受困后只有找到通往安全距离的退路才恢复逃离，避免刚向敌人迈一步又退回同一墙角；
+        // 腿力够出防守腿法的要退到安全距离，短距离来回拉开不算有退路，退不开就迎上去出腿；
+        // 腿力不够、防守腿法都在冷却或眼下用不上时照旧找短退点躲开拉距离，
+        // 连短退点都没有就贴墙横着让开，横着也让不开、对手又还远时沿墙换到另一个角，不站着等腿法就绪。
+        boolean castable = self.has(Fighter.Means.CASTABLE_DEFENSE);
+        double safeDistance = 0;
+        if (castable || mind.cornered() && self.has(Fighter.Means.VANILLA_OFFENSE)) {
+            safeDistance = config.response().tactics().safeDistance();
+        }
+        var previous = mind.directive();
+        var retreat = HumanoidMotion.retreatPoint(mob, opponent, previous, safeDistance);
+        boolean awaitingDefense = self.has(Fighter.Means.KNOWN_DEFENSE) && !castable;
+        if (retreat.isPresent() || !awaitingDefense) {
+            return retreat;
+        }
+        var sidestep = HumanoidMotion.sidestepPoint(mob, opponent, previous);
+        if (sidestep.isPresent()) {
+            return sidestep;
+        }
+        return HumanoidMotion.cornerSwitchPoint(mob, opponent, previous);
     }
 
     private static void idle(Mob mob, HumanoidMind mind) {
@@ -525,7 +541,7 @@ public final class HumanoidBrain {
     }
 
     static void move(Mob mob, HumanoidMotion.Speeds speeds) {
-        // 施放打击时面向对手缓行；其余执行当前指令。
+        // 近战打击与行矢在出手段结束前面向对手站定；收式阶段和其余时候执行当前指令。
         if (HumanoidCharmController.follow(mob)) {
             return;
         }
@@ -533,11 +549,7 @@ public final class HumanoidBrain {
         if (mind == null) {
             return;
         }
-        if (HumanoidTechniqueHost.castingCloseStrike(mob)) {
-            HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
-            return;
-        }
-        if (HumanoidTechniqueHost.castingWayfarer(mob)) {
+        if (holdsForStrike(mob)) {
             HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;
         }
@@ -547,6 +559,14 @@ public final class HumanoidBrain {
             return;
         }
         HumanoidMotion.apply(mob, mind, directive, speeds);
+    }
+
+    private static boolean holdsForStrike(Mob mob) {
+        // 首击距离靠起手时的站位保住，出手段结束前不走；收式阶段照常移动，速度受这一式声明的施放移动倍率限制，
+        // 与玩家施法时一样。不提前收式：玩家没有这个能力。
+        boolean closeStrike = HumanoidTechniqueHost.castingCloseStrike(mob);
+        boolean wayfarer = HumanoidTechniqueHost.castingWayfarer(mob);
+        return (closeStrike || wayfarer) && HumanoidTechniqueHost.beforeRecovery(mob);
     }
 
     static Optional<LivingEntity> opponent(Mob mob) {
@@ -590,6 +610,11 @@ public final class HumanoidBrain {
     static List<HumanoidMind.Logged> decisions(UUID entity) {
         // 最近的决策记录，GameTest 与排查用。
         return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::log).orElse(List.of());
+    }
+
+    static Optional<HumanoidMotion.Directive> directive(UUID entity) {
+        // 当前每 tick 执行的移动指令；施放中的决策沿用它，GameTest 与排查用。
+        return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::directive);
     }
 
     static int failureStreak(UUID entity) {

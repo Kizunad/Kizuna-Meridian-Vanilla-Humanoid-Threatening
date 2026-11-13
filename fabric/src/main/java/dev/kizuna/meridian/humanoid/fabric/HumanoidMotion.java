@@ -1,9 +1,12 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -24,6 +27,10 @@ final class HumanoidMotion {
     private static final double RETREAT_GAIN = 1;
     private static final double ARRIVED_DISTANCE = 1;
     private static final double SUPPORT_PROBE_DEPTH = 0.1;
+    /** 对手在这个距离以外、自己又在墙角时才沿墙换角；换去的角离对手也要在这个距离以外。 */
+    private static final double CORNER_SWITCH_FOE_DISTANCE = 3;
+    /** 东西、南北两个轴上都有一侧走不到这么多格就到头，算在墙角；走到头不超过这么多格的那一侧就是眼下这个角。 */
+    private static final int CORNER_REACH = 2;
 
     /** 指令里的移动方式：交还原版、跟随对手、保持距离带、走到某点、原地不动、原地转身面向对手。 */
     enum Movement { VANILLA, FOLLOW, HOLD_RANGE, MOVE_TO, STAY, FACE }
@@ -149,8 +156,81 @@ final class HumanoidMotion {
     }
 
     static Optional<Vec3> retreatPoint(Mob mob, LivingEntity threat, Directive previous, double safeDistance) {
-        // 沿用尚未走完的可达退路；原版抽样与附近候选统一交给寻路器，失败明确表示无路可退。
+        // 退路要比现在离威胁更远，或至少到安全距离。
         double minimumDistance = Math.max(mob.distanceTo(threat) + RETREAT_GAIN, safeDistance);
+        return pointAway(mob, threat, previous, minimumDistance);
+    }
+
+    static Optional<Vec3> sidestepPoint(Mob mob, LivingEntity threat, Directive previous) {
+        // 拉不开时退而求其次：不比现在离威胁更近的可达点，贴墙横着让开。
+        return pointAway(mob, threat, previous, mob.distanceTo(threat));
+    }
+
+    static Optional<Vec3> cornerSwitchPoint(Mob mob, LivingEntity threat, Directive previous) {
+        // 横着也让不开时：对手还远、自己又在墙角，就沿墙去另一个角，不在原地等对手过来；
+        // 沿用尚未走完的同一条路，对手逼近到 CORNER_SWITCH_FOE_DISTANCE 格以内就不再换。
+        if (distance(mob, threat) <= CORNER_SWITCH_FOE_DISTANCE) {
+            return Optional.empty();
+        }
+        if (usableRetreat(mob, threat, previous, CORNER_SWITCH_FOE_DISTANCE)) {
+            return previous.destination();
+        }
+        Map<Direction, WallRun> runs = new EnumMap<>(Direction.class);
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            runs.put(direction, wallRun(mob, direction));
+        }
+        if (!inCorner(runs)) {
+            return Optional.empty();
+        }
+        Set<BlockPos> candidates = otherCorners(runs, threat);
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        var path = mob.getNavigation().createPath(candidates, 0);
+        if (path == null || !path.canReach()) {
+            return Optional.empty();
+        }
+        return Optional.of(Vec3.atBottomCenterOf(path.getTarget()));
+    }
+
+    /** 从脚下沿一个水平方向一格一格走，到下一格站不住为止；end 是最后一格站得住的位置，length 是走了几格。 */
+    private record WallRun(BlockPos end, int length) { }
+
+    private static WallRun wallRun(Mob mob, Direction direction) {
+        // 平地上沿墙走，最远到退路搜索的水平范围。
+        BlockPos end = mob.blockPosition();
+        int length = 0;
+        while (length < RETREAT_HORIZONTAL_RANGE && standable(mob, end.relative(direction))) {
+            end = end.relative(direction);
+            length++;
+        }
+        return new WallRun(end, length);
+    }
+
+    private static boolean inCorner(Map<Direction, WallRun> runs) {
+        // 东西向和南北向各有一侧很快就到墙。
+        int eastWest = Math.min(runs.get(Direction.EAST).length(), runs.get(Direction.WEST).length());
+        int northSouth = Math.min(runs.get(Direction.NORTH).length(), runs.get(Direction.SOUTH).length());
+        return eastWest <= CORNER_REACH && northSouth <= CORNER_REACH;
+    }
+
+    private static Set<BlockPos> otherCorners(Map<Direction, WallRun> runs, LivingEntity threat) {
+        // 沿墙走得远的那几头是别的角；走不远的那头还在眼下这个角里。离对手太近的角不去。
+        double minimumSqr = CORNER_SWITCH_FOE_DISTANCE * CORNER_SWITCH_FOE_DISTANCE;
+        Set<BlockPos> corners = new LinkedHashSet<>();
+        for (WallRun run : runs.values()) {
+            boolean far = run.length() > CORNER_REACH;
+            boolean clear = Vec3.atBottomCenterOf(run.end()).distanceToSqr(threat.position()) > minimumSqr;
+            if (far && clear) {
+                corners.add(run.end());
+            }
+        }
+        return corners;
+    }
+
+    private static Optional<Vec3> pointAway(Mob mob, LivingEntity threat, Directive previous,
+                                            double minimumDistance) {
+        // 沿用尚未走完的可达退路；原版抽样与附近候选统一交给寻路器，失败明确表示无路可退。
         if (usableRetreat(mob, threat, previous, minimumDistance)) {
             return previous.destination();
         }
@@ -206,11 +286,17 @@ final class HumanoidMotion {
         // 目的地须能站立、容纳实体且确实增加间距；高度搜索处理台阶和起跳后的坐标。
         BlockPos.findClosestMatch(candidate, 0, RETREAT_VERTICAL_RANGE, point -> {
             Vec3 destination = Vec3.atBottomCenterOf(point);
-            var bounds = mob.getBoundingBox().move(destination.subtract(mob.position()));
             return destination.distanceToSqr(threat.position()) >= minimumDistance * minimumDistance
-                    && mob.level().noCollision(mob, bounds)
-                    && !mob.level().noCollision(mob, bounds.move(0, -SUPPORT_PROBE_DEPTH, 0));
+                    && standable(mob, point);
         }).ifPresent(point -> candidates.add(point.immutable()));
+    }
+
+    private static boolean standable(Mob mob, BlockPos point) {
+        // 那一格容得下实体，脚下有支撑。
+        Vec3 destination = Vec3.atBottomCenterOf(point);
+        var bounds = mob.getBoundingBox().move(destination.subtract(mob.position()));
+        return mob.level().noCollision(mob, bounds)
+                && !mob.level().noCollision(mob, bounds.move(0, -SUPPORT_PROBE_DEPTH, 0));
     }
 
     static Vec3 away(Entity self, Entity threat) {

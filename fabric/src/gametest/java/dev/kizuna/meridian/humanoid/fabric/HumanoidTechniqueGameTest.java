@@ -9,6 +9,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueMovementSpeed;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastOutcome;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastPhase;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastRequest;
@@ -32,6 +33,7 @@ import net.minecraft.core.Direction;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -42,8 +44,10 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.monster.illager.Vindicator;
 import net.minecraft.world.entity.monster.zombie.Zombie;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -95,8 +99,20 @@ public final class HumanoidTechniqueGameTest {
     private static final double VERTICAL_VELOCITY = 0.4;
     private static final double EPSILON = 0.000001;
     private static final double MOVEMENT_MULTIPLIER = 0.4;
+    /** 怪物的移速属性按 √倍率 改：原版怪物的地面加速度跟属性的平方成正比，实际移速才是倍率倍。 */
+    private static final double MOB_CAST_ATTRIBUTE = Math.sqrt(MOVEMENT_MULTIPLIER);
+    private static final double MOB_STAGGER_ATTRIBUTE = Math.sqrt(STAGGER_MOVEMENT);
     private static final long MILLIS_PER_TICK = 50;
     private static final long MILLIS_PER_SECOND = 1000;
+    private static final int WALK_TICKS = (int) (MILLIS_PER_SECOND / MILLIS_PER_TICK);
+    /** 不加输入先走几步，竖直速度落到站在地上的稳态，起步那一 tick 才按地面摩擦算。 */
+    private static final int SETTLE_TICKS = 3;
+    /** 原版客户端按住前进键时的前进输入：键位 1 乘 0.98。 */
+    private static final float PLAYER_FORWARD_INPUT = 0.98F;
+    /** 倍率 0.4 的 5%；不补偿时怪物只走原速的 0.16，和玩家差 0.24。 */
+    private static final double DISTANCE_SHARE_TOLERANCE = 0.02;
+    private static final Identifier PLAYER_CAST_MODIFIER =
+            Identifier.fromNamespaceAndPath("meridian_humanoid_test", "player_cast");
     /** 寿元只剩 3 个 tick；检查放在第 6 个 tick，远早于劈门第 32 tick 的出手。 */
     private static final long LIFESPAN_LEFT_MILLIS = 3 * MILLIS_PER_TICK;
     private static final int LIFESPAN_END_TICKS = 6;
@@ -182,7 +198,7 @@ public final class HumanoidTechniqueGameTest {
         start(context, mob, "knock", target);
         context.assertTrue(mob.getNavigation().getPath() == path, "起手丢弃了原移动路径");
         assertPaRequest(context, mob);
-        assertMovementSpeed(context, mob, originalSpeed * MOVEMENT_MULTIPLIER);
+        assertMovementSpeed(context, mob, originalSpeed * MOB_CAST_ATTRIBUTE);
         Vec3 position = mob.position();
         mob.setNoAi(false /* aiDisabled */);
         mob.setSpeed((float) mob.getAttributeValue(Attributes.MOVEMENT_SPEED));
@@ -201,6 +217,107 @@ public final class HumanoidTechniqueGameTest {
             assertMovementSpeed(context, mob, originalSpeed);
             context.succeed();
         });
+    }
+
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void closeStrikeStandsUntilActiveEndThenFollowsAtCastSpeed(GameTestHelper context) {
+        // 出手段结束前站定保住首击距离；收式阶段照当前指令跟上对手，速度仍是这一式的施放移动倍率。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        double originalSpeed = mob.getAttributeValue(Attributes.MOVEMENT_SPEED);
+        mob.setTarget(target);
+        start(context, mob, "knock", target);
+        engageDuringCast(context, mob);
+        Vec3 far = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(ORIGIN, ORIGIN, FLOOR_EDGE)));
+        mob.getNavigation().moveTo(far.x, far.y, far.z, 1);
+        context.assertTrue(mob.getNavigation().isInProgress(), "夹具没有给出原路径");
+        HumanoidBrain.move(mob, HumanoidGoalAdapter.SPEEDS);
+        context.assertTrue(mob.getNavigation().isDone(), "出手段结束前没有站定");
+        var cast = progress(mob).getActiveCast();
+        long untilRecovery = cast.getActiveEndMillis() - HumanoidFabric.now().getElapsedMillis();
+        context.runAfterDelay(untilRecovery / MILLIS_PER_TICK + FINISH_MARGIN_TICKS, () -> {
+            long now = HumanoidFabric.now().getElapsedMillis();
+            context.assertTrue(now < cast.getRecoveryEndMillis(), "等待越过了收式阶段");
+            target.snapTo(far.x, far.y, far.z, 0, 0);
+            HumanoidBrain.move(mob, HumanoidGoalAdapter.SPEEDS);
+            context.assertTrue(mob.getNavigation().isInProgress(), "收式阶段没有跟上对手");
+            assertMovementSpeed(context, mob, originalSpeed * MOB_CAST_ATTRIBUTE);
+            context.succeed();
+        });
+    }
+
+    private static void engageDuringCast(GameTestHelper context, Vindicator mob) {
+        // 施放中走一次正式大脑入口：只记下对手、不重新决策，移动入口才有对手可跟。
+        mob.setNoAi(false /* aiDisabled */);
+        alignDecisionPhase(mob);
+        mob.tickCount++;
+        HumanoidBrain.tick(mob, new GoalSelector(), new GoalSelector());
+        mob.setNoAi(true /* aiDisabled */);
+        context.assertTrue(HumanoidBrain.opponent(mob).isPresent(), "施放中没有记下对手");
+        context.assertTrue(HumanoidBrain.decisions(mob.getUUID()).isEmpty(), "施放中重新决策");
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void castWalksSameShareOfFullSpeedDistanceAsPlayer(GameTestHelper context) {
+        // 同一施放倍率下各走一秒：怪物施放中走的距离占原速距离的比例，要和玩家按同一倍率走的比例接近。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        Player player = context.makeMockPlayer(GameType.SURVIVAL);
+        double mobFull = mobWalkedBlocks(context, mob);
+        double playerFull = playerWalkedBlocks(context, player);
+        start(context, mob, "knock", target);
+        var playerCast = TechniqueMovementSpeed.modifier(player, PLAYER_CAST_MODIFIER, MOVEMENT_MULTIPLIER);
+        player.getAttribute(Attributes.MOVEMENT_SPEED).addTransientModifier(playerCast);
+        double mobShare = mobWalkedBlocks(context, mob) / mobFull;
+        double playerShare = playerWalkedBlocks(context, player) / playerFull;
+        context.assertTrue(Math.abs(playerShare - MOVEMENT_MULTIPLIER) < DISTANCE_SHARE_TOLERANCE,
+                "夹具里的玩家没有按倍率走：" + playerShare);
+        context.assertTrue(Math.abs(mobShare - playerShare) < DISTANCE_SHARE_TOLERANCE,
+                "同一倍率下怪物和玩家走的距离比不同：怪物 " + mobShare + "，玩家 " + playerShare);
+        HumanoidTechniqueHost.removed(mob);
+        context.succeed();
+    }
+
+    private static double mobWalkedBlocks(GameTestHelper context, Vindicator mob) {
+        // 照原版怪物每 tick 的顺序：MoveControl 按移速属性设速度和前进输入，再按这份输入走一步；走完放回原位。
+        Vec3 home = mob.position();
+        float homeYaw = mob.getYRot();
+        Vec3 start = settled(context, mob);
+        Vec3 laneEnd = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(0, ORIGIN, FLOOR_EDGE)));
+        for (int tick = 0; tick < WALK_TICKS; tick++) {
+            mob.getMoveControl().setWantedPosition(laneEnd.x, laneEnd.y, laneEnd.z, 1);
+            mob.getMoveControl().tick();
+            mob.travel(new Vec3(mob.xxa, mob.yya, mob.zza));
+        }
+        double walked = mob.position().subtract(start).horizontalDistance();
+        context.assertTrue(walked < laneEnd.subtract(start).horizontalDistance(), "一秒走出了跑道：" + walked);
+        mob.snapTo(home.x, home.y, home.z, homeYaw, mob.getXRot());
+        mob.setDeltaMovement(Vec3.ZERO);
+        mob.setZza(0);
+        return walked;
+    }
+
+    private static double playerWalkedBlocks(GameTestHelper context, Player player) {
+        // 照原版玩家每 tick 的顺序：速度取移速属性，前进输入是客户端按住前进键的固定值。
+        Vec3 start = settled(context, player);
+        Vec3 input = new Vec3(0, 0, PLAYER_FORWARD_INPUT);
+        for (int tick = 0; tick < WALK_TICKS; tick++) {
+            player.setSpeed((float) player.getAttributeValue(Attributes.MOVEMENT_SPEED));
+            player.travel(input);
+        }
+        return player.position().subtract(start).horizontalDistance();
+    }
+
+    private static Vec3 settled(GameTestHelper context, LivingEntity entity) {
+        // 放到跑道起点、朝跑道方向（正 z），不加输入走几步站稳在地上，返回站稳后的起点。
+        Vec3 start = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(0, ORIGIN, 0)));
+        entity.snapTo(start.x, start.y, start.z, 0, 0);
+        entity.setDeltaMovement(Vec3.ZERO);
+        for (int tick = 0; tick < SETTLE_TICKS; tick++) {
+            entity.travel(Vec3.ZERO);
+        }
+        context.assertTrue(entity.onGround(), "跑道起点没有站在地上");
+        return entity.position();
     }
 
     private static void assertMovementSpeed(GameTestHelper context, Vindicator mob, double expected) {
@@ -338,7 +455,7 @@ public final class HumanoidTechniqueGameTest {
         context.runAfterDelay(FOLLOW_UP_TICKS, () -> {
             selected(context, mob, target, "finale");
             start(context, mob, "finale", target);
-            assertMovementSpeed(context, mob, originalSpeed * MOVEMENT_MULTIPLIER);
+            assertMovementSpeed(context, mob, originalSpeed * MOB_CAST_ATTRIBUTE);
             var active = progress(mob).getActiveCast();
             long fullWarmup = TechniqueFabric.service().registry().find(reference("finale"))
                     .orElseThrow().getPhases().getWarmupMillis();
@@ -346,7 +463,7 @@ public final class HumanoidTechniqueGameTest {
                     "承接未缩短万门起手");
             var stagger = new TechniqueService.Stagger(STAGGER_MILLIS, STAGGER_MOVEMENT);
             TechniqueFabric.service().stagger(mob.getUUID(), stagger);
-            assertMovementSpeed(context, mob, originalSpeed * STAGGER_MOVEMENT);
+            assertMovementSpeed(context, mob, originalSpeed * MOB_STAGGER_ATTRIBUTE);
             context.assertTrue(!HumanoidTechniqueHost.isCasting(mob), "承接后打断残留施放状态");
             HumanoidTechniqueHost.removed(mob);
             context.succeed();
@@ -370,7 +487,7 @@ public final class HumanoidTechniqueGameTest {
             mob.hurt(mob.damageSources().mobAttack(attacker), HEAVY_HIT);
             context.assertTrue(!HumanoidTechniqueHost.isCasting(mob), "僵直重击没有打断起手");
             context.assertTrue(TechniqueFabric.service().staggerRemainingMillis(mob.getUUID()) > 0, "重击没有僵直");
-            assertMovementSpeed(context, mob, originalSpeed * STAGGER_MOVEMENT);
+            assertMovementSpeed(context, mob, originalSpeed * MOB_STAGGER_ATTRIBUTE);
             var rejected = cast(mob, "knock", target);
             context.assertTrue(rejected.getFailure() == TechniqueFailure.STAGGERED, "僵直中仍可起式：" + rejected);
         } finally {
@@ -610,7 +727,7 @@ public final class HumanoidTechniqueGameTest {
         LivingEntity target = target(context);
         double originalSpeed = mob.getAttributeValue(Attributes.MOVEMENT_SPEED);
         start(context, mob, "knock", target);
-        assertMovementSpeed(context, mob, originalSpeed * MOVEMENT_MULTIPLIER);
+        assertMovementSpeed(context, mob, originalSpeed * MOB_CAST_ATTRIBUTE);
         var effects = HumanoidTechniqueHost.prepare(mob).effects();
         target.setPos(mob.position().add(0, 0, TARGET_HORIZONTAL_OFFSET));
         mob.setDeltaMovement(0, VERTICAL_VELOCITY, 0);

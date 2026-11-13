@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.human.fabric.HumanProjectileEffects;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueMovementSpeed;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueStatusBenefits;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldEffects;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldImpulses;
@@ -23,7 +24,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.illager.Pillager;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.phys.Vec3;
 
@@ -137,9 +137,9 @@ final class HumanoidTechniqueEffects {
         Identifier id = Identifier.fromNamespaceAndPath("meridian_humanoid", "technique/" + castUuid);
         if (effect.getMovement().getAction() == MovementAction.LOCK) {
             if (attribute.getModifier(id) == null) {
-                attribute.addTransientModifier(new AttributeModifier(id,
-                        TechniqueMovement.multiplier(effect.getMovement()) - 1,
-                        AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+                // 经 Technique 的统一换算：怪物按 √倍率 改属性，实际移速和玩家一样是倍率倍。
+                double multiplier = TechniqueMovement.multiplier(effect.getMovement());
+                attribute.addTransientModifier(TechniqueMovementSpeed.modifier(entity, id, multiplier));
             }
             castingIds.add(effect.getCastId());
             stopRangedUse();

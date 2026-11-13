@@ -5,6 +5,8 @@ import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.Optional;
@@ -35,14 +37,19 @@ public final class HumanoidEnclosedArenaGameTest {
     private static final int TIMEOUT = OBSERVATION_TICKS + 20;
     private static final int MAX_QUIET_TICKS = 400;
     private static final int SAMPLE_TICKS = 100;
+    private static final int ADVANCE_WINDOW_TICKS = 20;
+    private static final double ADVANCE_DISPLACEMENT = 1.0;
+    private static final double ADVANCE_CLOSING = 0.5;
     private static final BlockPos FIRST = new BlockPos(2, 1, 2);
     private static final BlockPos SECOND = new BlockPos(7, 1, 7);
     private static final BlockPos CORNER = new BlockPos(1, 1, 1);
     private static final BlockPos PURSUER = new BlockPos(3, 1, 3);
-    private static final Set<Decision.Movement> EVASIONS =
-            EnumSet.of(Decision.Movement.RETREAT, Decision.Movement.KITE, Decision.Movement.DODGE);
+    private static final Set<Decision.Movement> EVASIONS = EnumSet.of(Decision.Movement.RETREAT,
+            Decision.Movement.KITE, Decision.Movement.DODGE, Decision.Movement.FACE);
     private static final Set<Decision.Action> PURSUITS = EnumSet.of(Decision.Action.APPROACH,
             Decision.Action.ASSAULT, Decision.Action.STRIKE, Decision.Action.INTERRUPT, Decision.Action.RELEASE);
+    private static final Set<Decision.Movement> ENGAGING_MOVEMENTS =
+            EnumSet.of(Decision.Movement.HOLD_RANGE, Decision.Movement.FOLLOW);
 
     private enum Expectation { DUEL, PEDDLER_DEFENDS, PEDDLER_HITS }
 
@@ -152,11 +159,14 @@ public final class HumanoidEnclosedArenaGameTest {
         private final Expectation expectation;
         private final Set<String> firstCasts = new LinkedHashSet<>();
         private final Set<String> secondCasts = new LinkedHashSet<>();
+        private final Deque<Vec3> firstTrail = new ArrayDeque<>();
+        private final Deque<Vec3> secondTrail = new ArrayDeque<>();
         private double firstHealth;
         private double secondHealth;
         private int ticks;
         private int quietTicks;
         private int chaseTicks;
+        private int idleChaseTicks;
         private int damageEvents;
         private boolean firstAttacked;
         private boolean secondAttacked;
@@ -172,15 +182,17 @@ public final class HumanoidEnclosedArenaGameTest {
         }
 
         private void tick() {
+            record(first, firstTrail);
+            record(second, secondTrail);
             observeDamage();
             observeCast(first, firstCasts);
             observeCast(second, secondCasts);
             firstAttacked |= first.swinging || first.isUsingItem() || offensive(firstCasts);
             secondAttacked |= second.swinging || second.isUsingItem() || offensive(secondCasts);
             if (ticks % SAMPLE_TICKS == 0) {
-                LOGGER.info("arena={} tick={} quiet={} chase={} damage={} first={} second={}",
-                        first.getStringUUID(), ticks, quietTicks, chaseTicks, damageEvents, describe(first),
-                        describe(second));
+                LOGGER.info("arena={} tick={} quiet={} chase={} damage={} idleChase={} first={} second={}",
+                        first.getStringUUID(), ticks, quietTicks, chaseTicks, damageEvents, idleChaseTicks,
+                        describe(first), describe(second));
             }
             if (!first.isAlive() || !second.isAlive() || ticks == OBSERVATION_TICKS) {
                 finish();
@@ -195,7 +207,8 @@ public final class HumanoidEnclosedArenaGameTest {
         }
 
         private void observeDamage() {
-            // 有伤害就清零静默；一方在躲、另一方正追着它打的 tick 只停表不清零，其余无伤害的 tick 计静默。
+            // 有伤害就清零静默；一方在躲（含墙角转身等）、另一方正追着它而且真在挪动的 tick 只停表不清零，
+            // 其余无伤害的 tick 计静默。
             double currentFirst = health(first);
             double currentSecond = health(second);
             if (currentFirst < firstHealth || currentSecond < secondHealth) {
@@ -213,22 +226,74 @@ public final class HumanoidEnclosedArenaGameTest {
 
         private boolean chase() {
             // 躲开追打是有效防守，不是双方都卡住的僵持：商人腿力不够时绕着躲，对手的长招一次次落空。
-            return evading(first, second) || evading(second, first);
+            // 追的一方还得真在缩短距离或换位置；决策像在追、人却原地跟着转或贴着墙磨的 tick 另记一笔，照样计静默。
+            boolean firstChased = evading(first, second);
+            boolean secondChased = evading(second, first);
+            boolean firstPressed = firstChased && advancing(secondTrail, first);
+            boolean secondPressed = secondChased && advancing(firstTrail, second);
+            boolean pressed = firstPressed || secondPressed;
+            if ((firstChased || secondChased) && !pressed) {
+                idleChaseTicks++;
+            }
+            return pressed;
+        }
+
+        private static void record(Mob mob, Deque<Vec3> trail) {
+            // 只留最近一个窗口的位置：窗口满时队首是 ADVANCE_WINDOW_TICKS tick 前的位置，队尾是这一 tick 的。
+            trail.addLast(mob.position());
+            if (trail.size() > ADVANCE_WINDOW_TICKS + 1) {
+                trail.removeFirst();
+            }
+        }
+
+        private static boolean advancing(Deque<Vec3> chaserTrail, Mob evader) {
+            // 看追的一方最近 1 秒（两个决策间隔）：水平挪了至少 ADVANCE_DISPLACEMENT 格算换位置，
+            // 它自己的移动让到被追方现在位置的水平距离缩短至少 ADVANCE_CLOSING 格算在逼近；
+            // 原地跟着转、贴着墙磨两样都到不了。窗口没满不算。
+            if (chaserTrail.size() <= ADVANCE_WINDOW_TICKS) {
+                return false;
+            }
+            Vec3 then = chaserTrail.getFirst();
+            Vec3 now = chaserTrail.getLast();
+            Vec3 target = evader.position();
+            boolean moved = horizontal(then, now) >= ADVANCE_DISPLACEMENT;
+            boolean closed = horizontal(then, target) - horizontal(now, target) >= ADVANCE_CLOSING;
+            return moved || closed;
+        }
+
+        private static double horizontal(Vec3 from, Vec3 to) {
+            return Math.hypot(to.x - from.x, to.z - from.z);
         }
 
         private static boolean evading(Mob evader, Mob chaser) {
-            // 各看最后一条决策：躲的一方在拉开或闪避，追的一方正对着它接近、突击、打击、打断或交给原版攻击；
-            // 起手到收式期间大脑不再记决策，追的一方沿用起手那一条。
+            // 各看最后一条决策：躲的一方在拉开、闪避，或在墙角转身等着；追的一方正对着它接近、突击、打击、打断、
+            // 交给原版攻击，或在做接敌准备，或者正在施放、同时跟着它走；起手到收式期间大脑不再记决策，
+            // 追的一方沿用起手那一条。
             Optional<HumanoidMind.Logged> fled = last(evader);
             Optional<HumanoidMind.Logged> chased = last(chaser);
             if (fled.isEmpty() || chased.isEmpty()) {
                 return false;
             }
             HumanoidMind.Logged pursuit = chased.get();
+            Decision chase = pursuit.decision();
             boolean away = EVASIONS.contains(fled.get().decision().movement());
-            boolean pressing = PURSUITS.contains(pursuit.decision().action());
+            boolean pressing = PURSUITS.contains(chase.action()) || preparingToEngage(chase)
+                    || castingWhileFollowing(chaser);
             boolean atEvader = pursuit.opponent().filter(evader::equals).isPresent();
             return away && pressing && atEvader;
+        }
+
+        private static boolean preparingToEngage(Decision decision) {
+            // 接敌前准备（轻身、冲锋）时保持跃步带或跟着对手走；撤退时放的机动式移动通道是 RETREAT，不算。
+            return decision.action() == Decision.Action.PREPARE && ENGAGING_MOVEMENTS.contains(decision.movement());
+        }
+
+        private static boolean castingWhileFollowing(Mob chaser) {
+            // 施放中的决策（HOLD、KEEP）沿用上一条移动指令；指令仍是跟随，就是边施放边追着对手走。
+            boolean following = HumanoidBrain.directive(chaser.getUUID())
+                    .filter(directive -> directive.movement() == HumanoidMotion.Movement.FOLLOW)
+                    .isPresent();
+            return following && HumanoidTechniqueHost.hasActiveCast(chaser);
         }
 
         private static Optional<HumanoidMind.Logged> last(Mob mob) {

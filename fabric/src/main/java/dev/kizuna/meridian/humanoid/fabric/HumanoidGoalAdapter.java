@@ -10,7 +10,7 @@ import net.minecraft.world.entity.npc.villager.Villager;
 /** 非村民接入：在原版 GoalSelector 里装最高优先级的移动/朝向 Goal 与目标 Goal，大脑指挥时压过原版 Goal。 */
 final class HumanoidGoalAdapter {
     private static final int CONTROL_PRIORITY = -1;
-    private static final HumanoidMotion.Speeds SPEEDS = new HumanoidMotion.Speeds(1.0, 1.2);
+    static final HumanoidMotion.Speeds SPEEDS = new HumanoidMotion.Speeds(1.0, 1.2);
 
     private HumanoidGoalAdapter() {
         // 只负责装 Goal，状态在 HumanoidMind。

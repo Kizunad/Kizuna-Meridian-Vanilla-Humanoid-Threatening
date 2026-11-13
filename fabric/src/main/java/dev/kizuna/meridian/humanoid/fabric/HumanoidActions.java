@@ -117,7 +117,7 @@ final class HumanoidActions {
     }
 
     private static void dodge(Turn turn) {
-        // 副手持盾时举盾原地格挡；否则能跃步就跃出范围，同时走向出口。
+        // 副手持盾时举盾原地格挡；否则能跃步就跃出范围，同时走向出口；腿力不够出腿的不跃步，只走出去。
         Mob mob = turn.mob();
         if (HumanoidFighters.vanillaMeans(mob).contains(Fighter.Means.SHIELD)) {
             raiseShield(mob);
@@ -130,8 +130,10 @@ final class HumanoidActions {
             return;
         }
         Vec3 point = exit.get().point();
-        boolean casting = turn.readout().means().contains(Fighter.Means.CASTING);
-        if (!casting && TechniqueLeaps.preview(mob, point).isPresent()) {
+        var means = turn.readout().means();
+        boolean casting = means.contains(Fighter.Means.CASTING);
+        boolean weakLegs = means.contains(Fighter.Means.WEAK_LEGS);
+        if (!casting && !weakLegs && TechniqueLeaps.preview(mob, point).isPresent()) {
             TechniqueLeaps.leapToward(mob, point);
         }
         turn.mind().direct(HumanoidMotion.Directive.moveTo(point, HumanoidMotion.Pace.FLEE));

@@ -1,8 +1,16 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.human.server.HumanOpening;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpening;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningStage;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQiMode;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
+import dev.kizuna.meridian.humanoid.server.Decision;
+import dev.kizuna.meridian.humanoid.server.Fighter;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.EffectIntent;
@@ -21,6 +29,8 @@ import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.UUID;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -36,6 +46,7 @@ import net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.phys.Vec3;
 
 import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
@@ -49,6 +60,9 @@ public final class HumanoidPeddlerGameTest {
     private static final int FLOOR_EDGE = 6;
     private static final int BEHIND_Z = 0;
     private static final int FAR_TARGET_Z = 6;
+    // 离 FAR_TARGET_Z 的追兵 5 格：在轻步 4 到 24 格的距离门槛里，又没到撤退的安全距离。
+    private static final int STEP_AWAY_Z = 1;
+    private static final String LIGHT_STEP = "meridian_basic_techniques:light_step";
     private static final int HUNTER_X_LEFT = 1;
     private static final int HUNTER_X_RIGHT = 3;
     private static final int HUNTER_Z = 2;
@@ -63,6 +77,26 @@ public final class HumanoidPeddlerGameTest {
     private static final String DAMAGE_TYPE = "meridian_peddler:kick_lead_legs";
     private static final String MULE_KICK = "meridian_peddler:mule_kick";
     private static final String GROUND_SWEEP = "meridian_peddler:ground_sweep";
+    private static final String PUSH_KICK = "meridian_peddler:push_kick";
+    private static final long SPENT_COOLDOWN_MILLIS = 60_000;
+    private static final int CLOSE_BEHIND_Z = 1;
+    private static final int TRUE_QI_X = 5;
+    private static final String FOOT_MERIDIAN = "left_stomach_meridian";
+    private static final int ROOM_HEIGHT = 2;
+    /** 一格宽的窄道外壳：内部 x 1..5、z 1。 */
+    private static final BoundingBox LANE = new BoundingBox(0, ORIGIN_Y - 1, 0, 6, ORIGIN_Y + ROOM_HEIGHT, 2);
+    private static final int LANE_X = 3;
+    private static final int LANE_Z = 1;
+    private static final int HUNTER_LANE_Z = 4;
+    /** 5×5 石室外壳：内部 x、z 都是 ROOM_NEAR..ROOM_FAR。 */
+    private static final BoundingBox ROOM = new BoundingBox(0, ORIGIN_Y - 1, 0, 6, ORIGIN_Y + ROOM_HEIGHT, 6);
+    private static final int ROOM_NEAR = 1;
+    private static final int ROOM_FAR = 5;
+    private static final double NO_SAFE_DISTANCE = 0;
+    private static final MeridianOpening OPENED = MeridianOpening.newBuilder()
+            .setStage(MeridianOpeningStage.OPENED)
+            .setProgress(1)
+            .build();
     private static final double EXHAUSTED_RATIO = 0.5;
     private static final long EXHAUSTION_MILLIS = 60_000;
     private static final double TRIP_UPWARD_PER_TICK = 0.1;
@@ -198,6 +232,156 @@ public final class HumanoidPeddlerGameTest {
         bind(trader, exhausted);
         HumanoidTechniqueHost.prepare(trader);
         Zombie hunter = hunter(context, trader, ORIGIN_X, TARGET_Z);
+        // 关着 AI 的实体不会自己着地，而大脑只在着地时找退路；着地后撤退要经过退路搜索。
+        trader.setOnGround(true /* onGround */);
+        var decisions = decideOnce(trader, hunter);
+        context.assertTrue(!decisions.isEmpty()
+                        && decisions.get(decisions.size() - 1).decision().action() == Decision.Action.RETREAT,
+                "虚脱腿法没有只跑：" + decisions);
+        context.assertTrue(!TechniqueState.read(BodyProtobuf.fromMessage(snapshot(trader))).hasActiveCast(),
+                "虚脱腿法仍开始施放");
+        trader.setNoAi(true /* aiDisabled */);
+        hunter.discard();
+        HumanoidTechniqueHost.removed(trader);
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void weakLegsWalkAwayInsteadOfLightStepping(GameTestHelper context) {
+        // 腿力没过出腿门槛的真炁商人被追、退路还在：轻步明明放得了，也不放轻步、不跃步，只走开等腿力回来。
+        WanderingTrader trader = kicker(context, HumanoidTier.TRUE_QI, ORIGIN_X, STEP_AWAY_Z);
+        exhaust(trader);
+        Zombie hunter = hunter(context, trader, ORIGIN_X, FAR_TARGET_Z);
+        // 关着 AI 的实体不会自己着地，而大脑只在着地时找退路。
+        trader.setOnGround(true /* onGround */);
+        var readout = HumanoidRepertoires.read(trader, body(trader), opponent(hunter), technique -> false);
+        var means = readout.means();
+        context.assertTrue(means.contains(Fighter.Means.WEAK_LEGS), "夹具应是腿力不够出腿：" + means);
+        boolean stepReady = readout.repertoire().supports().stream()
+                .anyMatch(support -> support.technique().equals(LIGHT_STEP));
+        context.assertTrue(stepReady, "夹具里轻步应放得了：" + readout.repertoire().supports());
+        var decisions = decideOnce(trader, hunter);
+        context.assertTrue(!decisions.isEmpty(), "大脑没有做出决策");
+        var decision = decisions.getLast().decision();
+        context.assertTrue(decision.action() == Decision.Action.RETREAT && decision.technique().isEmpty(),
+                "腿力不够时没有只走开：" + decisions);
+        context.assertTrue(!TechniqueState.read(body(trader)).hasActiveCast(), "腿力不够时仍开始施放");
+        trader.setNoAi(true /* aiDisabled */);
+        hunter.discard();
+        HumanoidTechniqueHost.removed(trader);
+        trader.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void unreadyDefenderSidestepsInsteadOfWaiting(GameTestHelper context) {
+        // 一格宽的封闭窄道里没有比现在离追兵更远的点；腿力不够出防守腿法的商人不原地转身等，
+        // 贴墙横着让开到不比现在更近的点。追兵隔着墙，只提供敌意登记。
+        WanderingTrader trader = unreadyTrader(context, LANE_X, LANE_Z);
+        enclose(context, LANE);
+        Zombie hunter = hunter(context, trader, LANE_X, HUNTER_LANE_Z);
+        // 关着 AI 的实体不走物理、不会自己着地；寻路器和找退路都要求站在地上。
+        trader.setOnGround(true /* onGround */);
+        assertAwaitingDefense(context, trader, hunter);
+        var staying = HumanoidMotion.Directive.STAYING;
+        context.assertTrue(HumanoidMotion.retreatPoint(trader, hunter, staying, NO_SAFE_DISTANCE).isEmpty(),
+                "窄道里不该有短退点");
+        context.assertTrue(HumanoidMotion.sidestepPoint(trader, hunter, staying).isPresent(), "窄道里应能横着让开");
+        var decisions = decideOnce(trader, hunter);
+        context.assertTrue(!decisions.isEmpty(), "大脑没有做出决策");
+        var movement = decisions.get(decisions.size() - 1).decision().movement();
+        context.assertTrue(movement == Decision.Movement.RETREAT || movement == Decision.Movement.KITE,
+                "腿法没就绪时没有横着让开：" + decisions);
+        trader.setNoAi(true /* aiDisabled */);
+        hunter.discard();
+        HumanoidTechniqueHost.removed(trader);
+        trader.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void unreadyDefenderSwitchesCornerWhileFoeIsFar(GameTestHelper context) {
+        // 5×5 封闭石室，商人贴在一个角里，追兵站在对角：没有比现在更远、也没有不比现在更近的点。
+        // 腿力不够出防守腿法、对手又还远时，商人不在角里转身等，沿墙去相邻的两个角之一。
+        WanderingTrader trader = unreadyTrader(context, ROOM_NEAR, ROOM_NEAR);
+        enclose(context, ROOM);
+        double pressed = ROOM_NEAR + trader.getBbWidth() / 2;
+        Vec3 corner = context.absoluteVec(new Vec3(pressed, ORIGIN_Y, pressed));
+        trader.snapTo(corner.x, corner.y, corner.z, 0, 0);
+        Zombie hunter = hunter(context, trader, ROOM_FAR, ROOM_FAR);
+        // 关着 AI 的实体不会自己着地，而大脑只在着地时找退路。
+        trader.setOnGround(true /* onGround */);
+        assertAwaitingDefense(context, trader, hunter);
+        var staying = HumanoidMotion.Directive.STAYING;
+        context.assertTrue(HumanoidMotion.sidestepPoint(trader, hunter, staying).isEmpty(), "墙角里不该有横让点");
+        var decisions = decideOnce(trader, hunter);
+        context.assertTrue(!decisions.isEmpty(), "大脑没有做出决策");
+        var movement = decisions.getLast().decision().movement();
+        context.assertTrue(movement == Decision.Movement.RETREAT || movement == Decision.Movement.KITE,
+                "对手还远时没有沿墙换角：" + decisions);
+        Vec3 eastCorner = blockCenter(context, ROOM_FAR, ROOM_NEAR);
+        Vec3 southCorner = blockCenter(context, ROOM_NEAR, ROOM_FAR);
+        Set<Vec3> neighbours = Set.of(eastCorner, southCorner);
+        var destination = HumanoidBrain.directive(trader.getUUID()).flatMap(HumanoidMotion.Directive::destination);
+        context.assertTrue(destination.filter(neighbours::contains).isPresent(), "没有沿墙去相邻的角：" + destination);
+        trader.setNoAi(true /* aiDisabled */);
+        hunter.discard();
+        HumanoidTechniqueHost.removed(trader);
+        trader.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void spentLegDefensesLeaveNoCastableDefense(GameTestHelper context) {
+        // 弹腿、正蹬、尥蹶都在冷却时不算出得了防守腿法，商人照腿力不够的办法躲开拉距离；
+        // 没被围时扫堂冷却已过也不算。冷却只写进身体副本喂给读候选，不写回宿主。
+        WanderingTrader trader = kicker(context, HumanoidTier.TRUE_QI, ORIGIN_X, ORIGIN_Z);
+        context.assertTrue(castableDefense(trader, body(trader), Optional.empty()), "冷却已过的真炁商人出不了防守腿法");
+        var spent = spentDefenses(snapshot(trader), List.of(ROAD_TECHNIQUE, PUSH_KICK, MULE_KICK));
+        context.assertTrue(!castableDefense(trader, spent, Optional.empty()), "防守腿法都在冷却仍算出得了腿");
+        trader.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void closeOpponentBehindLeavesOnlyMuleKick(GameTestHelper context) {
+        // 对手贴在身后、转身期间就会挨打时只有尥蹶算数：不会尥蹶的游炁商人照腿力不够的办法躲，
+        // 会尥蹶的真炁商人照样算出得了腿；对手在身前时正面两式算数。
+        WanderingTrader wandering = kicker(context, HumanoidTier.WANDERING_QI, ORIGIN_X, ORIGIN_Z);
+        Cow behind = target(context, ORIGIN_X, CLOSE_BEHIND_Z);
+        Cow front = target(context, ORIGIN_X, TARGET_Z);
+        BodySnapshot wanderingBody = body(wandering);
+        context.assertTrue(!castableDefense(wandering, wanderingBody, opponent(behind)),
+                "对手贴在身后、不会尥蹶仍算出得了腿");
+        context.assertTrue(castableDefense(wandering, wanderingBody, opponent(front)), "对手在身前却出不了防守腿法");
+        WanderingTrader trueQi = kicker(context, HumanoidTier.TRUE_QI, TRUE_QI_X, ORIGIN_Z);
+        Cow trueQiBehind = target(context, TRUE_QI_X, CLOSE_BEHIND_Z);
+        context.assertTrue(castableDefense(trueQi, body(trueQi), opponent(trueQiBehind)),
+                "会尥蹶的商人对身后贴身对手出不了腿");
+        wandering.discard();
+        trueQi.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void pinnedPeddlerCountsOnlySweepAndMuleKick(GameTestHelper context) {
+        // 被两个追兵夹住时正面两式出不了：不会尥蹶的游炁商人扫堂冷却已过才算出得了腿，扫堂在冷却就不算。
+        WanderingTrader trader = kicker(context, HumanoidTier.WANDERING_QI, ORIGIN_X, ORIGIN_Z);
+        Cow front = target(context, ORIGIN_X, TARGET_Z);
+        Zombie left = hunter(context, trader, HUNTER_X_LEFT, HUNTER_Z);
+        Zombie right = hunter(context, trader, HUNTER_X_RIGHT, HUNTER_Z);
+        context.assertTrue(castableDefense(trader, body(trader), opponent(front)),
+                "被夹住、扫堂冷却已过却不算出得了腿");
+        var swept = spentDefenses(snapshot(trader), List.of(GROUND_SWEEP));
+        context.assertTrue(!castableDefense(trader, swept, opponent(front)), "被夹住、扫堂在冷却仍算出得了腿");
+        left.discard();
+        right.discard();
+        trader.discard();
+        context.succeed();
+    }
+
+    private static List<HumanoidMind.Logged> decideOnce(WanderingTrader trader, Zombie hunter) {
+        // 打开 AI，按决策间隔推进真实大脑，正好做出一次决策。
         trader.setTarget(hunter);
         trader.setNoAi(false /* aiDisabled */);
         var goals = new GoalSelector();
@@ -207,17 +391,33 @@ public final class HumanoidPeddlerGameTest {
             trader.tickCount++;
             HumanoidBrain.tick(trader, goals, targets);
         }
-        var decisions = HumanoidBrain.decisions(trader.getUUID());
-        context.assertTrue(!decisions.isEmpty()
-                        && decisions.get(decisions.size() - 1).decision().action()
-                        == dev.kizuna.meridian.humanoid.server.Decision.Action.RETREAT,
-                "虚脱腿法没有只跑：" + decisions);
-        context.assertTrue(!TechniqueState.read(BodyProtobuf.fromMessage(snapshot(trader))).hasActiveCast(),
-                "虚脱腿法仍开始施放");
-        trader.setNoAi(true /* aiDisabled */);
-        hunter.discard();
-        HumanoidTechniqueHost.removed(trader);
-        context.succeed();
+        return HumanoidBrain.decisions(trader.getUUID());
+    }
+
+    private static boolean castableDefense(WanderingTrader trader, BodySnapshot body,
+                                           Optional<HumanoidOpponent> opponent) {
+        // 与大脑同一份读候选。
+        return HumanoidRepertoires.read(trader, body, opponent, technique -> false)
+                .means().contains(Fighter.Means.CASTABLE_DEFENSE);
+    }
+
+    private static Optional<HumanoidOpponent> opponent(LivingEntity target) {
+        // 测试对手不带施放观察。
+        return Optional.of(new HumanoidOpponent(target, Optional.empty()));
+    }
+
+    private static BodySnapshot spentDefenses(BodyMessages.BodySnapshot body, List<String> techniques) {
+        // 把给定几式的冷却设到一分钟后，其余不动。
+        var progress = TechniqueState.read(BodyProtobuf.fromMessage(body)).toBuilder();
+        long until = body.getSettledAt().getElapsedMillis() + SPENT_COOLDOWN_MILLIS;
+        for (String technique : techniques) {
+            progress.putCooldowns(technique, until);
+        }
+        var spentProgress = progress.build();
+        var spent = body.toBuilder()
+                .putAddonProgress(TechniqueState.KEY, TechniqueState.pack(spentProgress))
+                .build();
+        return BodyProtobuf.fromMessage(spent);
     }
 
     private static EffectIntent legStrikeEffect() {
@@ -280,6 +480,41 @@ public final class HumanoidPeddlerGameTest {
         context.assertTrue(context.getLevel().addFreshEntity(trader), "流浪商人未加入世界");
         HumanoidTechniqueHost.prepare(trader);
         return trader;
+    }
+
+    private static WanderingTrader kicker(GameTestHelper context, HumanoidTier tier, int x, int z) {
+        // 随机出生的身体偶尔一条足经都没开，防守腿法全绑不上；腿法只要一条足经，夹具开一条再填满真元。
+        WanderingTrader trader = trader(context, tier, x, z);
+        var opened = snapshot(trader).toBuilder();
+        openMeridian(opened, FOOT_MERIDIAN);
+        HumanoidTechniqueHost.removed(trader);
+        bind(trader, opened.build());
+        HumanoidTechniqueHost.prepare(trader);
+        DebugQi fill = DebugQi.newBuilder()
+                .setMode(DebugQiMode.FILL_LUMENS)
+                .build();
+        FailureCode result = HumanoidHealthHost.debugQi(trader, fill);
+        context.assertTrue(result == FailureCode.FAILURE_CODE_UNSPECIFIED, "腿法夹具真元准备失败：" + result);
+        boolean footOpened = snapshot(trader).getMeridianStatesList().stream()
+                .anyMatch(state -> state.getId().equals(FOOT_MERIDIAN)
+                        && state.getOpening().getStage() == MeridianOpeningStage.OPENED);
+        context.assertTrue(footOpened, "腿法夹具没有开出足经");
+        return trader;
+    }
+
+    private static void openMeridian(BodyMessages.BodySnapshot.Builder snapshot, String id) {
+        // 与人体开脉内容采用相同的容量增量，已开经脉不重复扩容；通过正式恢复入口校验。
+        var state = snapshot.getMeridianStatesBuilderList().stream()
+                .filter(meridian -> meridian.getId().equals(id))
+                .findFirst().orElseThrow();
+        if (state.getOpening().getStage() == MeridianOpeningStage.OPENED) {
+            return;
+        }
+        var definition = snapshot.getStructureBuilder().getMeridiansBuilderList().stream()
+                .filter(meridian -> meridian.getId().equals(id))
+                .findFirst().orElseThrow();
+        definition.setLumenVolume(definition.getLumenVolume() + HumanOpening.LUMEN_VOLUME_GAIN);
+        state.setOpening(OPENED);
     }
 
     private static Cow target(GameTestHelper context, int x, int z) {
@@ -384,6 +619,47 @@ public final class HumanoidPeddlerGameTest {
                 .setValue(value)
                 .setUnit(unit)
                 .build();
+    }
+
+    private static void enclose(GameTestHelper context, BoundingBox shell) {
+        // 外壳的四壁、地面和顶棚都是石头，只留严格在内的空气；商人走不出去，外壳外的点都不可达。
+        for (int x = shell.minX(); x <= shell.maxX(); x++) {
+            for (int y = shell.minY(); y <= shell.maxY(); y++) {
+                for (int z = shell.minZ(); z <= shell.maxZ(); z++) {
+                    boolean inside = x > shell.minX() && x < shell.maxX() && z > shell.minZ() && z < shell.maxZ()
+                            && y > shell.minY() && y < shell.maxY();
+                    if (!inside) {
+                        context.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+                    }
+                }
+            }
+        }
+    }
+
+    private static WanderingTrader unreadyTrader(GameTestHelper context, int x, int z) {
+        // 两腿虚脱的真炁商人：学会了防守腿法，腿力出不了腿。
+        WanderingTrader trader = trader(context, HumanoidTier.TRUE_QI, x, z);
+        exhaust(trader);
+        return trader;
+    }
+
+    private static void exhaust(WanderingTrader trader) {
+        // 按当前快照加上两腿虚脱，再从这份快照恢复身体并重新装上功法会话。
+        BodyMessages.BodySnapshot exhausted = exhaustedLegs(snapshot(trader));
+        HumanoidTechniqueHost.removed(trader);
+        bind(trader, exhausted);
+        HumanoidTechniqueHost.prepare(trader);
+    }
+
+    private static void assertAwaitingDefense(GameTestHelper context, WanderingTrader trader, Zombie hunter) {
+        var means = HumanoidRepertoires.read(trader, body(trader), opponent(hunter), technique -> false).means();
+        context.assertTrue(means.contains(Fighter.Means.KNOWN_DEFENSE)
+                        && !means.contains(Fighter.Means.CASTABLE_DEFENSE),
+                "夹具应是学会了防守腿法却出不了腿：" + means);
+    }
+
+    private static Vec3 blockCenter(GameTestHelper context, int x, int z) {
+        return Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(x, ORIGIN_Y, z)));
     }
 
     private static void floor(GameTestHelper context) {

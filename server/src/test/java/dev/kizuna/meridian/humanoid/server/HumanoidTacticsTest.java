@@ -249,14 +249,28 @@ public class HumanoidTacticsTest {
 
     @Test
     public void corneredDefenderBelowLegGateFacesInsteadOfKiting() {
-        // 学会防守腿法但腿力没过门槛：没退路时轻身在身也不跃步拉开，原地转身等着；退路还在时照旧跃步。
-        var tired = new Fighter(1, FULL, EnumSet.of(Means.KNOWN_DEFENSE));
+        // 学会防守腿法但腿力没过门槛：没退路时轻身在身也不跃步拉开，原地转身等着。
+        var tired = new Fighter(1, FULL, EnumSet.of(Means.KNOWN_DEFENSE, Means.WEAK_LEGS));
         Set<Circumstance> blocked = Set.of(Circumstance.ON_GROUND, Circumstance.RETREAT_BLOCKED);
         var cornered = new Encounter(tired, AXE, MID, Optional.empty(), blocked);
         Decision waiting = decide(cornered, Stance.RETREAT, supports(LIGHT_BODY));
         assertEquals(Action.HOLD, waiting.action());
         assertEquals(Decision.Movement.FACE, waiting.movement());
-        assertEquals(Action.KITE, decide(calm(tired, MID), Stance.RETREAT, supports(LIGHT_BODY)).action());
+    }
+
+    @Test
+    public void weakLegsWalkAwayWithoutLeapingOrLightStepping() {
+        // 腿力没过出腿门槛、退路还在：轻身在身也不跃步，不在身也不放轻步，只走开；
+        // 腿力够、只是腿法都在冷却的照旧跃步拉开。
+        var tired = new Fighter(1, FULL, EnumSet.of(Means.KNOWN_DEFENSE, Means.WEAK_LEGS));
+        Decision lit = decide(calm(tired, MID), Stance.RETREAT, supports(LIGHT_BODY));
+        Decision unlit = decide(calm(tired, MID), Stance.RETREAT, supports(0, lightStep()));
+        assertEquals(Action.RETREAT, lit.action());
+        assertEquals(Decision.Movement.RETREAT, lit.movement());
+        assertEquals(Action.RETREAT, unlit.action());
+        assertEquals(Optional.empty(), unlit.technique());
+        var cooling = new Fighter(1, FULL, EnumSet.of(Means.KNOWN_DEFENSE));
+        assertEquals(Action.KITE, decide(calm(cooling, MID), Stance.RETREAT, supports(LIGHT_BODY)).action());
     }
 
     @Test

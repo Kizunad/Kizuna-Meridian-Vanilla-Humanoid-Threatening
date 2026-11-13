@@ -194,7 +194,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     }
 
     static boolean castingWayfarer(LivingEntity entity) {
-        // 行矢施放时要继续检查承接窗口，并暂停导航；不改变其他功法的移动策略。
+        // 行矢施放时要继续检查承接窗口，出手段结束前暂停导航；不改变其他功法的移动策略。
         return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
                 .map(progress -> progress.getActiveCast().getRequest().getTechnique().getId())
                 .filter(id -> id.startsWith(HumanoidWayfarerAi.PREFIX))
@@ -202,8 +202,20 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     }
 
     static boolean castingCloseStrike(LivingEntity entity) {
-        // 近战打击的首击依赖施放前的距离，起手后停止导航但继续面向当前目标。
+        // 近战打击的首击依赖施放前的距离，起手到出手段结束停止导航但继续面向当前目标。
         return activeDefinition(entity).map(HumanoidTechniqueHost::hasCloseStrike).orElse(false);
+    }
+
+    static boolean beforeRecovery(LivingEntity entity) {
+        // 当前施放还没过出手段；各式的打击与放箭都在出手段结束前落下，之后只剩收式。
+        // 不在施放为假；读不到身体时钟时按还在出手段处理。
+        Optional<Long> activeEnd = publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
+                .map(progress -> progress.getActiveCast().getActiveEndMillis());
+        if (activeEnd.isEmpty()) {
+            return false;
+        }
+        OptionalLong clock = clockMillis(entity);
+        return clock.isEmpty() || clock.getAsLong() <= activeEnd.get();
     }
 
     private static Optional<TechniqueDefinition> activeDefinition(LivingEntity entity) {

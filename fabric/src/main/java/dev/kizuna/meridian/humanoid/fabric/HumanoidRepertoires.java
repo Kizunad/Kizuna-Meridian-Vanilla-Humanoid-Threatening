@@ -48,6 +48,8 @@ final class HumanoidRepertoires {
     private static final double PEDDLER_MINIMUM_LEG_FORCE = 3000;
     private static final double PEDDLER_HALF_HP = 0.5;
     private static final double PEDDLER_BEHIND_DISTANCE = 3;
+    // 身后对手进到这距离内，转身期间就会挨打（原版近战大约够到 1.4 到 2 格）。
+    private static final double PEDDLER_TURN_DISTANCE = 2;
     private static final double PEDDLER_RANGE_MARGIN = 0.5;
     private static final int SINGLE_OPPONENT_COUNT = 1;
     private static final long MILLIS_PER_TICK = 50;
@@ -121,7 +123,7 @@ final class HumanoidRepertoires {
         boolean followUpAvailable = source.progress().hasActiveCast() && !readyStrikes.isEmpty();
         var repertoire = new Repertoire(strikes(source, readyStrikes, opponent), supports(body, castable),
                 timing(source, opponent, followUpAvailable));
-        return new Readout(repertoire, means(source, ready), context,
+        return new Readout(repertoire, means(source, opponent, ready), context,
                 readyStrikes.stream().map(Ready::known).toList(),
                 source.progress().getKnownList(), exchanges(readyStrikes));
     }
@@ -133,9 +135,9 @@ final class HumanoidRepertoires {
                         entry -> entry.exchange().orElseThrow()));
     }
 
-    private static Set<Means> means(Source source, List<Ready> ready) {
+    private static Set<Means> means(Source source, Optional<HumanoidOpponent> opponent, List<Ready> ready) {
         // 会一个绑定、费用、做功与持物都通过的打击式即算可施放，冷却中也算；防守腿法学会即另记一项，
-        // 可施放还要腿力过门槛，前后方处境不看；有当前施放另记，不限速的式也算。
+        // 可施放见 defenseReady，学会了但腿力没过出腿门槛另记腿力不够；有当前施放另记，不限速的式也算。
         var means = EnumSet.noneOf(Means.class);
         if (ready.stream().anyMatch(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED
                 && firstStrike(entry.definition()).isPresent())) {
@@ -145,14 +147,46 @@ final class HumanoidRepertoires {
                 .anyMatch(known -> PEDDLER_DEFENSES.contains(known.getTechnique().getId()))) {
             means.add(Means.KNOWN_DEFENSE);
         }
-        if (HumanoidFighters.legForceNewtons(source.body()) >= PEDDLER_MINIMUM_LEG_FORCE && ready.stream()
-                .anyMatch(entry -> PEDDLER_DEFENSES.contains(entry.known().getTechnique().getId()))) {
+        boolean weakLegs = HumanoidFighters.legForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE;
+        if (means.contains(Means.KNOWN_DEFENSE) && weakLegs) {
+            means.add(Means.WEAK_LEGS);
+        }
+        if (!weakLegs && defenseReady(source, opponent, ready)) {
             means.add(Means.CASTABLE_DEFENSE);
         }
         if (source.progress().hasActiveCast()) {
             means.add(Means.CASTING);
         }
         return means;
+    }
+
+    private static boolean defenseReady(Source source, Optional<HumanoidOpponent> opponent, List<Ready> ready) {
+        // 腿力门槛由调用方先查；这里看有没有一式眼下用得上的防守腿法绑定、费用、做功与持物都通过、冷却已过；
+        // 距离不看，远了迎上去。冷却中或用不上都不算：商人这时照腿力不够的办法躲开拉距离，
+        // 冷却好了、转得过身再迎上去出腿。
+        long now = source.body().settledAt().elapsedMillis();
+        var cooldowns = source.progress().getCooldownsMap();
+        var usable = usableDefenses(source.mob(), opponent);
+        return ready.stream()
+                .map(entry -> entry.known().getTechnique().getId())
+                .filter(usable::contains)
+                .anyMatch(id -> now >= cooldowns.getOrDefault(id, 0L));
+    }
+
+    private static Set<String> usableDefenses(Mob mob, Optional<HumanoidOpponent> opponent) {
+        // 被围（夹住）时正面两式出不了，只剩扫堂和尥蹶。没被围时扫堂不算，否则会扫堂的商人永远算出得了腿。
+        // 对手贴在身后、转身期间就会挨打时只剩尥蹶；离得远些就先转身面对，再出正面两式。
+        if (HumanoidThreats.surrounded(mob)) {
+            return Set.of(GROUND_SWEEP, MULE_KICK);
+        }
+        boolean closeBehind = opponent.map(HumanoidOpponent::entity)
+                .filter(target -> targetBehind(mob, target))
+                .filter(target -> HumanoidMotion.distance(mob, target) <= PEDDLER_TURN_DISTANCE)
+                .isPresent();
+        if (closeBehind) {
+            return Set.of(MULE_KICK);
+        }
+        return Set.of(SNAP_KICK, PUSH_KICK, MULE_KICK);
     }
 
     private static TechniqueSelector.Context context(Source source, Optional<HumanoidOpponent> opponent,

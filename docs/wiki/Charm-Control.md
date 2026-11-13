@@ -33,7 +33,8 @@ Brewing 的 fabric/server/shared 使用源码组合，完整运行装配仍由 F
 因此另在 `Witch.aiStep` 中止其喝药分支、清临时药水和饮药减速，再推进父类 AI。
 反胃期限与普通吃喝共用 Brewing 的真实身体规则。
 
-`HumanoidTempo` 调 Human 的公共 `HumanLimbTempo`，按实时曲线投影移动属性和主手臂倍率。
+`HumanoidTempo` 调 Human 的公共 `HumanLimbTempo`，按实时曲线投影移动属性和主手臂倍率；
+移动倍率经 Technique 的 `TechniqueMovementSpeed` 按 √倍率 加到移速属性，实际移速是倍率倍。
 同宿主内直接读取 Store 已提交的不可变快照，无能力修正时跳过肌肉遍历并撤回已有速度投影。
 原版近战 Goal 重置冷却、远程 Goal 的距离插值间隔和弩的新等待期各只缩放一次；技法时长仍由 Technique 处理。
 inspect 保留 Human 的完整器官/组织定义与状态，包括两肾、脑、注意组织和能力修正，Brewing 直接按同一规则算档。

@@ -2,12 +2,12 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.human.server.HumanLimbTempo;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueMovementSpeed;
 import java.util.Map;
 import java.util.WeakHashMap;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 
 /** 组织 tempo 只调整原版移动与攻击间隔，功法时长仍由 Technique 计算。 */
@@ -62,7 +62,8 @@ public final class HumanoidTempo {
         // 原版同步脏属性，只在累计变化超过阈值或归一时更新。
         var attribute = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         var previous = attribute.getModifier(MODIFIER);
-        double amount = multiplier - 1;
+        var modifier = TechniqueMovementSpeed.modifier(mob, MODIFIER, multiplier);
+        double amount = modifier.amount();
         double previousAmount = 0;
         if (previous != null) {
             previousAmount = previous.amount();
@@ -72,8 +73,7 @@ public final class HumanoidTempo {
         }
         attribute.removeModifier(MODIFIER);
         if (amount != 0) {
-            attribute.addTransientModifier(new AttributeModifier(MODIFIER, amount,
-                    AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+            attribute.addTransientModifier(modifier);
         }
     }
 
