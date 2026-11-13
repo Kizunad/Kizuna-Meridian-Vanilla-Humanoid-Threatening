@@ -30,6 +30,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.cow.Cow;
+import net.minecraft.world.entity.monster.Vex;
+import net.minecraft.world.entity.monster.illager.Evoker;
 import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.entity.monster.illager.Vindicator;
 import net.minecraft.world.entity.npc.villager.Villager;
@@ -68,6 +70,7 @@ public final class HumanoidBrainGameTest {
     private static final String SLEEP_BATCH = "meridian_humanoid_test:brain_sleep";
     private static final String CROWD_BATCH = "meridian_humanoid_test:brain_crowd";
     private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
+    private static final String SUMMON_BATCH = "meridian_humanoid_test:brain_summon";
     /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
     private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
     private static final String RETREAT_STRUCTURE = "meridian_humanoid_test:retreat";
@@ -109,6 +112,10 @@ public final class HumanoidBrainGameTest {
     private static final int CROWD_TICKS = 1200;
     private static final int CROWD_TIMEOUT = CROWD_TICKS + 100;
     private static final int DUEL_TICKS = 3600;
+    private static final int SUMMON_TICKS = 300;
+    /** 第一口咬到以后再看 3 秒（几次决策）。 */
+    private static final int AFTER_BITE_TICKS = 60;
+    private static final int VEX_COUNT = 2;
     private static final int DUEL_TIMEOUT = 4200;
     private static final int FAILURE_STREAK_LIMIT = 3;
     private static final double RETREAT_GAIN = 2;
@@ -322,6 +329,39 @@ public final class HumanoidBrainGameTest {
                 context.assertTrue(HumanoidBrain.decisions(villager.getUUID()).isEmpty(),
                         "无威胁村民留下了大脑决策：" + subject);
             }
+            arena.finish();
+        });
+    }
+
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = SUMMON_BATCH)
+    public void vexBitesKeepTheEvokerAsTheOpponent(GameTestHelper context) {
+        // 召唤物仇恨：不动的唤魔者在 6 格外的平地上，它的两只恼鬼贴身咬真炁村民；
+        // 村民的主对手一直是唤魔者，不换成贴身的恼鬼。唤魔者走得到，所以恼鬼贴身也不顺手打。
+        var arena = new Arena(context);
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, "summon-villager",
+                FAR_SUBJECT_POS);
+        Evoker evoker = arena.spawnUnborn(EntityTypes.EVOKER, "summon-evoker", FAR_POS);
+        evoker.setNoAi(true /* aiDisabled */);
+        for (int index = 0; index < VEX_COUNT; index++) {
+            Vex vex = arena.spawnUnborn(EntityTypes.VEX, "summon-vex-" + index, NEAR_POS);
+            vex.setOwner(evoker);
+            vex.setTarget(villager);
+        }
+        var opponents = new LinkedHashSet<String>();
+        int[] tick = {0};
+        int[] bitten = {-1};
+        arena.await(SUMMON_TICKS, () -> {
+            tick[0]++;
+            if (bitten[0] < 0 && villager.getLastHurtByMob() instanceof Vex) {
+                bitten[0] = tick[0];
+            }
+            HumanoidBrain.opponent(villager).ifPresent(opponent -> opponents.add(opponent.getType().toShortString()));
+            return bitten[0] >= 0 && tick[0] >= bitten[0] + AFTER_BITE_TICKS;
+        }, () -> "恼鬼一直没咬到村民：对手 " + opponents + " / " + decisions(villager), () -> {
+            context.assertTrue(opponents.equals(Set.of(EntityTypes.EVOKER.toShortString())),
+                    "村民的对手不只是唤魔者：" + opponents + " / " + decisions(villager));
+            context.assertTrue(HumanoidBrain.opponent(villager).orElse(null) == evoker,
+                    "恼鬼咬了 3 秒后村民的对手不是唤魔者：" + HumanoidBrain.opponent(villager));
             arena.finish();
         });
     }

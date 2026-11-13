@@ -12,12 +12,14 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.raid.Raider;
+import net.minecraft.world.level.pathfinder.Path;
 
 /** 敌意来源：谁以谁为目标、谁打过我或同伴、谁算同伴；只记实体引用与到期刻，不读身体、不扫描周围。 */
 final class HumanoidThreats {
@@ -76,12 +78,61 @@ final class HumanoidThreats {
     static Optional<LivingEntity> nearest(Mob mob, HumanoidBrainConfig.ThreatRules rules,
                                           Optional<LivingEntity> previous) {
         // 只看事件登记与原版已有的敌意，取最近的一个；远于放下距离且看不见的不算。
-        var candidates = candidates(mob, previous);
-        double forget = rules.forgetDistance();
-        return candidates.stream()
+        // 带主人的召唤物算到主人头上，主对手留在主人身上；召唤物贴到打击距离内、主人又走不到时才顺手打它。
+        List<LivingEntity> candidates = candidates(mob, previous).stream()
                 .filter(candidate -> valid(mob, candidate))
-                .filter(candidate -> mob.distanceToSqr(candidate) <= forget * forget || mob.hasLineOfSight(candidate))
+                .toList();
+        Optional<LivingEntity> principal = candidates.stream()
+                .map(candidate -> principal(mob, rules, candidate))
+                .filter(candidate -> noticed(mob, rules, candidate))
                 .min(Comparator.comparingDouble(mob::distanceToSqr));
+        return principal.map(chosen -> summonInReach(mob, chosen, candidates).orElse(chosen));
+    }
+
+    private static LivingEntity principal(Mob mob, HumanoidBrainConfig.ThreatRules rules, LivingEntity candidate) {
+        // 召唤物换成它的最终主人；主人不在、是我的同伴或已经放下（远且看不见），就还是召唤物自己。
+        LivingEntity owner = owner(candidate);
+        if (owner == null || !valid(mob, owner) || allied(mob, owner) || !noticed(mob, rules, owner)) {
+            return candidate;
+        }
+        return owner;
+    }
+
+    static LivingEntity owner(LivingEntity entity) {
+        // 带主人的召唤物：恼鬼、驯服的狼和别的模组实现 OwnableEntity 的召唤物；没有主人的记 null。
+        // 玩家造的铁傀儡原版只记「玩家造的」，不记是谁，算不到人头上。
+        if (entity instanceof OwnableEntity ownable) {
+            return ownable.getRootOwner();
+        }
+        return null;
+    }
+
+    private static boolean noticed(Mob mob, HumanoidBrainConfig.ThreatRules rules, LivingEntity candidate) {
+        // 放下距离以内，或看得见。
+        double forget = rules.forgetDistance();
+        return mob.distanceToSqr(candidate) <= forget * forget || mob.hasLineOfSight(candidate);
+    }
+
+    private static Optional<LivingEntity> summonInReach(Mob mob, LivingEntity chosen, List<LivingEntity> candidates) {
+        // 主人走得到就不理召唤物；走不到时，打击距离内最近的召唤物顺手打。
+        List<LivingEntity> inReach = candidates.stream()
+                .filter(candidate -> candidate != chosen && owner(candidate) != null)
+                .filter(mob::isWithinMeleeAttackRange)
+                .toList();
+        if (inReach.isEmpty() || mob.isWithinMeleeAttackRange(chosen) || reachable(mob, chosen)) {
+            return Optional.empty();
+        }
+        return inReach.stream().min(Comparator.comparingDouble(mob::distanceToSqr));
+    }
+
+    private static boolean reachable(Mob mob, LivingEntity target) {
+        // 现算一条路，能走到对方跟前才算走得到；站在高台上、隔着断崖或飞着的主人都算走不到。
+        // 自己正在空中（跃步、被击退）时原版算不了路，这一刻不算走不到。
+        if (!mob.onGround()) {
+            return true;
+        }
+        Path path = mob.getNavigation().createPath(target, 0);
+        return path != null && path.canReach();
     }
 
     private static List<LivingEntity> candidates(Mob mob, Optional<LivingEntity> previous) {
