@@ -13,6 +13,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastOutcome;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastRequest;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HorizontalDirection;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechnique;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TargetDistanceBand;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueFailure;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
@@ -20,10 +21,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.phys.Vec3;
 
@@ -36,6 +39,10 @@ final class HumanoidActions {
     private static final double HOLD_RANGE_MARGIN = 0.5;
     private static final double HOLD_RANGE_WIDTH = 4.0;
     private static final double MILLIS_PER_SECOND = 1000.0;
+    /** 站位离射程边和盯上距离再往里留的余量（格）：100 格正是客户端画掠夺者的边。 */
+    private static final double STANDOFF_MARGIN = 4.0;
+    /** 站位距离带的宽度（格）：带里停下出式，不为一两格来回挪。 */
+    private static final double STANDOFF_WIDTH = 4.0;
 
     /** 一次决策执行所需的实体、大脑状态、身体、候选与对手。 */
     record Turn(Mob mob, HumanoidMind mind, BodySnapshot body, HumanoidRepertoires.Readout readout,
@@ -181,7 +188,12 @@ final class HumanoidActions {
     }
 
     private static void follow(Turn turn, Decision decision) {
-        // 明确交还原版攻击的动作释放移动控制，其余施放或追击继续由大脑跟住对手。
+        // 对敌时会连发的不往前凑，站在射程边上；明确交还原版攻击的动作释放移动控制，其余施放或追击继续由大脑跟住对手。
+        Optional<HumanoidMotion.Directive> standoff = standoff(turn);
+        if (standoff.isPresent()) {
+            turn.mind().direct(standoff.orElseThrow());
+            return;
+        }
         boolean vanillaOffense = HumanoidFighters.vanillaMeans(turn.mob())
                 .contains(Fighter.Means.VANILLA_OFFENSE);
         boolean ordinaryAttack = decision.action() == Decision.Action.APPROACH
@@ -193,8 +205,32 @@ final class HumanoidActions {
         turn.mind().direct(HumanoidMotion.Directive.FOLLOWING);
     }
 
+    private static Optional<HumanoidMotion.Directive> standoff(Turn turn) {
+        // 对敌、目标看得见且在八格外（连发放得了的距离）、有连发可放（冷却中也算）时：
+        // 站位取连发射程和盯上距离里近的那个，再留余量；远了走近，近了退开，带里停下出式。
+        // 八格内连发放不了，照近身规则出手，不一味往墙角退着挨打；看不见的照旧跟上去找，撤退和无路自卫不走这里。
+        OptionalDouble reach = turn.readout().volleyReach();
+        boolean engaged = turn.mind().stance() == HumanoidAssessment.Stance.ENGAGE;
+        boolean volleyable = turn.readout().context().combat().target()
+                .filter(target -> target.visibility() == TechniqueSelector.Visibility.VISIBLE)
+                .filter(target -> target.distanceBand() != TargetDistanceBand.NEAR)
+                .isPresent();
+        if (reach.isEmpty() || !engaged || !volleyable) {
+            return Optional.empty();
+        }
+        double notice = turn.mob().getAttributeValue(Attributes.FOLLOW_RANGE);
+        double maximum = Math.max(0, Math.min(reach.getAsDouble(), notice) - STANDOFF_MARGIN);
+        double minimum = Math.max(0, maximum - STANDOFF_WIDTH);
+        return Optional.of(HumanoidMotion.Directive.holdRange(minimum, maximum));
+    }
+
     private static void holdRange(Turn turn) {
-        // 距离带下界保护跃步最小距离，上界给直接接近留下确定性余量。
+        // 会连发的按射程站位；其余距离带下界保护跃步最小距离，上界给直接接近留下确定性余量。
+        Optional<HumanoidMotion.Directive> standoff = standoff(turn);
+        if (standoff.isPresent()) {
+            turn.mind().direct(standoff.orElseThrow());
+            return;
+        }
         double reach = turn.readout().repertoire().strikes().stream()
                 .mapToDouble(Repertoire.Strike::reach).max().orElse(0);
         double minimum = Math.max(reach, turn.readout().repertoire().timing().leapMinimumDistance())

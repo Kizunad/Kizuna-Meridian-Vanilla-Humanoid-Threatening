@@ -7,7 +7,8 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.npc.villager.Villager;
 
-/** 非村民接入：在原版 GoalSelector 里装最高优先级的移动/朝向 Goal 与目标 Goal，大脑指挥时压过原版 Goal。 */
+/** 非村民接入：在原版 GoalSelector 里装最高优先级的移动/朝向 Goal 与目标 Goal，大脑指挥时压过原版 Goal；
+ * 同时按配置抬高盯上距离。 */
 final class HumanoidGoalAdapter {
     private static final int CONTROL_PRIORITY = -1;
     static final HumanoidMotion.Speeds SPEEDS = new HumanoidMotion.Speeds(1.0, 1.2);
@@ -17,12 +18,13 @@ final class HumanoidGoalAdapter {
     }
 
     static void install(Mob mob, HumanoidMind mind, GoalSelector goals, GoalSelector targets) {
-        // 每个实体对象只装一次；村民走大脑重定向，不装 Goal。
+        // 每个实体对象只装一次；村民走大脑重定向，不装 Goal，也不选敌。
         if (mind.adapted() || mob instanceof Villager) {
             return;
         }
         goals.addGoal(CONTROL_PRIORITY, new CombatGoal(mob));
         targets.addGoal(CONTROL_PRIORITY, new TargetGoal(mob));
+        HumanoidNotice.widen(mob, HumanoidBrain.config().threat());
         mind.markAdapted();
     }
 

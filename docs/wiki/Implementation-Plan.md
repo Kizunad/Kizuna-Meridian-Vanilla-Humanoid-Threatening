@@ -108,6 +108,8 @@
 
 `HumanoidBrain` 接管物种表里 `brain = true` 的生人（七种原版默认都接管，见[物种登记](Species-Registration.md)）。`brain = false` 的物种完全不接管：不决策、不占原版控制、不改恐慌与逃跑。AI 关闭或已死亡的实体也不接管。
 
+**盯上距离**：`[threat.notice_distance]` 按实体 ID 写原版跟踪距离（`FOLLOW_RANGE`）至少到多远，默认只列掠夺者 100 格，上限 128（原版视线判定的上限）。大脑接管实体时加一条不写进存档的临时属性修饰，让跟踪距离正好等于配置值（原版出生时的随机加成也算在内），读档后重新加；原值已够远或为零的不改。原版选敌、放下目标和寻路长度都按跟踪距离算。被放宽的实体跟这个距离内的玩家交战时，每次决策把原版无动作计时清零：原版只在 32 格内有玩家时清零，32 格外计时过 600 的每 tick 有八百分之一的机会消失，掠夺者每 tick 记 3；128 格外立即消失照旧。旧导出文件没有这张表时用 JAR 默认表，启动时提示。跟踪距离对原版所有选敌目标一样放宽，掠夺者也会在 100 格内盯上村民、流浪商人和铁傀儡。
+
 移动指令每 tick 执行，路径每 10 tick 重算一次；导航空闲（贴身、已到、无路）时也重算，但两次寻路至少隔 5 tick。
 倒排的起手计划到点之前只比较身体时钟，到点才结清并读身体。
 
@@ -212,4 +214,4 @@
 
 `HumanoidEvokerBirthGameTest` 查出生：真炁金、土、火、水唤魔者学到《附》，本行附伤式绑得上、付得起也做得了；游炁金、土付得起金臂、厚土。日志记本行真元够放几次。
 
-纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。
+纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶、盯上距离表缺省回退与越界）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。

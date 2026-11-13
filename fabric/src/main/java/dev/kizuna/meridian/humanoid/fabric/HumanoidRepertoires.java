@@ -34,6 +34,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -65,10 +66,10 @@ final class HumanoidRepertoires {
     private static final String WHIRLWIND = PEDDLER_PREFIX + "whirlwind";
     private static final Set<String> PEDDLER_DEFENSES = Set.of(SNAP_KICK, PUSH_KICK, MULE_KICK, GROUND_SWEEP);
 
-    /** 读出的候选：战术用的式表、自己的功法手段、选式上下文与可选打击式。 */
+    /** 读出的候选：战术用的式表、自己的功法手段、选式上下文、可选打击式，以及连发射得到的最远距离。 */
     record Readout(Repertoire repertoire, Set<Means> means, TechniqueSelector.Context context,
                    List<KnownTechnique> strikes, List<KnownTechnique> known,
-                   Map<String, HumanoidWayfarerWeapons.Exchange> exchanges) { }
+                   Map<String, HumanoidWayfarerWeapons.Exchange> exchanges, OptionalDouble volleyReach) { }
 
     /** 一次决策读的实体、身体、目录与功法进度。 */
     private record Source(Mob mob, BodySnapshot body, TechniqueRegistry registry, TechniqueProgress progress,
@@ -125,7 +126,16 @@ final class HumanoidRepertoires {
                 timing(source, opponent, followUpAvailable));
         return new Readout(repertoire, means(source, opponent, ready), context,
                 readyStrikes.stream().map(Ready::known).toList(),
-                source.progress().getKnownList(), exchanges(readyStrikes));
+                source.progress().getKnownList(), exchanges(readyStrikes), volleyReach(ready));
+    }
+
+    private static OptionalDouble volleyReach(List<Ready> ready) {
+        // 绑定、费用、做功与持物都通过的连发里最远的射程，冷却中也算；射程取目录 ai_hints 最远距离，
+        // 目录按满力弹道定。连发是看得见的目标在八格外随时能放的式，别的远射只在特定处境放，不定站位。
+        return ready.stream()
+                .filter(entry -> HumanoidWayfarerAi.VOLLEYS.contains(entry.definition().getId()))
+                .mapToDouble(entry -> entry.definition().getAiHints().getMaximumDistance().getValue())
+                .max();
     }
 
     private static Map<String, HumanoidWayfarerWeapons.Exchange> exchanges(List<Ready> ready) {

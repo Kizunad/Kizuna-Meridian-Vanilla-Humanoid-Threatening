@@ -1,14 +1,24 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.human.server.HumanOpening;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpening;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningStage;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQiMode;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Hand;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
+import dev.kizuna.meridian.technique.server.TechniqueAvailability;
+import dev.kizuna.meridian.technique.server.TechniqueBinder;
 import dev.kizuna.meridian.technique.server.TechniqueState;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -30,6 +40,11 @@ final class HumanoidWayfarerTestSupport {
     private static final double TARGET_HEALTH = 1000;
     private static final int FLOOR_WIDTH = 6;
     private static final int FLOOR_LENGTH = 36;
+    private static final Set<String> REQUIRED_HAND_MERIDIANS = Set.of("left_lung_meridian", "right_lung_meridian");
+    private static final MeridianOpening OPENED = MeridianOpening.newBuilder()
+            .setStage(MeridianOpeningStage.OPENED)
+            .setProgress(1)
+            .build();
 
     private HumanoidWayfarerTestSupport() {
         // 只统一实际出生与查询，不提供替代功法宿主。
@@ -72,6 +87,42 @@ final class HumanoidWayfarerTestSupport {
         target.setPos(mob.position().add(0, 0, distance));
         mob.setTarget(target);
         return target;
+    }
+
+    static void prepareQi(GameTestHelper context, Pillager mob) {
+        // 随机游炁身体可能只开一条手经；射击回归显式提供连弩需要的两条手经，再填充真元。
+        var snapshot = HumanoidTechniqueHost.prepare(mob).body().snapshot().toBuilder();
+        for (String meridian : REQUIRED_HAND_MERIDIANS) {
+            openMeridian(snapshot, meridian);
+        }
+        restoreBody(mob, snapshot.build());
+        DebugQi request = DebugQi.newBuilder()
+                .setMode(DebugQiMode.FILL_LUMENS)
+                .build();
+        FailureCode result = HumanoidHealthHost.debugQi(mob, request);
+        context.assertTrue(result == FailureCode.FAILURE_CODE_UNSPECIFIED, "射击夹具真元准备失败：" + result);
+        var body = body(mob);
+        var definition = definition(mob, "repeater");
+        var held = HumanoidWayfarerWeapons.inspect(mob);
+        var binding = TechniqueBinder.bind(body, definition, Hand.MAIN_HAND, held.getMainHandSide());
+        context.assertTrue(binding.hasBinding(), "射击夹具必须能绑定连弩：" + binding);
+        context.assertTrue(TechniqueAvailability.affordable(body, definition, binding.getBinding()),
+                "射击夹具必须能支付连弩费用");
+    }
+
+    private static void openMeridian(BodyMessages.BodySnapshot.Builder snapshot, String id) {
+        // 与人体开脉内容采用相同的容量增量，已开经脉不重复扩容；通过正式恢复入口校验。
+        var state = snapshot.getMeridianStatesBuilderList().stream()
+                .filter(meridian -> meridian.getId().equals(id))
+                .findFirst().orElseThrow();
+        if (state.getOpening().getStage() == MeridianOpeningStage.OPENED) {
+            return;
+        }
+        var definition = snapshot.getStructureBuilder().getMeridiansBuilderList().stream()
+                .filter(meridian -> meridian.getId().equals(id))
+                .findFirst().orElseThrow();
+        definition.setLumenVolume(definition.getLumenVolume() + HumanOpening.LUMEN_VOLUME_GAIN);
+        state.setOpening(OPENED);
     }
 
     static BodySnapshot body(Pillager mob) {

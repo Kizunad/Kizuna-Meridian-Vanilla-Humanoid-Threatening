@@ -22,6 +22,9 @@ public final class HumanoidBrainConfigLoader {
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
+    private static final String NOTICE_DISTANCE = "notice_distance";
+    /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
+    private static final double MAX_NOTICE_DISTANCE = 128;
     private static final String VOLUMES = "volumes";
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
     private static final Logger LOGGER = System.getLogger("meridian_humanoid_brain_config");
@@ -134,11 +137,34 @@ public final class HumanoidBrainConfigLoader {
 
     private static HumanoidBrainConfig.ThreatRules threat(TomlTable table) {
         // 记忆时长与各距离都必须为正。
-        TOML.checkKeys(table, Set.of("memory_seconds", "ally_radius", "forget_distance", "safe_distance"), "threat.");
+        TOML.checkKeys(table, Set.of("memory_seconds", "ally_radius", "forget_distance", "safe_distance",
+                NOTICE_DISTANCE), "threat.");
         return new HumanoidBrainConfig.ThreatRules(positive(table, "memory_seconds", "threat"),
                 positive(table, "ally_radius", "threat"),
                 positive(table, "forget_distance", "threat"),
-                positive(table, "safe_distance", "threat"));
+                positive(table, "safe_distance", "threat"),
+                noticeDistances(table));
+    }
+
+    private static Map<String, Double> noticeDistances(TomlTable threat) {
+        // 这张表在旧导出文件里没有：缺失时读 JAR 默认资源的同名表，load 启动时另行提示。
+        // 每项是带命名空间的实体 ID 对一个距离，距离为正且不超过原版视线判定的上限。
+        TomlTable source = threat;
+        if (!threat.contains(NOTICE_DISTANCE)) {
+            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "threat", "threat");
+        }
+        String path = "threat." + NOTICE_DISTANCE;
+        TomlTable table = TOML.table(source, NOTICE_DISTANCE, path);
+        var distances = new HashMap<String, Double>();
+        for (String entityId : table.keySet()) {
+            requireId(entityId, path + "." + entityId);
+            double distance = positive(table, entityId, path);
+            if (distance > MAX_NOTICE_DISTANCE) {
+                throw TOML.invalid(path + "." + entityId + " 不能超过 " + MAX_NOTICE_DISTANCE);
+            }
+            distances.put(entityId, distance);
+        }
+        return distances;
     }
 
     private static AssessmentRules assessment(TomlTable table, double safeDistance) {

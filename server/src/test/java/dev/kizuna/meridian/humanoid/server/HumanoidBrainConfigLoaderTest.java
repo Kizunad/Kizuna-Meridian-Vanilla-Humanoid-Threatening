@@ -3,6 +3,7 @@ package dev.kizuna.meridian.humanoid.server;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.tomlj.Toml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +39,10 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double DEFAULT_STAND_DISTANCE = 2;
     private static final double CUSTOM_STAND_DISTANCE = 3;
     private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
+    private static final String PILLAGER = "minecraft:pillager";
+    private static final double DEFAULT_PILLAGER_NOTICE = 100;
+    private static final double CUSTOM_PILLAGER_NOTICE = 64;
+    private static final String NOTICE_SECTION = "[threat.notice_distance]\n\"minecraft:pillager\" = 100\n";
     private static final double LOWER_CHANCE = 0.1;
     private static final int DEFAULT_VOLUME_COUNT = 16;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
@@ -103,6 +108,24 @@ public class HumanoidBrainConfigLoaderTest {
         String custom = replace(STAND_DISTANCE_LINE, "cornered_stand_distance = " + CUSTOM_STAND_DISTANCE);
         var customTactics = HumanoidBrainConfigLoader.parse(custom).response().tactics();
         assertEquals(CUSTOM_STAND_DISTANCE, customTactics.corneredStandDistance(), TOLERANCE);
+    }
+
+    @Test
+    public void oldFileWithoutNoticeDistanceRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有盯上距离表：按默认表运行并列入缺键清单；写了就用写的表，空表表示都照原版。
+        assertEquals(Map.of(PILLAGER, DEFAULT_PILLAGER_NOTICE),
+                HumanoidBrainConfigLoader.defaults().threat().noticeDistances());
+        String old = replace(NOTICE_SECTION, "");
+        assertEquals(Map.of(PILLAGER, DEFAULT_PILLAGER_NOTICE),
+                HumanoidBrainConfigLoader.parse(old).threat().noticeDistances());
+        String missingKey = Toml.joinKeyPath(List.of("threat", "notice_distance", PILLAGER));
+        assertEquals(List.of(missingKey), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        String custom = replace(NOTICE_SECTION, "[threat.notice_distance]\n\"" + PILLAGER + "\" = "
+                + CUSTOM_PILLAGER_NOTICE + "\n");
+        assertEquals(Map.of(PILLAGER, CUSTOM_PILLAGER_NOTICE),
+                HumanoidBrainConfigLoader.parse(custom).threat().noticeDistances());
+        String empty = replace(NOTICE_SECTION, "[threat.notice_distance]\n");
+        assertEquals(Map.of(), HumanoidBrainConfigLoader.parse(empty).threat().noticeDistances());
     }
 
     @Test
@@ -221,6 +244,20 @@ public class HumanoidBrainConfigLoaderTest {
                 "负权重", replace("qi_weight = 0.25", "qi_weight = -0.25"),
                 "零失败次数", replace("failure_limit = 2", "failure_limit = 0"),
                 "零站定距离", replace(STAND_DISTANCE_LINE, "cornered_stand_distance = 0"));
+        invalid.forEach((label, text) -> {
+            var failure = assertThrows(label, IllegalArgumentException.class,
+                    () -> HumanoidBrainConfigLoader.parse(text));
+            assertTrue(label, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
+        });
+    }
+
+    @Test
+    public void invalidNoticeDistancesAreRejected() {
+        // 盯上距离超过原版视线上限 128 格、为零或实体 ID 不带命名空间，都在加载时拒绝。
+        var invalid = Map.of(
+                "超过视线上限", replace(NOTICE_SECTION, "[threat.notice_distance]\n\"" + PILLAGER + "\" = 129\n"),
+                "为零", replace(NOTICE_SECTION, "[threat.notice_distance]\n\"" + PILLAGER + "\" = 0\n"),
+                "无命名空间", replace(NOTICE_SECTION, "[threat.notice_distance]\npillager = 100\n"));
         invalid.forEach((label, text) -> {
             var failure = assertThrows(label, IllegalArgumentException.class,
                     () -> HumanoidBrainConfigLoader.parse(text));

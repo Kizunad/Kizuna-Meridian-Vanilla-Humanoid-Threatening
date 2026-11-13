@@ -7,12 +7,15 @@ import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import java.util.Optional;
+import java.util.Set;
 import net.minecraft.world.entity.Mob;
 
 /** 行矢处境门槛；持物、费用、冷却和承接时窗仍由功法库判定。 */
 final class HumanoidWayfarerAi {
     static final String PREFIX = "meridian_wayfarer:";
     private static final String PARTHIAN = PREFIX + "parthian";
+    /** 连发：看得见的目标在八格外、不是远处静止时放的式；有连发的生物按它的射程站位。 */
+    static final Set<String> VOLLEYS = Set.of(PREFIX + "repeater", PREFIX + "pearls");
     private static final double MELEE_DISTANCE = 3;
     private static final double HALF_HP = 0.5;
     private static final int FAN_ENEMY_COUNT = 2;
@@ -45,14 +48,15 @@ final class HumanoidWayfarerAi {
     }
 
     private static boolean visibleChoice(Mob mob, String id, HumanoidWayfarerFacts.Target facts) {
-        // 远处静止用重射，中距用连发，贴身按当前武器反击，横风额外覆盖近处多个敌人。
+        // 远处静止用重射，中距和远处移动的用连发，贴身按当前武器反击，横风额外覆盖近处多个敌人。
+        // 连发的最远距离交给目录：超出 ai_hints 最远距离的式选式时得分为零。
         double distance = facts.distance();
+        boolean heavyShot = distance > HumanoidWayfarerFacts.MEDIUM_DISTANCE && facts.speedMetersPerSecond() == 0;
         if (id.equals(PREFIX + "full_draw") || id.equals(PREFIX + "kneeling")) {
-            return distance > HumanoidWayfarerFacts.MEDIUM_DISTANCE && facts.speedMetersPerSecond() == 0;
+            return heavyShot;
         }
-        if (id.equals(PREFIX + "repeater") || id.equals(PREFIX + "pearls")) {
-            return distance >= HumanoidWayfarerFacts.NEAR_DISTANCE
-                    && distance <= HumanoidWayfarerFacts.MEDIUM_DISTANCE;
+        if (VOLLEYS.contains(id)) {
+            return distance >= HumanoidWayfarerFacts.NEAR_DISTANCE && !heavyShot;
         }
         if (id.equals(PREFIX + "gale")) {
             return distance < HumanoidWayfarerFacts.NEAR_DISTANCE && facts.nearbyEnemies() >= FAN_ENEMY_COUNT

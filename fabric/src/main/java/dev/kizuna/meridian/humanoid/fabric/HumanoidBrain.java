@@ -137,6 +137,7 @@ public final class HumanoidBrain {
             return;
         }
         mind.engage(threat.get());
+        HumanoidNotice.keepEngaged(mob, threat.get());
         var opponent = new HumanoidOpponent(threat.get(), observe(threat.get()));
         if (HumanoidTechniqueHost.hasActiveCast(mob) && opponent.cast().isEmpty()
                 && !HumanoidTechniqueHost.castingWayfarer(mob)) {
