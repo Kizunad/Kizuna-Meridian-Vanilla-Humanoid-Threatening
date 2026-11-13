@@ -28,7 +28,8 @@
 并嵌入 Fabric JAR；没有发布新的 Maven 坐标，也不装寻路仓面向 1.20.1 的 Fabric 适配器。
 Brewing 的 fabric/server/shared 使用源码组合，完整运行装配仍由 Framework 的统一清单读取。
 
-`CHARM` 僵直取消主动 AI 移动、导航、跳、攻击和物品使用；保留重力与击退。
+`CHARM` 僵直取消主动 AI 移动、导航、跳、攻击和物品使用；保留重力与击退。袖手拳的被擒 `HOLD`、倒地 `DOWN`
+走同一把锁，按种类各自到期，全部到期大脑才恢复。
 `HIT` 沿既有减速与起式拒绝，不能启用魅惑全锁。女巫自喝绕过原版 `startUsingItem`，
 因此另在 `Witch.aiStep` 中止其喝药分支、清临时药水和饮药减速，再推进父类 AI。
 反胃期限与普通吃喝共用 Brewing 的真实身体规则。

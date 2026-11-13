@@ -3,7 +3,10 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.brewing.fabric.BrewNausea;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.server.TechniqueService;
-import java.util.HashSet;
+import dev.kizuna.meridian.technique.server.TechniqueService.StaggerKind;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -13,38 +16,45 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
-/** 生物只认 CHARM 定身；反胃读取 Brewing 的真实身体期限。 */
+/** 魅惑定身、被擒、倒地都停生物的大脑，受击减速不停；反胃读取 Brewing 的真实身体期限。 */
 public final class HumanoidRestrictions {
-    private static final Set<UUID> locked = new HashSet<>();
+    private static final Set<StaggerKind> LOCKING = EnumSet.of(StaggerKind.CHARM, StaggerKind.HOLD, StaggerKind.DOWN);
+    private static final Map<UUID, Set<StaggerKind>> locked = new HashMap<>();
 
     private HumanoidRestrictions() {
         // 只缓存事件身份，计时与身体事实仍归各自服务。
     }
 
     static void initialize() {
-        // 到期事件只撤魅惑锁，受击减速不能延长或缩短它。
-        TechniqueFabric.SERVICE_STARTED.register(service -> service.addStaggerListener(event -> {
-            if (event.kind() != TechniqueService.StaggerKind.CHARM) {
-                return;
-            }
-            UUID entityId = event.entityUuid();
-            if (event.remainingMillis() > 0) {
-                locked.add(entityId);
-                LivingEntity entity = HumanoidFabric.findEntity(entityId);
-                if (entity instanceof Mob mob) {
-                    stop(mob);
-                }
-            } else {
-                locked.remove(entityId);
-            }
-        }));
+        // 到期事件只撤自己那一种锁，受击减速不能延长或缩短它们。
+        TechniqueFabric.SERVICE_STARTED.register(service -> service.addStaggerListener(HumanoidRestrictions::apply));
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> locked.remove(entity.getUUID()));
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> locked.clear());
     }
 
+    private static void apply(TechniqueService.StaggerChanged event) {
+        // 开始时记下这一种并当场停手；到期只撤这一种，三种都撤完大脑才恢复。
+        if (!LOCKING.contains(event.kind())) {
+            return;
+        }
+        UUID entityId = event.entityUuid();
+        if (event.remainingMillis() > 0) {
+            locked.computeIfAbsent(entityId, ignored -> EnumSet.noneOf(StaggerKind.class)).add(event.kind());
+            if (HumanoidFabric.findEntity(entityId) instanceof Mob mob) {
+                stop(mob);
+            }
+            return;
+        }
+        Set<StaggerKind> kinds = locked.getOrDefault(entityId, EnumSet.noneOf(StaggerKind.class));
+        kinds.remove(event.kind());
+        if (kinds.isEmpty()) {
+            locked.remove(entityId);
+        }
+    }
+
     public static boolean locked(LivingEntity entity) {
         // 非生物玩家由 Human 处理，避免重复干预客户端身体。
-        return entity instanceof Mob && locked.contains(entity.getUUID());
+        return entity instanceof Mob && locked.containsKey(entity.getUUID());
     }
 
     public static void stop(Mob mob) {
