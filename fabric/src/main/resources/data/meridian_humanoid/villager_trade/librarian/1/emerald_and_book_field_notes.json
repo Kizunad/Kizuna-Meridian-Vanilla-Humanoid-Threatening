@@ -1,0 +1,82 @@
+{
+  "additional_wants": {
+    "id": "minecraft:book"
+  },
+  "gives": {
+    "id": "minecraft:written_book",
+    "components": {
+      "minecraft:item_name": {
+        "translate": "book.meridian_humanoid.field_notes"
+      },
+      "minecraft:written_book_content": {
+        "title": "",
+        "author": "",
+        "generation": 1,
+        "pages": [
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.1"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.2"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.3"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.4"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.5"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.6"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.7"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.8"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.9"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.10"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.11"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.12"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.13"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.14"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.15"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.16"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.17"
+          },
+          {
+            "translate": "book.meridian_humanoid.field_notes.page.18"
+          }
+        ],
+        "resolved": true
+      }
+    }
+  },
+  "max_uses": 12.0,
+  "reputation_discount": 0.05,
+  "wants": {
+    "count": 5.0,
+    "id": "minecraft:emerald"
+  },
+  "xp": 2.0
+}

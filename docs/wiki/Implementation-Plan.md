@@ -219,3 +219,17 @@
 `HumanoidEvokerBirthGameTest` 查出生：真炁金、土、火、水唤魔者学到《附》，本行附伤式绑得上、付得起也做得了；游炁金、土付得起金臂、厚土。日志记本行真元够放几次。
 
 纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶、盯上距离表缺省回退与越界）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。
+
+## 生人见闻录
+
+《生人见闻录》是一本原版成书，给不看代码的玩家讲生人看得见的举动和应对：长招起手能被重击打断、伤重撤到 12 格外调息再回来、各物种的招式和距离、掠夺者百格远射。只写看得见的动作和距离，不写内部字段。
+
+- **来源。** 新手图书管理员的交易：5 绿宝石加 1 本书换一本，每单 12 次。交易定义在 `data/meridian_humanoid/villager_trade/librarian/1/emerald_and_book_field_notes.json`。原版交易组 `minecraft:librarian/level_1` 由本仓覆盖成指向本仓标签 `#meridian_humanoid:librarian/level_1`，数量（2 单）和随机序列照原版；这个标签先引用原版标签 `#minecraft:librarian/level_1`、再加这本书。原版标签开没开实验性的 `trade_rebalance` 都能用：那个实验包把原版标签整份换掉（`replace`），直接往原版标签里加的条目会被冲掉，引用原版标签则跟着换成实验那一份。新手图书管理员从这一组里抽两单，所以不开实验时大约一半的图书管理员会卖；打掉讲台重放可以重抽。原版改了这一组的数量或随机序列，要同步改覆盖文件。
+- **文本。** 书名用 `minecraft:item_name` 的翻译键 `book.meridian_humanoid.field_notes`，成书标题和作者留空，所以界面上只显示书名、不显示作者；18 页各是 `book.meridian_humanoid.field_notes.page.<n>` 的翻译键，简中是全文，英文是压缩版（每页不超过原版书页能放下的字数）。书里存的是翻译键，由客户端按当时的语言显示，所以改了语言文件，已经换出的书也显示新文字。
+- **和代码对齐。** 书里的距离和时长来自本仓大脑配置与功法目录（卫道士 4–24 格蓄力、商人墙角 2 格和 3 格、掠夺者百格发现和远射站位、女巫 8 格服药和 4–14 格掷引、唤魔者 8 格附行和 12 格厚土归水、召唤物算到主人头上）。这些值改了，要同步改两种语言的页。
+
+| 行为 | 测试 |
+|---|---|
+| `TradeSets.LIBRARIAN_LEVEL_1` 里有这本书，原版标签里的交易一单不少（GameTest 服务端开着 `trade_rebalance`，查的是实验那一份）；照原版村民的取货上下文换出一本成书，价钱是绿宝石加书，书名和每页按页序引用翻译键 | `HumanoidFieldNotesGameTest.noviceLibrarianSellsFieldNotes` |
+| 交易里引用的书名和每页的键，简中、英文都有且不空 | `FieldNotesTextTest.everyPageHasTextInEveryLanguage` |
+| 简中书名和正文里没有分数、倍率、按键、界面这些机制说法，也没有英文字母 | `FieldNotesTextTest.chineseTextUsesNoMechanicWords` |
