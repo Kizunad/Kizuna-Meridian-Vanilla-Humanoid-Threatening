@@ -1,0 +1,67 @@
+{
+  "parent": "meridian_progression:cultivation/cultivators",
+  "display": {
+    "icon": {
+      "id": "minecraft:emerald"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.villager.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.villager.description"
+    }
+  },
+  "criteria": {
+    "hurt": {
+      "trigger": "minecraft:player_hurt_entity",
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": [
+                "minecraft:villager"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "hurt_by": {
+      "trigger": "minecraft:entity_hurt_player",
+      "conditions": {
+        "damage": {
+          "source_entity": {
+            "minecraft:entity_type": [
+              "minecraft:villager"
+            ]
+          }
+        }
+      }
+    },
+    "traded": {
+      "trigger": "minecraft:villager_trade",
+      "conditions": {
+        "villager": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": [
+                "minecraft:villager"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "hurt",
+      "hurt_by",
+      "traded"
+    ]
+  ]
+}

@@ -13,5 +13,17 @@
   "item.meridian_humanoid.witch_wandering_qi_spawn_egg": "Witch Spawn Egg (Wandering Qi)",
   "item.meridian_humanoid.witch_true_qi_spawn_egg": "Witch Spawn Egg (True Qi)",
   "item.meridian_humanoid.illusioner_wandering_qi_spawn_egg": "Illusioner Spawn Egg (Wandering Qi)",
-  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "Illusioner Spawn Egg (True Qi)"
+  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "Illusioner Spawn Egg (True Qi)",
+  "advancements.meridian_humanoid_host.cultivators.villager.title": "Village Folk",
+  "advancements.meridian_humanoid_host.cultivators.villager.description": "Most villagers know only a few plain skills: Breathing, Light Step and Charge. Still, they are no easy mark once a fight starts.",
+  "advancements.meridian_humanoid_host.cultivators.wandering_trader.title": "The Thousand-Mile Leg",
+  "advancements.meridian_humanoid_host.cultivators.wandering_trader.description": "The trader leading llamas walks the Thousand-Mile Leg: an ordinary one knows Road, one who has refined true qi also knows Ambush, and a rare few master Journey.",
+  "advancements.meridian_humanoid_host.cultivators.pillager.title": "Wayfarer",
+  "advancements.meridian_humanoid_host.cultivators.pillager.description": "A pillager's crossbow follows the Wayfarer's way; one who has refined true qi also draws the Hundred Paces bow, and a rare few master Myriad Arrows.",
+  "advancements.meridian_humanoid_host.cultivators.vindicator.title": "Door Breaker",
+  "advancements.meridian_humanoid_host.cultivators.vindicator.description": "A vindicator's axe is made for doors: an ordinary one splits wooden doors, one who has refined true qi cleaves iron doors too, and a rare few master Myriad Doors.",
+  "advancements.meridian_humanoid_host.cultivators.witch.title": "Potion Arts",
+  "advancements.meridian_humanoid_host.cultivators.witch.description": "Swamp witches know the Nourish form of the Potion Arts, and those who have refined true qi also know Lure; they have brewed all their lives and often carry recipes.",
+  "advancements.meridian_humanoid_host.cultivators.first_scroll.title": "A Seized Scroll",
+  "advancements.meridian_humanoid_host.cultivators.first_scroll.description": "Cultivators carry their technique scrolls with them. Only when you defeat, with your own hands, someone who knows the art may their scroll fall to you."
 }

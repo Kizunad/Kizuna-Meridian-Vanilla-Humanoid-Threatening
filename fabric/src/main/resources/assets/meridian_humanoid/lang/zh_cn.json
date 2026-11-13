@@ -13,5 +13,17 @@
   "item.meridian_humanoid.witch_wandering_qi_spawn_egg": "女巫刷怪蛋（游炁）",
   "item.meridian_humanoid.witch_true_qi_spawn_egg": "女巫刷怪蛋（真炁）",
   "item.meridian_humanoid.illusioner_wandering_qi_spawn_egg": "幻术师刷怪蛋（游炁）",
-  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "幻术师刷怪蛋（真炁）"
+  "item.meridian_humanoid.illusioner_true_qi_spawn_egg": "幻术师刷怪蛋（真炁）",
+  "advancements.meridian_humanoid_host.cultivators.villager.title": "村里人",
+  "advancements.meridian_humanoid_host.cultivators.villager.description": "村民大多只会调息、轻步、蓄力这几手粗浅功夫，可真动起手来，也不好欺负。",
+  "advancements.meridian_humanoid_host.cultivators.wandering_trader.title": "千里腿",
+  "advancements.meridian_humanoid_host.cultivators.wandering_trader.description": "牵着羊驼的行商脚下有千里腿的功夫：寻常的会赶路，修出真炁的还会拦路，极少数练成「千里」。",
+  "advancements.meridian_humanoid_host.cultivators.pillager.title": "行矢",
+  "advancements.meridian_humanoid_host.cultivators.pillager.description": "掠夺者的弩是行矢的路数；修出真炁的还会百步的弓法，极少数练成「万矢」。",
+  "advancements.meridian_humanoid_host.cultivators.vindicator.title": "破门斩",
+  "advancements.meridian_humanoid_host.cultivators.vindicator.description": "卫道士的斧子专破门户：寻常的劈得开木门，修出真炁的连铁门也劈，极少数练成「万门」。",
+  "advancements.meridian_humanoid_host.cultivators.witch.title": "行药诀",
+  "advancements.meridian_humanoid_host.cultivators.witch.description": "沼泽的女巫会行药诀的「养」，修出真炁的还会「引」；她们熬了一辈子药，怀里常揣着药方。",
+  "advancements.meridian_humanoid_host.cultivators.first_scroll.title": "夺卷",
+  "advancements.meridian_humanoid_host.cultivators.first_scroll.description": "修炼者把功法卷揣在身上。亲手打倒一个会这门功夫的人，他怀里那一卷才可能落到你手里。"
 }

@@ -1,0 +1,50 @@
+{
+  "parent": "meridian_progression:cultivation/cultivators",
+  "display": {
+    "icon": {
+      "id": "minecraft:iron_axe"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.vindicator.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.vindicator.description"
+    }
+  },
+  "criteria": {
+    "hurt": {
+      "trigger": "minecraft:player_hurt_entity",
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": [
+                "minecraft:vindicator"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "hurt_by": {
+      "trigger": "minecraft:entity_hurt_player",
+      "conditions": {
+        "damage": {
+          "source_entity": {
+            "minecraft:entity_type": [
+              "minecraft:vindicator"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "requirements": [
+    [
+      "hurt",
+      "hurt_by"
+    ]
+  ]
+}

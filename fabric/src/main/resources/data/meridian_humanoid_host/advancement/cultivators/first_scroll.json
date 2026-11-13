@@ -1,0 +1,31 @@
+{
+  "parent": "meridian_progression:cultivation/cultivators",
+  "display": {
+    "icon": {
+      "id": "meridian_basic_techniques:breath_volume_scroll"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.first_scroll.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.first_scroll.description"
+    }
+  },
+  "criteria": {
+    "has": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "#meridian_technique:scrolls"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has"
+    ]
+  ]
+}
