@@ -118,6 +118,7 @@ true_qi = [
   { volume = "meridian_basic_techniques:light_step_volume", chance = 1.0 },
   { volume = "meridian_basic_techniques:charge_volume", chance = 1.0 },
   { volume = "meridian_evoker:nourish", chance = 1.0 },
+  { volume = "meridian_evoker:infuse", chance = 1.0 },
 ]
 
 [volumes."minecraft:witch"]

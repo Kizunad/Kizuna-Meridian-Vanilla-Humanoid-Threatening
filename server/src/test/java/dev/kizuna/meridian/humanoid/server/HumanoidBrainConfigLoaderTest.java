@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -26,6 +27,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final String LOWER = "meridian_door_breaker:lower";
     private static final String EVOKER = "minecraft:evoker";
     private static final String NOURISH = "meridian_evoker:nourish";
+    private static final String INFUSE = "meridian_evoker:infuse";
     private static final String BREATH = "meridian_basic_techniques:breath_volume";
     private static final String ROAD = "meridian_peddler:road";
     private static final String AMBUSH = "meridian_peddler:ambush";
@@ -37,7 +39,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double CUSTOM_STAND_DISTANCE = 3;
     private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
     private static final double LOWER_CHANCE = 0.1;
-    private static final int DEFAULT_VOLUME_COUNT = 15;
+    private static final int DEFAULT_VOLUME_COUNT = 16;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
     private static final int POPULATION = 2000;
     private static final double RATE_TOLERANCE = 0.03;
@@ -65,6 +67,12 @@ public class HumanoidBrainConfigLoaderTest {
         for (HumanoidTier tier : List.of(HumanoidTier.WANDERING_QI, HumanoidTier.TRUE_QI)) {
             assertTrue(config.volumes().species().get(EVOKER).get(tier).contains(new VolumeTable.Grant(NOURISH, 1)));
         }
+        // 《附》只给真炁档，排在前置卷《养》后面：生物按表序授卷，前置卷没学全会被拒。
+        var evoker = config.volumes().species().get(EVOKER);
+        List<VolumeTable.Grant> trueQiEvoker = evoker.get(HumanoidTier.TRUE_QI);
+        assertEquals(trueQiEvoker.indexOf(new VolumeTable.Grant(NOURISH, 1)) + 1,
+                trueQiEvoker.indexOf(new VolumeTable.Grant(INFUSE, 1)));
+        assertTrue(evoker.get(HumanoidTier.WANDERING_QI).stream().noneMatch(grant -> grant.volume().equals(INFUSE)));
         for (HumanoidSpecies species : HumanoidSpecies.values()) {
             assertTrue(config.volumes().species().containsKey(species.entityId()));
         }
@@ -147,6 +155,28 @@ public class HumanoidBrainConfigLoaderTest {
                         .noneMatch(grant -> grant.volume().startsWith("meridian_wayfarer:"))));
             }
         });
+    }
+
+    @Test
+    public void volumeOrderRequiresPrerequisitesListedEarlier() {
+        // 默认表的《附》排在《养》后面能过；颠倒或这一档缺《养》都拒绝，报清是哪一卷排在哪一卷前面。
+        Function<String, List<String>> prerequisites = volume -> volume.equals(INFUSE) ? List.of(NOURISH) : List.of();
+        HumanoidBrainConfigLoader.defaults().volumes().requireOrdered(prerequisites);
+        String pair = grantLine(NOURISH) + grantLine(INFUSE);
+        VolumeTable reversed = HumanoidBrainConfigLoader.parse(replace(pair, grantLine(INFUSE) + grantLine(NOURISH)))
+                .volumes();
+        VolumeTable missing = HumanoidBrainConfigLoader.parse(replace(pair, grantLine(INFUSE))).volumes();
+        String later = assertThrows(IllegalArgumentException.class, () -> reversed.requireOrdered(prerequisites))
+                .getMessage();
+        String absent = assertThrows(IllegalArgumentException.class, () -> missing.requireOrdered(prerequisites))
+                .getMessage();
+        assertTrue(later, later.contains(EVOKER + " true_qi 的学卷 " + INFUSE + " 排在它的前置卷 " + NOURISH + " 前面"));
+        assertTrue(absent, absent.contains(EVOKER + " true_qi 的学卷 " + INFUSE + " 要先学前置卷 " + NOURISH));
+    }
+
+    private static String grantLine(String volume) {
+        // 默认表里一卷一行的写法。
+        return "  { volume = \"" + volume + "\", chance = 1.0 },\n";
     }
 
     @Test

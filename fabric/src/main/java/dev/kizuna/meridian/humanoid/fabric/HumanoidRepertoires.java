@@ -25,6 +25,7 @@ import dev.kizuna.meridian.technique.server.TechniqueAvailability;
 import dev.kizuna.meridian.technique.server.TechniqueBinder;
 import dev.kizuna.meridian.technique.server.TechniqueForecasts;
 import dev.kizuna.meridian.technique.server.TechniqueHeldItems;
+import dev.kizuna.meridian.technique.server.TechniqueInfusions;
 import dev.kizuna.meridian.technique.server.TechniqueRegistry;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import dev.kizuna.meridian.technique.server.TechniqueState;
@@ -368,9 +369,22 @@ final class HumanoidRepertoires {
                     hints.getMaximumDistance().getValue(), hints.getMinimumQiRatio().getValue(), fatigue,
                     requirements);
             result.add(new Repertoire.Support(entry.definition().getId(), role(role), support.getOrder(), gate,
-                    support.getRefreshBeforeExpiryMillis()));
+                    support.getRefreshBeforeExpiryMillis(), tracked(role, entry.definition())));
         }
         return result;
+    }
+
+    private static Repertoire.Tracked tracked(AiRole role, TechniqueDefinition definition) {
+        // 机动式补放看轻身剩余；设了补放提前量、含附行效果的准备式看附行剩余（C6c SPEC 5.2）；其余不看。
+        if (role == AiRole.AI_ROLE_REPOSITION) {
+            return Repertoire.Tracked.LIGHT_BODY;
+        }
+        boolean infusion = definition.getEffectsList().stream().anyMatch(TechniqueEffect::hasElementalInfusion);
+        if (role == AiRole.AI_ROLE_PREPARE && infusion
+                && definition.getAiHints().getSupport().hasRefreshBeforeExpiryMillis()) {
+            return Repertoire.Tracked.INFUSION;
+        }
+        return Repertoire.Tracked.NONE;
     }
 
     private static Set<Anatomy.TissueId> boundTissues(BindingOutcome binding) {
@@ -394,7 +408,8 @@ final class HumanoidRepertoires {
 
     private static Repertoire.Timing timing(Source source, Optional<HumanoidOpponent> opponent,
                                             boolean followUpAvailable) {
-        // 轻身剩余读状态效果；下一击读自己的施放预报；走出范围按走路与跃步取快者。
+        // 轻身剩余读状态效果；附行剩余读身体里的附行（没有附行就不解析）；下一击读自己的施放预报；
+        // 走出范围按走路与跃步取快者。
         Mob mob = source.mob();
         long now = source.body().settledAt().elapsedMillis();
         var benefit = TechniqueStatusBenefits.active(mob);
@@ -411,7 +426,8 @@ final class HumanoidRepertoires {
         long exit = opponent.flatMap(target -> HumanoidStrikeEstimates.exit(mob, target))
                 .map(found -> exitMillis(mob, found))
                 .orElse(Long.MAX_VALUE);
-        return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum, followUpAvailable);
+        long infusion = source.progress().hasActiveInfusion() ? TechniqueInfusions.remainingMillis(source.body()) : 0;
+        return new Repertoire.Timing(lightBody, ownNextHit, exit, leapMinimum, followUpAvailable, infusion);
     }
 
     private static long exitMillis(Mob mob, HumanoidStrikeEstimates.Exit exit) {

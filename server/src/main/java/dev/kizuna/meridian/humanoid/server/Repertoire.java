@@ -8,8 +8,9 @@ public record Repertoire(List<Strike> strikes, List<Support> supports, Timing ti
     /** 打击式：首击毫秒、打击距离和按当前对手估算的僵直毫秒，0 表示打不出僵直。 */
     public record Strike(String technique, long firstHitMillis, double reach, long staggerMillis) { }
 
-    /** 目录 ai_hints.support 声明的辅助式。 */
-    public record Support(String technique, Role role, int order, Gate gate, long refreshBeforeExpiryMillis) { }
+    /** 目录 ai_hints.support 声明的辅助式；tracked 是补放门槛读本式给予的哪一项状态的剩余。 */
+    public record Support(String technique, Role role, int order, Gate gate, long refreshBeforeExpiryMillis,
+                          Tracked tracked) { }
 
     /** 辅助式的触发门槛：到目标或最近威胁的距离范围、真元占容和所绑定肌肉疲劳。 */
     public record Gate(double minimumDistance, double maximumDistance, double minimumQiRatio, Fatigue fatigue,
@@ -29,16 +30,19 @@ public record Repertoire(List<Strike> strikes, List<Support> supports, Timing ti
     /** 辅助式的持物要求。 */
     public enum Requirement { MELEE_WEAPON }
 
+    /** 补放门槛读的状态：不读（剩余记 0，门槛总能过）、轻身、附行（C6c SPEC 5.2）。 */
+    public enum Tracked { NONE, LIGHT_BODY, INFUSION }
+
     /**
      * 轻身剩余、自己下一击剩余、走出来袭范围所需毫秒、跃步追击的最小距离。
-     * 承接窗口表示当前施放中还能否继续选择打击式。
+     * 承接窗口表示当前施放中还能否继续选择打击式；附行剩余是身上五行附伤还剩多久。
      */
     public record Timing(long lightBodyRemainingMillis, long ownNextHitMillis, long exitMillis,
-                         double leapMinimumDistance, boolean followUpAvailable) {
+                         double leapMinimumDistance, boolean followUpAvailable, long infusionRemainingMillis) {
         public Timing(long lightBodyRemainingMillis, long ownNextHitMillis, long exitMillis,
                       double leapMinimumDistance) {
-            // 旧的纯战术构造器默认没有承接窗口，正式读出会显式填充窗口事实。
-            this(lightBodyRemainingMillis, ownNextHitMillis, exitMillis, leapMinimumDistance, false);
+            // 旧的纯战术构造器默认没有承接窗口、没有附行，正式读出会显式填充。
+            this(lightBodyRemainingMillis, ownNextHitMillis, exitMillis, leapMinimumDistance, false, 0);
         }
     }
 

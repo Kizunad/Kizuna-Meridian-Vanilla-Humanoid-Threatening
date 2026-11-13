@@ -13,6 +13,7 @@ import dev.kizuna.meridian.humanoid.server.Repertoire.Role;
 import dev.kizuna.meridian.humanoid.server.Repertoire.Strike;
 import dev.kizuna.meridian.humanoid.server.Repertoire.Support;
 import dev.kizuna.meridian.humanoid.server.Repertoire.Timing;
+import dev.kizuna.meridian.humanoid.server.Repertoire.Tracked;
 import org.junit.Test;
 
 import java.util.EnumSet;
@@ -32,6 +33,7 @@ public class HumanoidTacticsTest {
     private static final String CHARGE = "test:charge";
     private static final String LIGHT_STEP = "test:light_step";
     private static final String BREATH = "test:breath";
+    private static final String INFUSE = "test:infuse";
     private static final long KNOCK_FIRST_HIT = 600;
     private static final long SLOW_FIRST_HIT = 800;
     private static final double KNOCK_REACH = 3;
@@ -47,6 +49,9 @@ public class HumanoidTacticsTest {
     private static final long LIGHT_BODY = 5000;
     private static final long LIGHT_BODY_EXPIRING = 2000;
     private static final long REFRESH = 3000;
+    private static final long INFUSION_LONG = 10_000;
+    private static final long INFUSION_EXPIRING = 2000;
+    private static final double INFUSE_MINIMUM = 8;
     private static final double LEAP_MINIMUM = 3;
     private static final double CLOSE = 2.5;
     private static final double MID = 6;
@@ -149,6 +154,21 @@ public class HumanoidTacticsTest {
         assertEquals(Optional.of(CHARGE), charge.technique());
         assertEquals(Optional.of(LIGHT_STEP), step.technique());
         assertEquals(Action.ASSAULT, decide(calm(AXE, FAR), Stance.ENGAGE, lit).action());
+    }
+
+    @Test
+    public void infusionPreparesOnlyWhenTheInfusionIsExpiring() {
+        // 附伤式读附行剩余：剩 10 s 不放、轮到 order 更大的蓄力；剩不到补放提前量才放；8 格内不放；
+        // 轻身剩余不影响附伤式，蓄力也不读附行。
+        assertEquals(Optional.of(CHARGE), decide(calm(AXE, FAR), Stance.ENGAGE,
+                infused(INFUSION_LONG, infuse(), charge())).technique());
+        assertEquals(Action.APPROACH, decide(calm(AXE, FAR), Stance.ENGAGE, infused(INFUSION_LONG, infuse())).action());
+        assertEquals(Optional.of(INFUSE), decide(calm(AXE, FAR), Stance.ENGAGE,
+                infused(INFUSION_EXPIRING, infuse(), charge())).technique());
+        assertEquals(Optional.of(INFUSE), decide(calm(AXE, FAR), Stance.ENGAGE,
+                new Repertoire(List.of(KNOCK_STRIKE), List.of(infuse()), timing(LIGHT_BODY, NO_OWN_HIT, QUICK_EXIT)))
+                .technique());
+        assertEquals(Action.APPROACH, decide(calm(AXE, MID), Stance.ENGAGE, infused(0, infuse())).action());
     }
 
     @Test
@@ -309,25 +329,37 @@ public class HumanoidTacticsTest {
     private static Timing timing(long lightBodyMillis, long ownNextHitMillis, long exitMillis,
                                  boolean followUpAvailable) {
         // 测试承接窗口时显式传入窗口事实。
-        return new Timing(lightBodyMillis, ownNextHitMillis, exitMillis, LEAP_MINIMUM, followUpAvailable);
+        return new Timing(lightBodyMillis, ownNextHitMillis, exitMillis, LEAP_MINIMUM, followUpAvailable, 0);
+    }
+
+    private static Repertoire infused(long infusionMillis, Support... supports) {
+        // 叩门在手，另带给定辅助式；身上附行还剩给定毫秒，没有轻身。
+        return new Repertoire(List.of(KNOCK_STRIKE), List.of(supports),
+                new Timing(0, NO_OWN_HIT, QUICK_EXIT, LEAP_MINIMUM, false, infusionMillis));
     }
 
     private static Support charge() {
         // 蓄力：接敌前准备，要求近战武器。
         var gate = new Gate(CHARGE_MINIMUM, CHARGE_MAXIMUM, CHARGE_QI, new Fatigue(0, 0),
                 Set.of(Requirement.MELEE_WEAPON));
-        return new Support(CHARGE, Role.PREPARE, CHARGE_ORDER, gate, 0);
+        return new Support(CHARGE, Role.PREPARE, CHARGE_ORDER, gate, 0, Tracked.NONE);
     }
 
     private static Support lightStep() {
         // 轻步：机动式，轻身将尽时补放。
         var gate = new Gate(0, BREATH_MAXIMUM, 0, new Fatigue(0, 0), Set.of());
-        return new Support(LIGHT_STEP, Role.REPOSITION, LIGHT_STEP_ORDER, gate, REFRESH);
+        return new Support(LIGHT_STEP, Role.REPOSITION, LIGHT_STEP_ORDER, gate, REFRESH, Tracked.LIGHT_BODY);
+    }
+
+    private static Support infuse() {
+        // 附伤式：8 格外的准备式，排在蓄力前，附行将尽时补放。
+        var gate = new Gate(INFUSE_MINIMUM, BREATH_MAXIMUM, 0, new Fatigue(0, 0), Set.of());
+        return new Support(INFUSE, Role.PREPARE, 0, gate, REFRESH, Tracked.INFUSION);
     }
 
     private static Support breath(double fatigue) {
         // 调息：远离威胁、疲劳达门槛时恢复。
         var gate = new Gate(SAFE, BREATH_MAXIMUM, BREATH_QI, new Fatigue(BREATH_FATIGUE, fatigue), Set.of());
-        return new Support(BREATH, Role.RECOVER, 0, gate, 0);
+        return new Support(BREATH, Role.RECOVER, 0, gate, 0, Tracked.NONE);
     }
 }

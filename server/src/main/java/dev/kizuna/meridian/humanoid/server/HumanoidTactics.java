@@ -52,9 +52,9 @@ public final class HumanoidTactics {
                 .orElseGet(() -> Decision.of(Action.RELEASE, "无威胁"));
     }
 
-    public static boolean ready(Support support, Fighter self, OptionalDouble distance,
-                                long lightBodyRemainingMillis) {
-        // 距离、真元、疲劳与持物逐项比较；无威胁时不比距离；机动式在轻身剩余不足补放门槛时才放。
+    public static boolean ready(Support support, Fighter self, OptionalDouble distance, long trackedRemainingMillis) {
+        // 距离、真元、疲劳与持物逐项比较；无威胁时不比距离；
+        // 本式给予的状态（轻身、附行）剩余不超过补放提前量才放，不读状态的式剩余记 0。
         var gate = support.gate();
         if (distance.isPresent() && !within(distance.getAsDouble(), gate)) {
             return false;
@@ -67,7 +67,7 @@ public final class HumanoidTactics {
                 && !self.has(Fighter.Means.MELEE_WEAPON)) {
             return false;
         }
-        return support.role() != Role.REPOSITION || lightBodyRemainingMillis <= support.refreshBeforeExpiryMillis();
+        return trackedRemainingMillis <= support.refreshBeforeExpiryMillis();
     }
 
     private static boolean within(double distance, Repertoire.Gate gate) {
@@ -222,11 +222,20 @@ public final class HumanoidTactics {
     private static Optional<Support> support(Fighter self, Repertoire repertoire, Set<Role> roles,
                                              OptionalDouble distance) {
         // 按 order 从小到大取第一项门槛满足的辅助式。
-        long lightBody = repertoire.timing().lightBodyRemainingMillis();
+        var timing = repertoire.timing();
         return repertoire.supports().stream()
                 .filter(candidate -> roles.contains(candidate.role()))
-                .filter(candidate -> ready(candidate, self, distance, lightBody))
+                .filter(candidate -> ready(candidate, self, distance, trackedRemaining(candidate, timing)))
                 .min(Comparator.comparingInt(Support::order));
+    }
+
+    private static long trackedRemaining(Support support, Repertoire.Timing timing) {
+        // 补放门槛读本式给予的那项状态；不读状态的式记 0，任何提前量都过。
+        return switch (support.tracked()) {
+            case NONE -> 0;
+            case LIGHT_BODY -> timing.lightBodyRemainingMillis();
+            case INFUSION -> timing.infusionRemainingMillis();
+        };
     }
 
     private static String format(String pattern, Object... values) {

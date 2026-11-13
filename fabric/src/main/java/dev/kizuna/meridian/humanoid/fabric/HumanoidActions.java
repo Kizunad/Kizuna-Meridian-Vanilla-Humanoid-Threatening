@@ -217,11 +217,15 @@ final class HumanoidActions {
     }
 
     private static boolean cast(Turn turn, String technique, Decision.Movement movement) {
-        // 僵直中不发请求，记下等僵直结束补决策；有对手时以它为目标，并把移动通道转换为 INPUT 水平向量。
+        // 僵直中不发请求，记下等僵直结束补决策；原版法术施放中也不发（C6c SPEC 4.4），等下一次决策；
+        // 有对手时以它为目标，并把移动通道转换为 INPUT 水平向量。
         Mob mob = turn.mob();
         var service = TechniqueFabric.service();
         if (service.staggerRemainingMillis(mob.getUUID()) > 0) {
             turn.mind().castBlockedByStagger();
+            return false;
+        }
+        if (HumanoidEvokerSpells.castingSpell(mob)) {
             return false;
         }
         HorizontalDirection direction = direction(turn, movement);
@@ -240,6 +244,7 @@ final class HumanoidActions {
             return false;
         }
         turn.mind().succeeded(technique);
+        HumanoidEvokerSpells.castStarted(mob, request.getTechnique(), request.getCastId());
         return true;
     }
 

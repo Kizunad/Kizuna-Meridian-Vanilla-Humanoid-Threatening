@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -46,6 +47,32 @@ public record VolumeTable(Map<String, Map<HumanoidTier, List<Grant>>> species) {
         for (String volume : allVolumes()) {
             if (!installed.test(volume)) {
                 throw HumanoidErrors.invalid(HumanoidErrors.BRAIN + ": 学卷未安装 " + volume);
+            }
+        }
+    }
+
+    public void requireOrdered(Function<String, List<String>> prerequisites) {
+        // 授卷按表里的顺序逐卷学，前置卷没学会时后面那卷会被功法库拒绝；
+        // 所以同一物种同一档里，每一卷的前置卷都要排在它前面，否则启动就失败并报清两卷。
+        species.forEach((entityId, tiers) -> tiers.forEach((tier, grants) -> requireOrdered(
+                entityId + " " + tier.id(), grants.stream().map(Grant::volume).toList(), prerequisites)));
+    }
+
+    private static void requireOrdered(String where, List<String> order,
+                                       Function<String, List<String>> prerequisites) {
+        // 逐卷查前置卷在这一档里的位置：没列或排在后面都拒绝。
+        for (int index = 0; index < order.size(); index++) {
+            String volume = order.get(index);
+            for (String required : prerequisites.apply(volume)) {
+                int position = order.indexOf(required);
+                if (position < 0) {
+                    throw HumanoidErrors.invalid(HumanoidErrors.BRAIN + ": " + where + " 的学卷 " + volume
+                            + " 要先学前置卷 " + required + "，这一档没列");
+                }
+                if (position > index) {
+                    throw HumanoidErrors.invalid(HumanoidErrors.BRAIN + ": " + where + " 的学卷 " + volume
+                            + " 排在它的前置卷 " + required + " 前面");
+                }
             }
         }
     }

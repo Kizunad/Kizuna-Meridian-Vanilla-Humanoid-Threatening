@@ -86,7 +86,7 @@ public final class HumanoidWitchVanillaGameTest {
         // 在功法目录原有喝药音之外收到一次原版女巫喝药声。
         Witch witch = WitchTestSupport.witch(context, HumanoidTier.TRUE_QI);
         WitchTestSupport.injury(witch, WitchTestSupport.DRINK_INJURED, WitchTestSupport.DRINK_INJURED);
-        var listener = WitchSoundListener.create(witch);
+        var listener = SoundListener.create(witch);
         WitchTestSupport.choose(context, witch, HumanoidWitchAi.IMBIBE, BrewKind.BITTER_YELLOW);
         var sounds = listener.sounds(witch, "minecraft:entity.witch.drink");
         context.assertTrue(sounds.size() == 1 && sounds.getFirst().getSource() == SoundSource.HOSTILE,
@@ -103,14 +103,14 @@ public final class HumanoidWitchVanillaGameTest {
         enemy.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
         WitchTestSupport.choose(context, witch, HumanoidWitchAi.FAN, BrewKind.ARMOR_ROT);
         context.runAfterDelay(WitchTestSupport.FAN_END, () -> {
-            var listener = WitchSoundListener.create(witch);
+            var listener = SoundListener.create(witch);
             WitchTestSupport.choose(context, witch, HumanoidWitchAi.MIST, BrewKind.ARMOR_ROT);
             observeLaugh(context, witch, enemy, listener, 0);
         });
     }
 
     private static void observeLaugh(GameTestHelper context, Witch witch, net.minecraft.world.entity.Mob enemy,
-                                     WitchSoundListener listener, int elapsed) {
+                                     SoundListener listener, int elapsed) {
         // 逐 tick 只观察实际声音包，不调用生产播声方法或伪造催发事件。
         var sounds = listener.sounds(witch, "minecraft:entity.witch.celebrate");
         if (!sounds.isEmpty()) {

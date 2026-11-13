@@ -13,6 +13,7 @@ import dev.kizuna.meridian.qivariants.server.QiVariantRegistry;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -33,6 +34,10 @@ public final class HumanoidBodyGenerator {
     private static final String NONE_ATTRIBUTE = "meridian:none";
     private static final String LEG_MUSCLE_TAG = "human:leg_muscle";
     private static final String ARM_MUSCLE_TAG = "human:arm_muscle";
+    private static final String ELEMENT_MERIDIAN_TAG_PREFIX = "human:meridian_";
+    private static final Map<HumanoidVariant, List<String>> EVOKER_BIASED_ELEMENTS = Map.of(
+            HumanoidVariant.WANDERING_QI, List.of("meridian:metal", "meridian:earth"),
+            HumanoidVariant.TRUE_QI, List.of("meridian:fire", "meridian:water"));
     private static final String DEFAULT_TIME_DOMAIN = "meridian_humanoid:world";
     private static final String DEFAULT_TIME_EPOCH = "initial";
     private static final MeridianOpening OPENED = MeridianOpening.newBuilder()
@@ -148,16 +153,13 @@ public final class HumanoidBodyGenerator {
         BodyMessages.BodyStructure original = template.getStructure();
         HumanoidConfig.SpeciesProfile profile = config.profile(request.species());
         Set<String> sampled = openedMeridians(original, variant, profile, random, opening);
-        Set<String> opened = witchMeridians(request.species(), variant, original, sampled, opening);
+        Set<String> witchOpened = witchMeridians(request.species(), variant, original, sampled, opening);
         String mainAttribute = variants.sample(request.region().eligibleShares(variants),
                         variant.maximumAttributeTier(), random)
                 .orElse(NONE_ATTRIBUTE);
-        double mainShare;
-        if (mainAttribute.equals(NONE_ATTRIBUTE)) {
-            mainShare = 1;
-        } else {
-            mainShare = between(config.mainAttributeShareMinimum(), config.mainAttributeShareMaximum(), random);
-        }
+        double mainShare = mainShare(mainAttribute, random);
+        Set<String> opened = evokerMeridians(request.species(), variant, original, witchOpened, mainAttribute,
+                opening);
         BodyMessages.BodyStructure structure = expandedStructure(original, opened);
         BodyMessages.VitalityState vitality = vitality(random);
         double legTrainingGrowth = legTrainingGrowth(variant, profile);
@@ -330,6 +332,29 @@ public final class HumanoidBodyGenerator {
             ensureMeridian(opened, structure, "human:foot_meridian");
         }
         return Set.copyOf(opened);
+    }
+
+    private double mainShare(String mainAttribute, RandomGenerator random) {
+        // 无属性身体全是无属性真元，不抽占比；有主属性才在配置区间里抽一次。
+        if (mainAttribute.equals(NONE_ATTRIBUTE)) {
+            return 1;
+        }
+        return between(config.mainAttributeShareMinimum(), config.mainAttributeShareMaximum(), random);
+    }
+
+    private static Set<String> evokerMeridians(HumanoidSpecies species, HumanoidVariant variant,
+                                               BodyMessages.BodyStructure structure, Set<String> opened,
+                                               String mainAttribute, Opening opening) {
+        // 唤魔者按主属性保证本行表里经至少开一条（原稿 §8.3）：游炁补金、土，真炁补火、水；
+        // 真炁金、土的经在游炁层，本来就全开。补开在主属性抽完之后，不新增随机抽样；凡人不补。
+        boolean biased = EVOKER_BIASED_ELEMENTS.getOrDefault(variant, List.of()).contains(mainAttribute);
+        if (species != HumanoidSpecies.EVOKER || opening == Opening.NONE || !biased) {
+            return opened;
+        }
+        var result = new HashSet<>(opened);
+        String element = mainAttribute.substring(mainAttribute.indexOf(':') + 1);
+        ensureMeridian(result, structure, ELEMENT_MERIDIAN_TAG_PREFIX + element);
+        return Set.copyOf(result);
     }
 
     private static void ensureMeridian(Set<String> opened, BodyMessages.BodyStructure structure, String tag) {
