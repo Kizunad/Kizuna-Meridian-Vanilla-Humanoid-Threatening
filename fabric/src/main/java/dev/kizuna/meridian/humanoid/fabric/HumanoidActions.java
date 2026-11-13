@@ -27,6 +27,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.illager.SpellcasterIllager;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.phys.Vec3;
 
@@ -225,7 +226,7 @@ final class HumanoidActions {
     }
 
     private static void holdRange(Turn turn) {
-        // 会连发的按射程站位；其余距离带下界保护跃步最小距离，上界给直接接近留下确定性余量。
+        // 会连发的按射程站位；其余距离带下界保护跃步最小距离和施法型的补放门槛，上界给直接接近留下确定性余量。
         Optional<HumanoidMotion.Directive> standoff = standoff(turn);
         if (standoff.isPresent()) {
             turn.mind().direct(standoff.orElseThrow());
@@ -233,10 +234,19 @@ final class HumanoidActions {
         }
         double reach = turn.readout().repertoire().strikes().stream()
                 .mapToDouble(Repertoire.Strike::reach).max().orElse(0);
-        double minimum = Math.max(reach, turn.readout().repertoire().timing().leapMinimumDistance())
+        double leap = turn.readout().repertoire().timing().leapMinimumDistance();
+        double minimum = Math.max(Math.max(reach, leap), casterRefreshGate(turn.mob(), turn.body()))
                 + HOLD_RANGE_MARGIN;
         double maximum = minimum + HOLD_RANGE_WIDTH;
         turn.mind().direct(HumanoidMotion.Directive.holdRange(minimum, maximum));
+    }
+
+    static double casterRefreshGate(Mob mob, BodySnapshot body) {
+        // 施法型物种接敌前待在附伤补放门槛外，第一次附伤之后还补得上（C6c SPEC 5.4）；别的物种和不会补放的记 0。
+        if (!(mob instanceof SpellcasterIllager)) {
+            return 0;
+        }
+        return HumanoidRepertoires.refreshGate(body);
     }
 
     private static void keep(Turn turn) {

@@ -196,16 +196,16 @@
 - **卷顺序。** 启动时检查每档学卷表：一卷的前置卷必须在同一张表里、排在它前面，否则服务端启动失败，报出哪一卷排在它的前置卷前面，或者缺了哪一卷。
 - **受控玩家。** 五脏诀十五式的打击选式权重都是 0，受控玩家的选式只按这个权重抽，不会自动放这几式。
 - **腿肌。** 厚土、归水只改腿肌耐力和恢复，不改动作速度；生物走路不耗腿部做功，所以两式不影响原版走动，只影响用腿做功的式（轻身）和按疲劳判断的门槛。
-- **还没做。** 大脑「接敌前准备」时跟住或贴近目标，唤魔者会贴到目标 3–4 格，第一次附伤之后就够不着 8 格的补放门槛。计划改成施法型物种准备时待在 8 格外。
+- **保持距离。** 施法型物种（`SpellcasterIllager`）学了会补放的附伤式时，「接敌前准备」（准备决策和施放准备式期间）总是保持距离带。带的下界取这些式里最远的起手下限（现在是 8 格）再加 0.5，宽 4 格，所以唤魔者站在 8.5–12.5 格：近了退开，远了走近，带里停下（`HumanoidActions.casterRefreshGate`）。以前没有打击式，带只有 0.5–4.5 格，唤魔者贴到 3 格，第一次附伤之后就补不上。准备以外的时间照旧交还原版。
 
 `HumanoidEvokerGameTest` 用 40×40 的 `retreat` 场地，开真实 AI 的唤魔者对一头不动、1000 血的牛（`setTarget`），逐 tick 记施放、原版施法、命中和收到的包：
 
 | 行为 | 测试 |
 |---|---|
-| 真炁火唤魔者先放灼火，原版尖牙在它之后，两者不重叠，尖牙命中带火行附伤 | `fireEvokerInfusesBeforeItsSpellsAndItsFangsBurn` |
+| 真炁火唤魔者先放灼火，原版法术在它之后，两者不重叠，原版法术命中带火行附伤（原版随机挑尖牙或恼鬼，哪个都算） | `fireEvokerInfusesBeforeItsSpellsAndTheyBurn` |
 | 唤出的恼鬼命中也带附伤 | `summonedVexesCarryTheInfusion` |
 | 起附伤式时念一次 `prepare_wololo`（敌对生物），起手期间手上有火红粒子，附行生效后停 | `infusionCastSaysPrepareWololoWithHandParticles` |
-| 预置一段剩 10 s 的附行：剩到 3 s 以内才补放（唤魔者钉在原地，只测门槛） | `refreshWaitsUntilTheInfusionIsExpiring` |
+| 预置一段剩 10 s 的附行：剩到 3 s 以内才补放；唤魔者不钉在原地，补放施放期间离目标不进 8 格 | `refreshWaitsUntilTheInfusionIsExpiring` |
 | 游炁土唤魔者没有《附》，尖牙不带附伤 | `wanderingEarthFangsCarryNoInfusion` |
 | 心被打坏（HP 0）后不放灼火，照原版唤尖牙、恼鬼，命中不带附伤 | `destroyedHeartFallsBackToVanillaSpells` |
 | 游炁土唤魔者对 13 格外的目标第一式放厚土（不先轻身），不念咒、不冒粒子 | `earthEvokerStrengthensLegsBeyondTwelveMeters` |

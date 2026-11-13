@@ -129,6 +129,19 @@ final class HumanoidRepertoires {
                 source.progress().getKnownList(), exchanges(readyStrikes), volleyReach(ready));
     }
 
+    static double refreshGate(BodySnapshot body) {
+        // 会的准备式里目录设了补放提前量的（附伤式），取最远的起手下限；冷却、费用、正在施放都不管，没有记 0。
+        TechniqueRegistry registry = TechniqueFabric.service().registry();
+        return TechniqueState.read(body).getKnownList().stream()
+                .flatMap(known -> registry.find(known.getTechnique()).stream())
+                .map(TechniqueDefinition::getAiHints)
+                .filter(hints -> hints.getSupport().getRole() == AiRole.AI_ROLE_PREPARE)
+                .filter(hints -> hints.getSupport().hasRefreshBeforeExpiryMillis())
+                .mapToDouble(hints -> hints.getMinimumDistance().getValue())
+                .max()
+                .orElse(0);
+    }
+
     private static OptionalDouble volleyReach(List<Ready> ready) {
         // 绑定、费用、做功与持物都通过的连发里最远的射程，冷却中也算；射程取目录 ai_hints 最远距离，
         // 目录按满力弹道定。连发是看得见的目标在八格外随时能放的式，别的远射只在特定处境放，不定站位。

@@ -132,15 +132,17 @@ public final class HumanoidEvokerGameTest {
     }
 
     @GameTest(maxTicks = TIMEOUT, environment = SPELLS_BATCH, structure = STRUCTURE)
-    public void fireEvokerInfusesBeforeItsSpellsAndItsFangsBurn(GameTestHelper context) {
-        // 先放：10 格外的目标，先起灼火，原版法术在它之后才开始、施功法期间从不开始；尖牙咬中带灼热附伤。
+    public void fireEvokerInfusesBeforeItsSpellsAndTheyBurn(GameTestHelper context) {
+        // 先放：10 格外的目标，先起灼火，原版法术在它之后才开始、施功法期间从不开始；原版法术命中带灼热附伤。
+        // 原版随机挑尖牙或恼鬼，先挑到哪个都算；恼鬼那一跳另有专门用例。
         Duel duel = Duel.start(context, "first", HumanoidTier.TRUE_QI, FIRE, FAR);
-        duel.observe(DUEL_TICKS, () -> duel.infusedBy(EvokerFangs.class), () -> {
+        BooleanSupplier burned = () -> duel.infusedBy(EvokerFangs.class) || duel.infusedBy(Vex.class);
+        duel.observe(DUEL_TICKS, burned, () -> {
             duel.assertFirstCast(FIRE_BURN);
             context.assertTrue(duel.firstSpellTick > duel.casts.getFirst().tick(),
                     "原版法术先于灼火开始：法术 " + duel.firstSpellTick + " 灼火 " + duel.casts.getFirst().tick());
             duel.assertNoOverlap();
-            context.assertTrue(duel.infusedBy(EvokerFangs.class), "尖牙咬中没有灼热附伤：" + duel.describeHits());
+            context.assertTrue(burned.getAsBoolean(), "尖牙、恼鬼命中都没有灼热附伤：" + duel.describeHits());
             duel.finish();
         });
     }
@@ -178,17 +180,20 @@ public final class HumanoidEvokerGameTest {
     @GameTest(maxTicks = TIMEOUT, environment = SPELLS_BATCH, structure = STRUCTURE)
     public void refreshWaitsUntilTheInfusionIsExpiring(GameTestHelper context) {
         // 续放：开场就带着剩 10 s 的灼火附行、没有冷却；附行剩不到 3 s 才补放，之前不放。
-        // 大脑「接敌前准备」时跟住或贴近目标，几秒内就进 8 格（灼火够不着）；这里把唤魔者钉在原地，只测补放门槛。
+        // 唤魔者不钉在原地：「接敌前准备」时待在 8 格外，补放够得着；补放起手到生效也不往目标凑进 8 格。
         Duel.awaitSeedableClock(context, () -> {
             Duel duel = Duel.start(context, "refresh", HumanoidTier.TRUE_QI, FIRE, FAR,
                     HumanoidEvokerGameTest::withExpiringInfusion);
-            duel.pin();
-            duel.observe(REFRESH_TICKS, () -> duel.first(FIRE_BURN).isPresent(), () -> {
+            BooleanSupplier warmedUp = () -> duel.first(FIRE_BURN)
+                    .filter(cast -> duel.tick >= cast.tick() + WARMUP_TICKS).isPresent();
+            duel.observe(REFRESH_TICKS, warmedUp, () -> {
                 Cast refresh = duel.first(FIRE_BURN).orElseThrow(() -> duel.failure("一直没补放灼火"));
                 context.assertTrue(refresh.infusionRemainingMillis() <= REFRESH_MILLIS,
                         "附行还剩 " + refresh.infusionRemainingMillis() + " ms 就补放了");
                 context.assertTrue(refresh.tick() >= REFRESH_EARLIEST_TICKS,
                         "第 " + refresh.tick() + " tick 就补放，附行还长");
+                context.assertTrue(duel.castNearest >= INFUSION_MINIMUM - DISTANCE_TOLERANCE,
+                        "灼火施放期间离目标只有 " + duel.castNearest + " 格：距离 " + duel.distances);
                 duel.assertNoOverlap();
                 duel.finish();
             });
@@ -409,7 +414,7 @@ public final class HumanoidEvokerGameTest {
         private int firstSpellTick = Integer.MAX_VALUE;
         private int overlapTick = -1;
         private int engagedWithinEight;
-        private Vec3 pinnedAt;
+        private double castNearest = Double.MAX_VALUE;
 
         private Duel(GameTestHelper context, Evoker evoker, Cow cow) {
             // 场地只属于一个用例。
@@ -444,11 +449,6 @@ public final class HumanoidEvokerGameTest {
             poll(context, TIMEOUT / 2, () -> HumanoidFabric.now().getElapsedMillis() >= needed, next);
         }
 
-        void pin() {
-            // 之后每 tick 放回现在的位置，距离一直是开场的距离。
-            pinnedAt = evoker.position();
-        }
-
         void listen() {
             // 旁观者站在唤魔者身上收包，之后逐 tick 取走。
             listener = SoundListener.create(evoker);
@@ -470,9 +470,6 @@ public final class HumanoidEvokerGameTest {
         private void sample() {
             // 原版施法、当前施放和两者重叠；有收包的话顺带记念咒和手上粒子。
             tick++;
-            if (pinnedAt != null) {
-                evoker.teleportTo(pinnedAt.x, pinnedAt.y, pinnedAt.z);
-            }
             var body = ((HumanoidEntityAccess) evoker).meridian$humanoidBody().currentBody();
             TechniqueProgress progress = TechniqueState.read(body);
             boolean spell = evoker.isCastingSpell();
@@ -488,6 +485,10 @@ public final class HumanoidEvokerGameTest {
             }
             if (progress.hasActiveCast()) {
                 noteCast(progress, TechniqueInfusions.remainingMillis(body), distance);
+            }
+            if (progress.hasActiveCast()
+                    && progress.getActiveCast().getRequest().getTechnique().getId().equals(FIRE_BURN)) {
+                castNearest = Math.min(castNearest, distance);
             }
             if (distance < INFUSION_MINIMUM && HumanoidBrain.opponent(evoker).orElse(null) == cow) {
                 engagedWithinEight++;

@@ -354,14 +354,15 @@ public final class HumanoidBrain {
     }
 
     private static Decision prepareMovement(MovementContext context) {
-        // 准备式撤退时沿退路移动，否则在保持跃步带与跟随之间确定选择。
+        // 准备式撤退时沿退路移动；会补放附伤的施法型物种总是保持距离带（带在补放门槛外），
+        // 其余在保持跃步带与跟随之间确定选择。
         Decision decision = context.decision();
         if (context.stance() == HumanoidAssessment.Stance.RETREAT) {
             return constrain(decision.withMovement(Decision.Movement.RETREAT),
                     ConcurrencyRules.CastPhase.PREPARE);
         }
-        boolean holdRange = seed(context.mob(), context.mind()).nextDouble()
-                < config.concurrency().holdRangeProbability();
+        boolean holdRange = HumanoidActions.casterRefreshGate(context.mob(), context.body()) > 0
+                || seed(context.mob(), context.mind()).nextDouble() < config.concurrency().holdRangeProbability();
         Decision.Movement movement;
         if (holdRange) {
             movement = Decision.Movement.HOLD_RANGE;
