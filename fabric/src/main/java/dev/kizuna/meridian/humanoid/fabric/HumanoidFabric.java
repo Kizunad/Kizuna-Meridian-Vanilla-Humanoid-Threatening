@@ -21,6 +21,7 @@ import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -77,6 +78,7 @@ public final class HumanoidFabric implements ModInitializer {
         ServerLifecycleEvents.AFTER_SAVE.register(HumanoidFabric::saveWorld);
         ServerTickEvents.END_SERVER_TICK.register(HumanoidFabric::tick);
         ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
+        ServerEntityEvents.ENTITY_UNLOAD.register((entity, level) -> onEntityUnloaded(entity));
         registerCommands();
     }
 
@@ -222,6 +224,20 @@ public final class HumanoidFabric implements ModInitializer {
         // 认领范围只由固定实体类型 ID 决定。
         return HumanoidSpecies.fromEntityId(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
                 .getKey(entity.getType()).toString()).isPresent();
+    }
+
+    private static void onEntityUnloaded(Entity entity) {
+        // 区块卸载和生物过传送门不经过 Entity.remove，只有这个事件收得到；会话和大脑状态按 UUID 存，
+        // 不清的话读档出来的同 UUID 新对象会沿用旧状态，不再装大脑的 Goal。
+        // 死亡和丢弃已经在 onEntityRemoved 里清过，这里再清一次什么都不做。
+        if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
+            return;
+        }
+        try {
+            HumanoidTechniqueHost.removed(living);
+        } catch (RuntimeException failure) {
+            report(living, failure);
+        }
     }
 
     public static void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {

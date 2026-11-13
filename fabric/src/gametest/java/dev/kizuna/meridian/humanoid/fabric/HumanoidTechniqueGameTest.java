@@ -468,6 +468,35 @@ public final class HumanoidTechniqueGameTest {
     }
 
     @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void chunkUnloadClearsCastAndReloadedMobGetsBrainGoals(GameTestHelper context) {
+        // 真实的区块卸载和生物过传送门不调 Entity.remove，只调 setRemoved；会话、施放和大脑状态同样要清，
+        // 读档出来的同 UUID 新对象才会重新装上大脑的 Goal。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        mob.setNoAi(false /* aiDisabled */);
+        var firstGoals = new GoalSelector();
+        HumanoidBrain.tick(mob, firstGoals, new GoalSelector());
+        context.assertTrue(firstGoals.getAvailableGoals().size() == 1, "测试前提：卸载前大脑没有装 Goal");
+        start(context, mob, "cleave", target);
+        CompoundTag saved = HumanoidEntityNbt.save(mob);
+        mob.setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        context.assertTrue(!HumanoidTechniqueHost.hasSession(mob) && !HumanoidTechniqueHost.isCasting(mob),
+                "区块卸载没有清掉会话和施放");
+        var restored = EntityTypes.VINDICATOR.create(context.getLevel(), EntitySpawnReason.LOAD);
+        HumanoidEntityNbt.load(restored, saved);
+        context.getLevel().addFreshEntity(restored);
+        var goals = new GoalSelector();
+        var targets = new GoalSelector();
+        HumanoidBrain.tick(restored, goals, targets);
+        context.assertTrue(goals.getAvailableGoals().size() == 1 && targets.getAvailableGoals().size() == 1,
+                "重载出来的新对象没有装上大脑的 Goal：" + goals.getAvailableGoals().size() + " / "
+                        + targets.getAvailableGoals().size());
+        restored.setNoAi(true /* aiDisabled */);
+        HumanoidTechniqueHost.removed(restored);
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
     public void lifespanEndingDuringWarmupEndsCastAtOnce(GameTestHelper context) {
         // 寿元在长起手中途用完，期间没有别的到期事件：施放要在寿元终点前后就以 DIED 结束，不能等到出手那一刻。
         Vindicator mob = prepared(context);
