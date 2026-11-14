@@ -227,6 +227,8 @@
 - **变羊。** 修炼者（游炁、真炁）不变羊，凡人照原版（`EvokerWololoGoalMixin`）。
 - **声音和粒子。** 唤魔者起附伤式时在 0 ms 播原版 `entity.evoker.prepare_wololo`，归敌对生物类别。起手到附行生效前，服务端每 tick 在两只手各发一颗本行颜色的 `entity_effect` 粒子：金白、土黄、火红、水黑、木青。厚土、归水不是附伤式，不播也不发。玩家放五脏诀不走这里。
 - **卷顺序。** 启动时检查每档学卷表：一卷的前置卷必须在同一张表里、排在它前面，否则服务端启动失败，报出哪一卷排在它的前置卷前面，或者缺了哪一卷。
+- **功法谱来源。** 学卷表登记成功法库的来源暗示（`TechniqueVolumeSources`，身份 `meridian_humanoid_host:volume_table`）：读的是并好的那张表（`HumanoidBrain.config().volumes()`，配置文件加上各功法包在 fabric.mod.json 声明的学卷片段），功法包不用自己再登记。游炁档、真炁档每条授卷一条，实体、境界和概率原样写进去；凡人档没有境界可说，概率为零的卷学不到，都不登记。缺省配置 60 条（34 对「物种×卷」），完整装配下再加各片段的条目，比如袖手拳给村民两档的上卷。只给功法谱拼句子，不改学卷。
+- **功法谱进度。** 「道上的人」下「夺卷」之后接两条：「功法谱」在用卷轴学会第一卷时完成，奖励一本功法谱（战利品表 `advancement_reward/technique_codex`，背包满了按原版掉在脚下，创造模式背包满时原版直接吞掉；读掉手上最后一卷时书落进读空的那只手）；「全谱」（挑战）在所有有卷轴的书都凑齐时完成。各功法包凑齐本书的进度各自挂在「道上的人」下。`HumanoidAdvancementGameTest` 的 `firstLearnedVolumeGivesOneCodex`、`lastScrollInHandTurnsIntoTheCodex`、`codexGiftDropsAtFeetWhenInventoryIsFull` 覆盖送一本、不重复送、落进读空的手、满背包掉落。
 - **受控玩家。** 五脏诀十五式的打击选式权重都是 0，受控玩家的选式只按这个权重抽，不会自动放这几式。
 - **腿肌。** 厚土、归水只改腿肌耐力和恢复，不改动作速度；生物走路不耗腿部做功，所以两式不影响原版走动，只影响用腿做功的式（轻身）和按疲劳判断的门槛。
 - **保持距离。** 施法型物种（`SpellcasterIllager`）学了会补放的附伤式时，「接敌前准备」（准备决策和施放准备式期间）总是保持距离带。带的下界取这些式里最远的起手下限（现在是 8 格）再加 0.5，宽 4 格，所以唤魔者站在 8.5–12.5 格：近了退开，远了走近，带里停下（`HumanoidActions.casterRefreshGate`）。以前没有打击式，带只有 0.5–4.5 格，唤魔者贴到 3 格，第一次附伤之后就补不上。准备以外的时间照旧交还原版。
@@ -247,7 +249,7 @@
 
 `HumanoidEvokerBirthGameTest` 查出生：真炁金、土、火、水唤魔者学到《附》，本行附伤式绑得上、付得起也做得了；游炁金、土付得起金臂、厚土。日志记本行真元够放几次。
 
-纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶、盯上距离表缺省回退与越界）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。
+纯规则单测：`HumanoidAssessmentTest`（姿态评估）、`HumanoidTacticsTest`（打断、躲、硬抗、突击、拉扯、准备、恢复、撤退、释放）、`StrikeGeometryTest`（覆盖与走出范围）、`HumanoidBrainConfigLoaderTest`（字段白名单、缺物种、非法概率、未知档位、凡人默认空档、学卷分桶、盯上距离表缺省回退与越界）；Fabric 侧 `HumanoidFightersTest` 覆盖空仓、半满、满仓、不同密度、空经脉与外壁库存的真元占容。`HumanoidVolumeSourcesTest` 覆盖缺省配置登记条数、档位换境界、凡人档和零概率不登记；`HumanoidVolumeSourcesGameTest` 在完整装配里核袖手拳片段的村民上卷两档都成了来源。
 
 ## 生人见闻录
 

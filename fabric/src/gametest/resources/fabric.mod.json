@@ -31,7 +31,8 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidEvokerBirthGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidEvokerGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidAdvancementGameTest",
-      "dev.kizuna.meridian.humanoid.fabric.HumanoidFieldNotesGameTest"
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidFieldNotesGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidVolumeSourcesGameTest"
     ]
   }
 }

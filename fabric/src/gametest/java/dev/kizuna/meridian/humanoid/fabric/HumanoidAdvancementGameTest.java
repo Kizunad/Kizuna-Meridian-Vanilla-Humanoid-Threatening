@@ -2,6 +2,8 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
 
+import dev.kizuna.meridian.technique.fabric.TechniqueCodex;
+import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.TechniqueScrollItem;
 import dev.kizuna.meridian.technique.fabric.TechniqueScrollItems;
 import java.util.List;
@@ -18,17 +20,21 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 「修行」页功法线的物种分支：跟哪种人交过手（打它或被它打）就完成哪一条，村民、行商做过买卖也算；
- * 「夺卷」认 {@code #meridian_technique:scrolls}，整套装配里每一卷功法卷都在标签里。
+ * 「夺卷」认 {@code #meridian_technique:scrolls}，整套装配里每一卷功法卷都在标签里；
+ * 用卷轴学会第一卷时「功法谱」送一本功法谱：读掉手上最后一卷时书落进那只手，背包满了掉在脚下。
  */
 public final class HumanoidAdvancementGameTest {
     private static final String NAMESPACE = "meridian_humanoid_host";
@@ -43,6 +49,9 @@ public final class HumanoidAdvancementGameTest {
             "cultivators/first_scroll");
     private static final TagKey<Item> SCROLLS = TagKey.create(Registries.ITEM,
             Identifier.parse("meridian_technique:scrolls"));
+    private static final Identifier CODEX_GIFT = Identifier.fromNamespaceAndPath(NAMESPACE,
+            "cultivators/technique_codex");
+    private static final double FEET_RADIUS = 2;
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void hittingEachHumanoidCompletesOnlyItsLeaf(GameTestHelper context) {
@@ -136,6 +145,79 @@ public final class HumanoidAdvancementGameTest {
         }
         context.assertTrue(tagged == scrolls.size(), "夺卷标签 " + tagged + " 项，功法卷 " + scrolls.size() + " 卷");
         context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void firstLearnedVolumeGivesOneCodex(GameTestHelper context) {
+        // 用卷轴学会第一卷送一本功法谱；再学一卷不再送。
+        ServerPlayer player = player(context);
+        player.setGameMode(GameType.CREATIVE);
+        try {
+            requireOpen(context, player, CODEX_GIFT, "没学卷就完成了功法谱");
+            learn(context, player, "meridian_basic_techniques:breath_volume", 1);
+            requireDone(context, player, CODEX_GIFT, "学会第一卷没完成功法谱");
+            context.assertTrue(codexCount(player) == 1, "学会第一卷没送功法谱：" + codexCount(player));
+            learn(context, player, "meridian_basic_techniques:light_step_volume", 1);
+            context.assertTrue(codexCount(player) == 1, "学会第二卷又送了一本：" + codexCount(player));
+        } finally {
+            release(player);
+        }
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void lastScrollInHandTurnsIntoTheCodex(GameTestHelper context) {
+        // 生存玩家读掉手上唯一一卷：送的书进了读空的主手，原版按读空的卷轴清手时不能把它一起清掉。
+        ServerPlayer player = player(context);
+        try {
+            learn(context, player, "meridian_basic_techniques:breath_volume", 1);
+            context.assertTrue(player.getMainHandItem().is(TechniqueCodex.item()),
+                    "读空的主手里不是功法谱：" + player.getMainHandItem());
+            context.assertTrue(codexCount(player) == 1, "读掉唯一一卷后功法谱 " + codexCount(player) + " 本");
+        } finally {
+            release(player);
+        }
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void codexGiftDropsAtFeetWhenInventoryIsFull(GameTestHelper context) {
+        // 生存玩家站进测试结构（区块已加载，掉落物才看得见），手上两卷、其余格子塞满石头，学完手上还剩一卷；
+        // 送的书掉在脚边。
+        // 创造玩家背包满时原版直接吞掉奖励物品，所以这条用生存。
+        ServerPlayer player = player(context);
+        Vec3 feet = context.absoluteVec(Vec3.atBottomCenterOf(MOB_POS));
+        player.connection.teleport(feet.x, feet.y, feet.z, 0, 0);
+        try {
+            var inventory = player.getInventory();
+            for (int slot = 1; slot < inventory.getNonEquipmentItems().size(); slot++) {
+                inventory.setItem(slot, new ItemStack(Items.STONE, Items.STONE.getDefaultMaxStackSize()));
+            }
+            learn(context, player, "meridian_basic_techniques:breath_volume", 2);
+            context.assertTrue(codexCount(player) == 0, "背包满了书还进了背包");
+            var dropped = context.getLevel().getEntitiesOfClass(ItemEntity.class,
+                    player.getBoundingBox().inflate(FEET_RADIUS), entity -> entity.getItem().is(TechniqueCodex.item()));
+            context.assertTrue(dropped.size() == 1, "背包满了书没掉在脚下：" + dropped.size());
+            dropped.forEach(ItemEntity::discard);
+        } finally {
+            release(player);
+        }
+        context.succeed();
+    }
+
+    private static void learn(GameTestHelper context, ServerPlayer player, String volume, int count) {
+        // 拿卷轴走原版右键入口学会；这卷每一式都进了已学才算学会。
+        TechniqueScrollItem scroll = TechniqueScrollItems.scrolls().get(Identifier.parse(volume + "_scroll"));
+        ItemStack stack = new ItemStack(scroll, count);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        player.gameMode.useItem(player, player.level(), stack, InteractionHand.MAIN_HAND);
+        var known = TechniqueFabric.service().known(player.getUUID()).stream().map(entry -> entry.technique()).toList();
+        context.assertTrue(known.containsAll(scroll.scroll().volume().getTechniquesList()), "卷轴没学会：" + volume);
+    }
+
+    private static int codexCount(ServerPlayer player) {
+        // 背包里功法谱的本数。
+        return player.getInventory().countItem(TechniqueCodex.item());
     }
 
     private static Identifier leaf(EntityType<?> species) {

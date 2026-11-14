@@ -1,0 +1,29 @@
+{
+  "parent": "meridian_humanoid_host:cultivators/first_scroll",
+  "display": {
+    "icon": {
+      "id": "meridian_technique:technique_codex"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.technique_codex.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.technique_codex.description"
+    }
+  },
+  "criteria": {
+    "learned": {
+      "trigger": "meridian_technique:volume_learned"
+    }
+  },
+  "requirements": [
+    [
+      "learned"
+    ]
+  ],
+  "rewards": {
+    "loot": [
+      "meridian_humanoid_host:advancement_reward/technique_codex"
+    ]
+  }
+}

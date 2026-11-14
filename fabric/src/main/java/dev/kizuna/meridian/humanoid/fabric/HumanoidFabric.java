@@ -65,6 +65,7 @@ public final class HumanoidFabric implements ModInitializer {
         config = HumanoidConfigLoader.load(configDirectory.resolve("meridian-humanoid.toml"));
         var brainConfig = HumanoidBrainConfigLoader.load(configDirectory.resolve("meridian-humanoid-brain.toml"));
         HumanoidBrain.configure(brainConfig.withVolumes(HumanoidAddonVolumes.joined(brainConfig.volumes())));
+        HumanoidVolumeSources.register();
         HumanoidCharmController.initialize();
         HumanoidRestrictions.initialize();
         HumanoidWitchAi.initialize(configDirectory);
