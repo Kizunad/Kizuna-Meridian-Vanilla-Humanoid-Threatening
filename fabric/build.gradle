@@ -7,7 +7,8 @@ description = '原版生人经脉身体的 Fabric 健康宿主。'
 repositories {
     maven { url = 'https://maven.fabricmc.net/' }
     mavenCentral()
-    flatDir { dirs new File(kizunaWorkspace.directory('pathfinding'), 'core/build/libs') }
+    // 寻路核心不参与源码组合，按文件取；位置由工作区给（平时是 Pathfinding 仓的 core/build/libs，开了 JAR 仓在仓里）。
+    flatDir { dirs kizunaWorkspace.artifact('pathfinding', 'core', false).parentFile }
 }
 
 dependencies {
