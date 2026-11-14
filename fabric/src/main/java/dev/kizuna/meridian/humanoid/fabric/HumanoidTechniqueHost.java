@@ -17,6 +17,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHost
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.server.TechniqueBodyStamp;
 import dev.kizuna.meridian.technique.server.TechniqueErrors;
+import dev.kizuna.meridian.technique.server.TechniqueForecasts;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueHostEntrypoint;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
@@ -226,9 +227,8 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     }
 
     private static boolean hasCloseStrike(TechniqueDefinition definition) {
-        // 腿法与武器打击都需要首击时保持距离；行矢另由 castingWayfarer 处理。
-        return definition.getEffectsList().stream()
-                .anyMatch(effect -> effect.hasLegStrike() || effect.hasWeaponStrike());
+        // 兵器、腿、拳掌、擒的第一下都靠起手时的站位够着；行矢另由 castingWayfarer 处理。
+        return TechniqueForecasts.firstHit(definition).filter(TechniqueForecasts.FirstHit::close).isPresent();
     }
 
     private static Optional<TechniqueProgress> publishedProgress(LivingEntity entity) {

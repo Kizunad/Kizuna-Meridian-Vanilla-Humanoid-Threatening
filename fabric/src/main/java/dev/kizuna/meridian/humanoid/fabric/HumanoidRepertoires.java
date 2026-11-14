@@ -85,8 +85,8 @@ final class HumanoidRepertoires {
         }
     }
 
-    private record FirstStrike(long millis, double distance,
-                               Optional<TechniqueForecasts.FirstStrike> weapon) { }
+    /** 一式最早打到人的那一下：时刻、够得着的距离；正好是兵器打击时带上打击形状。 */
+    record FirstStrike(long millis, double distance, Optional<TechniqueForecasts.FirstStrike> weapon) { }
 
     private HumanoidRepertoires() {
         // 每次决策重新读身体，不缓存绑定。
@@ -374,25 +374,12 @@ final class HumanoidRepertoires {
         return result;
     }
 
-    private static Optional<FirstStrike> firstStrike(TechniqueDefinition definition) {
-        var candidates = new ArrayList<FirstStrike>();
-        TechniqueForecasts.firstStrike(definition)
-                .map(first -> new FirstStrike(first.millis(), first.strike().getDistance().getValue(),
-                        Optional.of(first)))
-                .ifPresent(candidates::add);
-        definition.getEffectsList().stream()
-                .filter(TechniqueEffect::hasLegStrike)
-                .min(java.util.Comparator.comparingLong(TechniqueEffect::getAtMillis))
-                .map(effect -> new FirstStrike(effect.getAtMillis(),
-                        effect.getLegStrike().getDistance().getValue(), Optional.empty()))
-                .ifPresent(candidates::add);
-        definition.getEffectsList().stream()
-                .filter(TechniqueEffect::hasLaunchProjectile)
-                .min(java.util.Comparator.comparingLong(TechniqueEffect::getAtMillis))
-                .map(effect -> new FirstStrike(effect.getAtMillis(),
-                        definition.getAiHints().getMaximumDistance().getValue(), Optional.empty()))
-                .ifPresent(candidates::add);
-        return candidates.stream().min(java.util.Comparator.comparingLong(FirstStrike::millis));
+    static Optional<FirstStrike> firstStrike(TechniqueDefinition definition) {
+        // 会不会打人、多远够得着由功法库统一算（兵器、腿、拳掌、擒、投射物）；
+        // 最早那一下正好是兵器打击时带上打击形状，估僵直用。
+        return TechniqueForecasts.firstHit(definition)
+                .map(hit -> new FirstStrike(hit.millis(), hit.reach(), TechniqueForecasts.firstStrike(definition)
+                        .filter(weapon -> weapon.millis() == hit.millis())));
     }
 
     private static long staggerMillis(Source source, Ready entry, TechniqueForecasts.FirstStrike first,

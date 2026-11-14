@@ -57,6 +57,11 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
         }
     }
 
+    public HumanoidBrainConfig withVolumes(VolumeTable next) {
+        // 其余各节不动，只换学卷表。
+        return new HumanoidBrainConfig(schedule, threat, assessment, response, next, concurrency);
+    }
+
     public HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,
                                ResponseRules response, VolumeTable volumes) {
         // 旧的测试与宿主构造入口沿用双通道默认策略。

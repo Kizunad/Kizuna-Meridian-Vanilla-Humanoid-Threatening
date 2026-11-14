@@ -228,18 +228,31 @@ public final class HumanoidBrainConfigLoader {
         return positive(source, CORNERED_STAND_DISTANCE, "response");
     }
 
+    public static VolumeTable addonVolumes(String text) {
+        // 功法包随模组带的学卷片段：只有 [volumes."<实体 ID>"] 一节，写法和配置文件里的学卷表相同，只写自己要加的物种和档位。
+        var parsed = TOML.parse(text);
+        TOML.checkKeys(parsed, Set.of(VOLUMES), "");
+        return species(TOML.table(parsed, VOLUMES, VOLUMES));
+    }
+
     private static VolumeTable volumes(TomlTable table) {
         // 七种内置类人必须全部出现；其他命名空间实体 ID 也接受，供另行注册的类人使用。
+        VolumeTable volumes = species(table);
+        for (HumanoidSpecies builtIn : HumanoidSpecies.values()) {
+            if (!volumes.species().containsKey(builtIn.entityId())) {
+                throw TOML.invalid("学卷表缺少 " + builtIn.entityId());
+            }
+        }
+        return volumes;
+    }
+
+    private static VolumeTable species(TomlTable table) {
+        // 每个实体 ID 一张档位表。
         var species = new HashMap<String, Map<HumanoidTier, List<VolumeTable.Grant>>>();
         for (String entityId : table.keySet()) {
             String path = "volumes." + entityId;
             requireId(entityId, path);
             species.put(entityId, tiers(TOML.table(table, entityId, path), path));
-        }
-        for (HumanoidSpecies builtIn : HumanoidSpecies.values()) {
-            if (!species.containsKey(builtIn.entityId())) {
-                throw TOML.invalid("学卷表缺少 " + builtIn.entityId());
-            }
         }
         return new VolumeTable(species);
     }

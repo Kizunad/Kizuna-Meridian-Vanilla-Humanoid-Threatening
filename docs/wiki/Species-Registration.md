@@ -71,3 +71,4 @@ foot_opening_weight = 1.0
 - **学卷**：
   - `meridian-humanoid-brain.toml` 的学卷表可以另列登记物种的实体 ID，按出生档位 `mortal`、`wandering_qi`、`true_qi` 分档写；
   - 未列出的物种或未写的档不学卷；`default_tier = "mortal"` 出生的身体查 `mortal` 档，不沿用游炁档。
+  - 功法包可以随模组带一份学卷片段，在自己的 `fabric.mod.json` 里用 `custom` 的 `meridian_humanoid:volumes` 指过去，启动时并进这张表；写法见计划文档「功法宿主」一节。

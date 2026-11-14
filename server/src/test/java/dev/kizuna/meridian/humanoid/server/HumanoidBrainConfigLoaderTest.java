@@ -43,6 +43,20 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double CUSTOM_UNPRESSED_SECONDS = 8;
     private static final String UNPRESSED_LINE = "return_unpressed_seconds = 5.0";
     private static final String PILLAGER = "minecraft:pillager";
+    private static final String ADDON_FIST = "meridian_test:fist";
+    private static final String ADDON_SPECIES = "meridian_test:monk";
+    private static final double ADDON_CHANCE = 0.25;
+    /** 一份功法包学卷片段：村民游炁加一卷并重写一条已有的卷，另加一个配置里没有的物种。 */
+    private static final String ADDON_VOLUMES = """
+            [volumes."minecraft:villager"]
+            wandering_qi = [
+              { volume = "meridian_basic_techniques:breath_volume", chance = 0.5 },
+              { volume = "meridian_test:fist", chance = 1.0 },
+            ]
+
+            [volumes."meridian_test:monk"]
+            mortal = [ { volume = "meridian_test:fist", chance = 0.25 } ]
+            """;
     private static final double DEFAULT_PILLAGER_NOTICE = 100;
     private static final double CUSTOM_PILLAGER_NOTICE = 64;
     private static final String NOTICE_SECTION = "[threat.notice_distance]\n\"minecraft:pillager\" = 100\n";
@@ -334,6 +348,35 @@ public class HumanoidBrainConfigLoaderTest {
                     () -> HumanoidBrainConfigLoader.parse(text));
             assertTrue(label, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
         });
+    }
+
+    @Test
+    public void addonVolumesJoinAfterConfiguredOnesAndConfiguredGrantsWin() {
+        // 功法包带的学卷片段接在配置文件那一档的后面；配置里已经写了的卷照配置的概率，不重复加；没写过的物种整张加进来。
+        String villager = HumanoidSpecies.VILLAGER.entityId();
+        VolumeTable configured = HumanoidBrainConfigLoader.defaults().volumes();
+        VolumeTable merged = configured.plus(HumanoidBrainConfigLoader.addonVolumes(ADDON_VOLUMES));
+        var wandering = merged.species().get(villager).get(HumanoidTier.WANDERING_QI);
+        var before = configured.species().get(villager).get(HumanoidTier.WANDERING_QI);
+        assertEquals(before, wandering.subList(0, before.size()));
+        assertEquals(List.of(new VolumeTable.Grant(ADDON_FIST, 1)), wandering.subList(before.size(), wandering.size()));
+        assertEquals(configured.species().get(villager).get(HumanoidTier.TRUE_QI),
+                merged.species().get(villager).get(HumanoidTier.TRUE_QI));
+        assertEquals(Map.of(HumanoidTier.MORTAL, List.of(new VolumeTable.Grant(ADDON_FIST, ADDON_CHANCE))),
+                merged.species().get(ADDON_SPECIES));
+        assertEquals(configured.species().get(VINDICATOR), merged.species().get(VINDICATOR));
+    }
+
+    @Test
+    public void addonVolumesAcceptOnlyTheVolumeTable() {
+        // 片段只能写学卷表：带别的节、档位写错、卷 ID 不带命名空间都拒绝。
+        assertThrows(IllegalArgumentException.class,
+                () -> HumanoidBrainConfigLoader.addonVolumes("decision_interval_ticks = 4\n" + ADDON_VOLUMES));
+        assertThrows(IllegalArgumentException.class,
+                () -> HumanoidBrainConfigLoader.addonVolumes(ADDON_VOLUMES.replace("wandering_qi", "adept")));
+        assertThrows(IllegalArgumentException.class,
+                () -> HumanoidBrainConfigLoader.addonVolumes(ADDON_VOLUMES.replace(ADDON_FIST, "fist")));
+        assertThrows(IllegalArgumentException.class, () -> HumanoidBrainConfigLoader.addonVolumes(""));
     }
 
     @Test

@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,32 @@ public record VolumeTable(Map<String, Map<HumanoidTier, List<Grant>>> species) {
                 .filter(grant -> granted(grant, entity))
                 .map(Grant::volume)
                 .toList();
+    }
+
+    public VolumeTable plus(VolumeTable added) {
+        // 把另一张表的卷接在同一物种同一档的后面；这一档已经有的卷不重复加，先到的那条（连同概率）算数。
+        var merged = new HashMap<String, Map<HumanoidTier, List<Grant>>>();
+        species.forEach((entityId, tiers) -> merged.computeIfAbsent(entityId, VolumeTable::noTiers).putAll(tiers));
+        added.species.forEach((entityId, tiers) -> tiers.forEach((tier, grants) -> merged
+                .computeIfAbsent(entityId, VolumeTable::noTiers)
+                .merge(tier, grants, VolumeTable::appended)));
+        return new VolumeTable(merged);
+    }
+
+    private static Map<HumanoidTier, List<Grant>> noTiers(String entityId) {
+        // 合并时每个物种一张可写的档位表。
+        return new EnumMap<>(HumanoidTier.class);
+    }
+
+    private static List<Grant> appended(List<Grant> present, List<Grant> added) {
+        // 原有顺序不动，新卷按给出的顺序接在后面。
+        var grants = new ArrayList<>(present);
+        for (Grant grant : added) {
+            if (grants.stream().noneMatch(listed -> listed.volume().equals(grant.volume()))) {
+                grants.add(grant);
+            }
+        }
+        return List.copyOf(grants);
     }
 
     public Set<String> allVolumes() {

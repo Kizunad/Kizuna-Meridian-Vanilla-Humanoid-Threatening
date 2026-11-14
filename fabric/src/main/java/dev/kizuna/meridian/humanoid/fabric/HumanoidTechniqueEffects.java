@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.human.fabric.HumanLimbStrikes;
 import dev.kizuna.meridian.human.fabric.HumanProjectileEffects;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueMovementSpeed;
@@ -32,7 +33,7 @@ final class HumanoidTechniqueEffects {
     private static final double TICKS_PER_SECOND = 20;
     private final LivingEntity entity;
     private final TechniqueWorldEffects world;
-    private final HumanoidLegStrikeEffects legEffects;
+    private final HumanLimbStrikes limbs;
     private final HumanProjectileEffects projectiles;
     private final Map<Identity, EffectIntent> receipts = new HashMap<>();
     private final Set<Identity> executing = new HashSet<>();
@@ -40,9 +41,9 @@ final class HumanoidTechniqueEffects {
     private final HumanoidTechniquePresentation presentation = new HumanoidTechniquePresentation();
 
     HumanoidTechniqueEffects(LivingEntity entity) {
-        // 共用世界执行器只接收敌我策略和 Damage 出手边界，不复制伤害规则。
+        // 共用世界执行器只接收敌我策略和 Damage 出手边界，不复制伤害规则；拳脚走 Human 的共用打击执行器，和玩家同一份。
         this.entity = entity;
-        legEffects = new HumanoidLegStrikeEffects();
+        limbs = new HumanLimbStrikes(entity, new HumanoidLimbHost(entity));
         projectiles = new HumanProjectileEffects(entity, target -> HumanoidThreats.hittable(entity, target));
         world = new TechniqueWorldEffects(entity, () -> TechniqueWorldEffects.Policy.MOB,
                 target -> HumanoidThreats.hittable(entity, target),
@@ -102,8 +103,8 @@ final class HumanoidTechniqueEffects {
             projectiles.lockTarget(effect);
         } else if (effect.hasLaunchProjectile()) {
             projectiles.launch(effect);
-        } else if (effect.hasLegStrike()) {
-            legEffects.strike(entity, effect);
+        } else if (effect.hasLegStrike() || effect.hasLimbStrike()) {
+            limbs.strike(effect);
         } else if (effect.hasWeaponStrike()) {
             world.strike(effect);
         } else if (effect.hasBreakBlocks()) {
@@ -147,7 +148,7 @@ final class HumanoidTechniqueEffects {
             attribute.removeModifier(id);
             castingIds.remove(effect.getCastId());
             world.finish(effect.getCastId());
-            legEffects.finish(effect.getCastId());
+            limbs.finish(effect.getCastId());
             projectiles.finish(effect.getCastId());
         }
         if (entity instanceof Mob mob) {
