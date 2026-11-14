@@ -32,9 +32,11 @@ final class HumanoidTechniquePresentation {
         String animation = HumanTechniqueAnimations.resolve(presentation.getId(), direction, hand);
         long nowMillis = entity.level().getServer().overworld().getGameTime() * MILLIS_PER_TICK;
         long lateness = Math.max(0, nowMillis - effect.getScheduledMillis());
-        long offsetTicks = (presentation.getStartMillis() + lateness) / MILLIS_PER_TICK;
-        long startTick = Math.max(0, entity.level().getGameTime() - offsetTicks);
-        MobAnimationServer.playFrom(entity, animation, startTick);
+        // 没带倍率的旧意图按原速播。
+        double speed = presentation.hasPlaybackSpeedMultiplier() ? presentation.getPlaybackSpeedMultiplier() : 1;
+        var playback = HumanTechniqueAnimations.playback(entity.level().getGameTime(), presentation.getStartMillis(),
+                lateness, speed);
+        MobAnimationServer.playFrom(entity, animation, playback.startTick(), playback.rate());
         playing.put(key, animation);
     }
 }

@@ -337,16 +337,11 @@ public final class HumanoidTechniqueGameTest {
     }
 
     private static void assertPaRequest(GameTestHelper context, Vindicator mob) {
-        // 验证正式服务端同步登记，追踪者收到的是专属片段与原始起播时刻；没有专属片段的式用主手攻击片段。
+        // 验证正式服务端同步登记，追踪者收到的是这一式自己的片段与原始起播时刻。
         var requests = MobAnimationServer.snapshot(mob);
         int entityId = mob.getId();
         var active = progress(mob).getActiveCast();
-        String expected = switch (active.getRequest().getTechnique().getId()) {
-            case PREFIX + "knock" -> "door_breaker_knock";
-            case PREFIX + "cleave" -> "door_breaker_cleave";
-            case PREFIX + "ram" -> "door_breaker_ram";
-            default -> "attack_main";
-        };
+        String expected = "door_breaker_" + active.getRequest().getTechnique().getId().substring(PREFIX.length());
         boolean requested = requests.stream().anyMatch(request -> {
             var play = request.getPlay();
             return play.getAnimationId().equals(expected)
