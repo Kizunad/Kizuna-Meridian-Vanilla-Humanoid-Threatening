@@ -11,9 +11,9 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
     /** 每个实体错相的决策间隔与日志开关。 */
     public record Schedule(int decisionIntervalTicks, DecisionLog log) { }
 
-    /** 敌意记忆秒数、同伴受击时共同敌对的半径、放下敌人的距离、撤退要拉开到的安全距离，以及按实体 ID 的盯上距离。 */
+    /** 敌意记忆秒数、同伴受击时共同敌对的半径、放下敌人的距离、撤退要拉开到的安全距离、按实体 ID 的盯上距离，以及选敌打分。 */
     public record ThreatRules(double memorySeconds, double allyRadius, double forgetDistance, double safeDistance,
-                              Map<String, Double> noticeDistances) {
+                              Map<String, Double> noticeDistances, ThreatScoring scoring) {
         public ThreatRules {
             // 盯上距离表由加载器校验；这里只冻结副本，运行中不被外部改写。
             noticeDistances = Map.copyOf(noticeDistances);

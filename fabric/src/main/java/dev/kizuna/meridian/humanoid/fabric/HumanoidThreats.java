@@ -5,6 +5,7 @@ import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,18 +20,20 @@ import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.raid.Raider;
-import net.minecraft.world.level.pathfinder.Path;
 
-/** 敌意来源：谁以谁为目标、谁打过我或同伴、谁算同伴；只记实体引用与到期刻，不读身体、不扫描周围。 */
+/** 敌意来源：谁以谁为目标、谁打过我或同伴、谁算同伴；只记实体引用、到期刻与受到的伤害，不读身体、不扫描周围。 */
 final class HumanoidThreats {
     private static final double TICKS_PER_SECOND = 20;
     private static final double SURROUNDED_RADIUS = 3;
     private static final int SURROUNDED_COUNT = 2;
     private static final Map<LivingEntity, Set<Mob>> targetedBy = new WeakHashMap<>();
-    private static final Map<LivingEntity, Map<LivingEntity, Long>> attackers = new WeakHashMap<>();
+    private static final Map<LivingEntity, Map<LivingEntity, Hostility>> attackers = new WeakHashMap<>();
 
     /** 原版阵营：袭击者一方、村庄一方（商人与铁傀儡），其余无阵营。 */
     enum Faction { RAIDERS, VILLAGE, NONE }
+
+    /** 一个攻击者在我这里的记录：最近一次伤害后的累计量与时刻，以及保持为敌人的到期刻。 */
+    private record Hostility(double damage, long damagedAt, long expiry) { }
 
     private HumanoidThreats() {
         // 登记表按实体弱引用保存，实体卸载后自然释放。
@@ -58,35 +61,80 @@ final class HumanoidThreats {
             return;
         }
         var rules = config.threat();
-        long expiry = victim.level().getGameTime() + Math.round(rules.memorySeconds() * TICKS_PER_SECOND);
-        remember(victim, attacker, expiry);
+        long now = victim.level().getGameTime();
+        long expiry = now + memoryTicks(rules);
+        remember(victim, attacker, new Hostility(event.input().damageAfterEffects(), now, expiry), rules);
         if (faction(victim) == Faction.NONE) {
             return;
         }
         var box = victim.getBoundingBox().inflate(rules.allyRadius());
         for (Mob ally : victim.level().getEntitiesOfClass(Mob.class, box,
                 other -> other != victim && allied(victim, other) && HumanoidBrain.managed(other))) {
-            remember(ally, attacker, expiry);
+            remember(ally, attacker, new Hostility(0, now, expiry), rules);
         }
     }
 
-    private static void remember(LivingEntity victim, LivingEntity attacker, long expiry) {
-        // 同一攻击者再次出手只延长到期刻。
-        attackers.computeIfAbsent(victim, ignored -> new WeakHashMap<>()).put(attacker, expiry);
+    private static void remember(LivingEntity victim, LivingEntity attacker, Hostility hit,
+                                 HumanoidBrainConfig.ThreatRules rules) {
+        // 同一攻击者再次出手：延长到期刻，伤害叠在衰减后的旧量上；同伴替我记的不带伤害，不改旧量。
+        var remembered = attackers.computeIfAbsent(victim, ignored -> new WeakHashMap<>());
+        Hostility old = remembered.get(attacker);
+        if (old == null) {
+            remembered.put(attacker, hit);
+            return;
+        }
+        long expiry = Math.max(old.expiry(), hit.expiry());
+        if (hit.damage() <= 0) {
+            remembered.put(attacker, new Hostility(old.damage(), old.damagedAt(), expiry));
+            return;
+        }
+        double kept = decayed(old, hit.damagedAt(), rules);
+        remembered.put(attacker, new Hostility(kept + hit.damage(), hit.damagedAt(), expiry));
     }
 
-    static Optional<LivingEntity> nearest(Mob mob, HumanoidBrainConfig.ThreatRules rules,
-                                          Optional<LivingEntity> previous) {
-        // 只看事件登记与原版已有的敌意，取最近的一个；远于放下距离且看不见的不算。
-        // 带主人的召唤物算到主人头上，主对手留在主人身上；召唤物贴到打击距离内、主人又走不到时才顺手打它。
+    private static double decayed(Hostility hostility, long now, HumanoidBrainConfig.ThreatRules rules) {
+        // 累计伤害从最近一次出手起在记忆秒数内线性衰减到 0。
+        double elapsed = Math.max(0, now - hostility.damagedAt());
+        return hostility.damage() * Math.max(0, 1 - elapsed / memoryTicks(rules));
+    }
+
+    private static long memoryTicks(HumanoidBrainConfig.ThreatRules rules) {
+        // 记忆秒数折成 tick。
+        return Math.round(rules.memorySeconds() * TICKS_PER_SECOND);
+    }
+
+    static double recentDamage(LivingEntity victim, LivingEntity attacker, HumanoidBrainConfig.ThreatRules rules) {
+        // 攻击者近期对我造成的伤害，已按记忆秒数衰减；没打过我记 0。
+        var remembered = attackers.get(victim);
+        Hostility hostility = remembered == null ? null : remembered.get(attacker);
+        if (hostility == null) {
+            return 0;
+        }
+        return decayed(hostility, victim.level().getGameTime(), rules);
+    }
+
+    static Optional<LivingEntity> choose(Mob mob, HumanoidBrainConfig.ThreatRules rules,
+                                         Optional<LivingEntity> previous) {
+        // 只看事件登记与原版已有的敌意，按打分取一个；远于放下距离且看不见的不算。
+        // 带主人的召唤物先换成主人再打分，召唤物打我、盯我都记在主人头上，主对手留在主人身上；
+        // 召唤物贴到打击距离内、主人又走不到时才顺手打它。
         List<LivingEntity> candidates = candidates(mob, previous).stream()
+                .distinct()
                 .filter(candidate -> valid(mob, candidate))
                 .toList();
-        Optional<LivingEntity> principal = candidates.stream()
-                .map(candidate -> principal(mob, rules, candidate))
-                .filter(candidate -> noticed(mob, rules, candidate))
-                .min(Comparator.comparingDouble(mob::distanceToSqr));
-        return principal.map(chosen -> summonInReach(mob, chosen, candidates).orElse(chosen));
+        var sources = new LinkedHashMap<LivingEntity, List<LivingEntity>>();
+        for (LivingEntity candidate : candidates) {
+            LivingEntity principal = principal(mob, rules, candidate);
+            if (noticed(mob, rules, principal)) {
+                sources.computeIfAbsent(principal, ignored -> new ArrayList<>()).add(candidate);
+            }
+        }
+        var scored = sources.entrySet().stream()
+                .map(entry -> new HumanoidThreatScores.Candidate(entry.getKey(), entry.getValue()))
+                .toList();
+        LivingEntity held = previous.map(opponent -> principal(mob, rules, opponent)).orElse(null);
+        return HumanoidThreatScores.best(mob, rules, scored, held)
+                .map(chosen -> summonInReach(mob, chosen, candidates).orElse(chosen));
     }
 
     private static LivingEntity principal(Mob mob, HumanoidBrainConfig.ThreatRules rules, LivingEntity candidate) {
@@ -108,9 +156,9 @@ final class HumanoidThreats {
     }
 
     private static boolean noticed(Mob mob, HumanoidBrainConfig.ThreatRules rules, LivingEntity candidate) {
-        // 放下距离以内，或看得见。
+        // 放下距离以内，或看得见；视线用原版每 tick 缓存的感知结果。
         double forget = rules.forgetDistance();
-        return mob.distanceToSqr(candidate) <= forget * forget || mob.hasLineOfSight(candidate);
+        return mob.distanceToSqr(candidate) <= forget * forget || mob.getSensing().hasLineOfSight(candidate);
     }
 
     private static Optional<LivingEntity> summonInReach(Mob mob, LivingEntity chosen, List<LivingEntity> candidates) {
@@ -119,20 +167,11 @@ final class HumanoidThreats {
                 .filter(candidate -> candidate != chosen && owner(candidate) != null)
                 .filter(mob::isWithinMeleeAttackRange)
                 .toList();
-        if (inReach.isEmpty() || mob.isWithinMeleeAttackRange(chosen) || reachable(mob, chosen)) {
+        if (inReach.isEmpty() || mob.isWithinMeleeAttackRange(chosen)
+                || HumanoidThreatScores.reachable(mob, chosen)) {
             return Optional.empty();
         }
         return inReach.stream().min(Comparator.comparingDouble(mob::distanceToSqr));
-    }
-
-    private static boolean reachable(Mob mob, LivingEntity target) {
-        // 现算一条路，能走到对方跟前才算走得到；站在高台上、隔着断崖或飞着的主人都算走不到。
-        // 自己正在空中（跃步、被击退）时原版算不了路，这一刻不算走不到。
-        if (!mob.onGround()) {
-            return true;
-        }
-        Path path = mob.getNavigation().createPath(target, 0);
-        return path != null && path.canReach();
     }
 
     private static List<LivingEntity> candidates(Mob mob, Optional<LivingEntity> previous) {
@@ -152,7 +191,7 @@ final class HumanoidThreats {
         var remembered = attackers.get(mob);
         if (remembered != null) {
             long now = mob.level().getGameTime();
-            remembered.values().removeIf(expiry -> expiry < now);
+            remembered.values().removeIf(hostility -> hostility.expiry() < now);
             candidates.addAll(remembered.keySet());
         }
         if (mob instanceof Villager villager) {
@@ -189,7 +228,8 @@ final class HumanoidThreats {
             return true;
         }
         var remembered = attackers.get(self);
-        return remembered != null && remembered.getOrDefault(other, Long.MIN_VALUE) >= self.level().getGameTime();
+        Hostility hostility = remembered == null ? null : remembered.get(other);
+        return hostility != null && hostility.expiry() >= self.level().getGameTime();
     }
 
     static boolean hittable(LivingEntity actor, LivingEntity target) {
@@ -246,5 +286,6 @@ final class HumanoidThreats {
         // 服务器停止时丢弃全部登记。
         targetedBy.clear();
         attackers.clear();
+        HumanoidThreatScores.clear();
     }
 }

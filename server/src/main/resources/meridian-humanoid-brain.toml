@@ -19,6 +19,26 @@ safe_distance = 12             # 撤退要拉开到的距离（格）；会防�
 [threat.notice_distance]
 "minecraft:pillager" = 100
 
+# 选敌打分：每个候选的分 = Σ 权重 × 因素，因素都归一到 0–1，取最高分，同分取近的。
+# 带主人的召唤物先换成主人再打分，召唤物打我、盯我都记在主人头上。
+# 除 distance 外全设 0（含 switch_margin、min_hold_seconds）就是只按远近选。
+[threat.score]
+distance = 1.0                 # 1 − 距离 / forget_distance，越近越高
+low_health = 0.3               # 1 − 剩余血量比（类人用身体完好率），越残越高
+low_health_absolute = 0.1      # 1 − min(剩余血量, 40) / 40
+recent_damage = 0.6            # memory_seconds 内对我造成的伤害，线性衰减，20 点封顶
+targeting_me = 0.5             # 对方正以我为目标记 1
+danger = 0.4                   # 0.5 × 境界档 / 最高档 + 0.25 × 持武器 + 0.25 × 正在起手
+summon = -0.5                  # 主人追不到、还算召唤物自己时扣分
+unreachable = -0.8             # 前两名里走不到对方跟前的扣分；自己会远射又看得见对方时不扣
+stickiness = 0.35              # 当前对手加分
+switch_margin = 0.15           # 新目标要比当前对手高出这么多才换
+min_hold_seconds = 2           # 换过对手后这么多秒内不再换；当前对手死了或放下了照换
+
+# 按实体 ID 覆盖，只写要改的键，没写的照上表。
+[threat.score.species."minecraft:pillager"]
+distance = 0.4                 # 远射手不必挑近的
+
 [assessment]
 # 战力 = 境界档 × realm + 会可施放打击式 × strike + 持武器 × armed
 #      + min(完好率, 较强一臂力量比) × body + 真元占容 × qi + 正在施放 × casting

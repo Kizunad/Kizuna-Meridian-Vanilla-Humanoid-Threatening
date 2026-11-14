@@ -134,7 +134,7 @@ public final class HumanoidBrain {
         if (HumanoidCharmController.controlled(mob)) {
             threat = Optional.ofNullable(HumanoidCharmController.opponent(mob));
         } else {
-            threat = HumanoidThreats.nearest(mob, config.threat(), mind.opponent());
+            threat = HumanoidThreats.choose(mob, config.threat(), mind.opponent());
         }
         if (threat.isEmpty()) {
             idle(mob, mind);
@@ -159,6 +159,7 @@ public final class HumanoidBrain {
         Fighter self = HumanoidFighters.self(mob, body, readout.means());
         Fighter other = HumanoidFighters.opponent(opponent.entity(), opponent.observation(),
                 TechniqueFabric.service().registry());
+        HumanoidThreatScores.seen(opponent.entity(), other);
         double distance = HumanoidMotion.distance(mob, opponent.entity());
         var assessed = HumanoidAssessment.stance(self, other, mind.stance(), distance, config.assessment());
         HumanoidAssessment.Stance stance;

@@ -26,6 +26,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
@@ -34,6 +35,7 @@ import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.illager.Evoker;
 import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.entity.monster.illager.Vindicator;
+import net.minecraft.world.entity.monster.zombie.Husk;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.schedule.Activity;
 import net.minecraft.world.item.DyeColor;
@@ -50,6 +52,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -72,6 +75,8 @@ public final class HumanoidBrainGameTest {
     private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
     private static final String SUMMON_BATCH = "meridian_humanoid_test:brain_summon";
     private static final String STRAY_HIT_BATCH = "meridian_humanoid_test:brain_stray_hit";
+    private static final String SCORE_DAMAGE_BATCH = "meridian_humanoid_test:brain_score_damage";
+    private static final String SCORE_SWITCH_BATCH = "meridian_humanoid_test:brain_score_switch";
     /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
     private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
     private static final String RETREAT_STRUCTURE = "meridian_humanoid_test:retreat";
@@ -113,6 +118,8 @@ public final class HumanoidBrainGameTest {
     private static final int CROWD_TICKS = 1200;
     private static final int CROWD_TIMEOUT = CROWD_TICKS + 100;
     private static final int DUEL_TICKS = 3600;
+    private static final int VANILLA_MELEE_GATE_TICKS = 20;
+    private static final int DUEL_OPENING_TICKS = 25;
     private static final int SUMMON_TICKS = 300;
     /** 第一口咬到以后再看 3 秒（几次决策）。 */
     private static final int AFTER_BITE_TICKS = 60;
@@ -121,6 +128,17 @@ public final class HumanoidBrainGameTest {
     private static final int AFTER_STRAY_HIT_TICKS = 60;
     /** 同伴误伤的伤害：一下轻伤，不至于打倒或打残。 */
     private static final float STRAY_HIT = 1.0F;
+    /** 远处尸壳先打的一下：0.6 × 8 / 20 = 0.24 分，盖过近 3 格的 0.09 分距离差。 */
+    private static final float SCORE_HIT = 8.0F;
+    /** 打分用例开场打的一下，两边一样重，只为让两只尸壳都留在受击记忆里。 */
+    private static final float EVEN_HIT = 1.0F;
+    private static final int SCORE_TICKS = 60;
+    private static final int SWITCH_TICKS = 200;
+    private static final int SWITCH_PERIOD = 20;
+    private static final int SWITCH_LIMIT = 1;
+    private static final BlockPos LEFT_POS = new BlockPos(1, 0, 5);
+    private static final BlockPos RIGHT_POS = new BlockPos(6, 0, 5);
+    private static final BlockPos MIDDLE_SUBJECT_POS = new BlockPos(3, 0, 1);
     private static final int DUEL_TIMEOUT = 4200;
     private static final int FAILURE_STREAK_LIMIT = 3;
     private static final double RETREAT_GAIN = 2;
@@ -395,15 +413,95 @@ public final class HumanoidBrainGameTest {
         });
     }
 
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = SCORE_DAMAGE_BATCH)
+    public void scoredThreatPrefersTheFartherOneWhoHurtMe(GameTestHelper context) {
+        // 选敌打分：两只不动的尸壳都盯着真炁卫道士，近的 3 格、远的 6 格；远的先打了它一下。
+        // 只按远近会选近的；打分里「近期对我造成的伤害」盖过距离差，第一次决策就选远的，之后也不换。
+        var arena = new Arena(context);
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "score-vindicator",
+                FAR_SUBJECT_POS);
+        Husk near = arena.dummy("score-near", NEAR_POS, vindicator);
+        Husk far = arena.dummy("score-far", FAR_POS, vindicator);
+        vindicator.hurt(vindicator.damageSources().mobAttack(far), SCORE_HIT);
+        Map<LivingEntity, String> labels = Map.of(near, "近", far, "远");
+        var opponents = new LinkedHashSet<String>();
+        int[] engaged = {-1};
+        int[] tick = {0};
+        arena.await(SCORE_TICKS * 2, () -> {
+            tick[0]++;
+            HumanoidBrain.opponent(vindicator).ifPresent(opponent -> opponents.add(label(opponent, labels)));
+            if (engaged[0] < 0 && !opponents.isEmpty()) {
+                engaged[0] = tick[0];
+            }
+            return engaged[0] >= 0 && tick[0] >= engaged[0] + SCORE_TICKS;
+        }, () -> "卫道士一直没有对手：" + decisions(vindicator), () -> {
+            context.assertTrue(opponents.equals(Set.of("远")), "卫道士没有只盯打过它的远处尸壳：" + opponents
+                    + " 记着的伤害 " + HumanoidThreats.recentDamage(vindicator, far, HumanoidBrain.config().threat())
+                    + " / " + decisions(vindicator));
+            arena.finish();
+        });
+    }
+
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = SCORE_SWITCH_BATCH)
+    public void scoredThreatDoesNotFlipBetweenEvenThreats(GameTestHelper context) {
+        // 换目标惯性：两只不动的尸壳各打过真炁卫道士一下，之后每秒轮流盯它、轮流不盯。
+        // 不带惯性时每秒都会换去正盯着它的那只；带惯性与换目标门槛，10 秒内最多换一次。
+        var arena = new Arena(context);
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "switch-vindicator",
+                MIDDLE_SUBJECT_POS);
+        Husk left = arena.dummy("switch-left", LEFT_POS, vindicator);
+        Husk right = arena.dummy("switch-right", RIGHT_POS, vindicator);
+        vindicator.hurt(vindicator.damageSources().mobAttack(left), EVEN_HIT);
+        vindicator.hurt(vindicator.damageSources().mobAttack(right), EVEN_HIT);
+        right.setTarget(null);
+        Map<LivingEntity, String> labels = Map.of(left, "左", right, "右");
+        var history = new ArrayList<String>();
+        int[] tick = {0};
+        arena.observe(SWITCH_TICKS, () -> {
+            tick[0]++;
+            if (tick[0] % SWITCH_PERIOD == 0) {
+                boolean leftTurn = tick[0] / SWITCH_PERIOD % 2 == 0;
+                left.setTarget(leftTurn ? vindicator : null);
+                right.setTarget(leftTurn ? null : vindicator);
+            }
+            HumanoidBrain.opponent(vindicator).map(opponent -> label(opponent, labels))
+                    .filter(current -> history.isEmpty() || !history.getLast().equals(current))
+                    .ifPresent(history::add);
+            return false;
+        }, () -> {
+            context.assertFalse(history.isEmpty(), "卫道士一直没有对手：" + decisions(vindicator));
+            context.assertTrue(history.size() - 1 <= SWITCH_LIMIT, "10 秒内换对手超过一次：" + history
+                    + " / " + decisions(vindicator));
+            arena.finish();
+        });
+    }
+
+    private static String label(LivingEntity opponent, Map<LivingEntity, String> labels) {
+        // 失败信息里用一个字区分两只尸壳，别的对手写实体类型。
+        return labels.getOrDefault(opponent, opponent.getType().toShortString());
+    }
+
     @GameTest(maxTicks = DUEL_TIMEOUT, environment = DUEL_BATCH)
     public void trueQiVindicatorsDuelForThreeMinutes(GameTestHelper context) {
         // 两只持斧真炁卫道士互设目标打三分钟或打到一方倒下，检查应对、准备与失败上限；虚脱后拉开另有确定性用例。
+        // 原版近战每 20 tick 才查一次能否开打，刚出生的生物头一次查不受限，互设目标的同一刻就能抢在大脑前开砍。
+        // 所以世界时刻不到 20 tick 时先等到 20 tick 再出生，出生后不设目标空等，原版查过两次以后再互设目标，
+        // 让单跑和整体回归都由大脑先接手开局。
         var arena = new Arena(context);
-        Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first", FAR_SUBJECT_POS);
-        Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
-        for (Vindicator fighter : List.of(first, second)) {
-            fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
-        }
+        long warmup = Math.max(0, VANILLA_MELEE_GATE_TICKS - context.getLevel().getGameTime());
+        arena.later((int) warmup, () -> {
+            Vindicator first = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-first",
+                    FAR_SUBJECT_POS);
+            Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
+            for (Vindicator fighter : List.of(first, second)) {
+                fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+            }
+            arena.later(DUEL_OPENING_TICKS, () -> duel(context, arena, first, second));
+        });
+    }
+
+    private static void duel(GameTestHelper context, Arena arena, Vindicator first, Vindicator second) {
+        // 互设目标后开打，到时或一方倒下时写日志并断言。
         first.setTarget(second);
         second.setTarget(first);
         var watches = List.of(new Watch(first), new Watch(second));
@@ -666,6 +764,17 @@ public final class HumanoidBrainGameTest {
             // 留在场地外的生物会被原版敌对感知读到而成为敌意来源；半径覆盖放下距离与一百村民的方阵。
             AABB area = new AABB(context.absolutePos(BlockPos.ZERO)).inflate(radius);
             context.getLevel().getEntitiesOfClass(Mob.class, area, mob -> true).forEach(Entity::discard);
+        }
+
+        Husk dummy(String name, BlockPos relative, LivingEntity target) {
+            // 不动、不出声、晒不着火的高血量尸壳，开场就以 target 为目标；只当敌意来源，不还手。
+            Husk husk = spawnUnborn(EntityTypes.HUSK, name, relative);
+            husk.setNoAi(true /* aiDisabled */);
+            husk.setSilent(true /* silent */);
+            husk.getAttribute(Attributes.MAX_HEALTH).setBaseValue(TARGET_HEALTH);
+            husk.setHealth((float) TARGET_HEALTH);
+            husk.setTarget(target);
+            return husk;
         }
 
         Cow target(BlockPos relative) {

@@ -138,23 +138,28 @@ public final class HumanoidBrainConfigLoader {
     private static HumanoidBrainConfig.ThreatRules threat(TomlTable table) {
         // 记忆时长与各距离都必须为正。
         TOML.checkKeys(table, Set.of("memory_seconds", "ally_radius", "forget_distance", "safe_distance",
-                NOTICE_DISTANCE), "threat.");
+                NOTICE_DISTANCE, ThreatScoringLoader.SCORE), "threat.");
         return new HumanoidBrainConfig.ThreatRules(positive(table, "memory_seconds", "threat"),
                 positive(table, "ally_radius", "threat"),
                 positive(table, "forget_distance", "threat"),
                 positive(table, "safe_distance", "threat"),
-                noticeDistances(table));
+                noticeDistances(table),
+                ThreatScoringLoader.parse(TOML, TOML.table(withDefault(table, ThreatScoringLoader.SCORE),
+                        ThreatScoringLoader.SCORE, "threat." + ThreatScoringLoader.SCORE)));
+    }
+
+    private static TomlTable withDefault(TomlTable threat, String key) {
+        // 后加的子表在旧导出文件里没有：缺失时改读 JAR 默认资源的 [threat]，load 启动时另行提示缺键。
+        if (threat.contains(key)) {
+            return threat;
+        }
+        return TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "threat", "threat");
     }
 
     private static Map<String, Double> noticeDistances(TomlTable threat) {
-        // 这张表在旧导出文件里没有：缺失时读 JAR 默认资源的同名表，load 启动时另行提示。
-        // 每项是带命名空间的实体 ID 对一个距离，距离为正且不超过原版视线判定的上限。
-        TomlTable source = threat;
-        if (!threat.contains(NOTICE_DISTANCE)) {
-            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "threat", "threat");
-        }
+        // 每项是带命名空间的实体 ID 对一个距离，距离为正且不超过原版视线判定的上限；表缺失时读默认。
         String path = "threat." + NOTICE_DISTANCE;
-        TomlTable table = TOML.table(source, NOTICE_DISTANCE, path);
+        TomlTable table = TOML.table(withDefault(threat, NOTICE_DISTANCE), NOTICE_DISTANCE, path);
         var distances = new HashMap<String, Double>();
         for (String entityId : table.keySet()) {
             requireId(entityId, path + "." + entityId);
@@ -259,7 +264,7 @@ public final class HumanoidBrainConfigLoader {
         return List.copyOf(grants);
     }
 
-    private static void requireId(String id, String path) {
+    static void requireId(String id, String path) {
         // 实体与卷 ID 都必须带命名空间。
         int separator = id.indexOf(':');
         if (separator <= 0 || separator == id.length() - 1) {

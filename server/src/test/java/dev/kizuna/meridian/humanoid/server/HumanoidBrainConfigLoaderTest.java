@@ -43,6 +43,11 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double DEFAULT_PILLAGER_NOTICE = 100;
     private static final double CUSTOM_PILLAGER_NOTICE = 64;
     private static final String NOTICE_SECTION = "[threat.notice_distance]\n\"minecraft:pillager\" = 100\n";
+    private static final String SCORE_SECTION = "[threat.score]\n";
+    private static final String PILLAGER_SCORE = "[threat.score.species.\"minecraft:pillager\"]\n";
+    private static final ThreatScoring.Weights DEFAULT_SCORE = new ThreatScoring.Weights(
+            1.0, 0.3, 0.1, 0.6, 0.5, 0.4, -0.5, -0.8, 0.35, 0.15, 2);
+    private static final double PILLAGER_SCORE_DISTANCE = 0.4;
     private static final double LOWER_CHANCE = 0.1;
     private static final int DEFAULT_VOLUME_COUNT = 16;
     private static final int TRUE_QI_VINDICATOR_VOLUMES = 6;
@@ -126,6 +131,51 @@ public class HumanoidBrainConfigLoaderTest {
                 HumanoidBrainConfigLoader.parse(custom).threat().noticeDistances());
         String empty = replace(NOTICE_SECTION, "[threat.notice_distance]\n");
         assertEquals(Map.of(), HumanoidBrainConfigLoader.parse(empty).threat().noticeDistances());
+    }
+
+    @Test
+    public void threatScoreDefaultsAndSpeciesOverridesInherit() {
+        // 默认表逐键取值；掠夺者只覆盖远近一项，其余照默认；没列出的物种整份用默认。
+        ThreatScoring scoring = HumanoidBrainConfigLoader.defaults().threat().scoring();
+        assertEquals(DEFAULT_SCORE, scoring.of(VINDICATOR));
+        var pillager = scoring.of(PILLAGER);
+        assertEquals(PILLAGER_SCORE_DISTANCE, pillager.distance(), TOLERANCE);
+        assertEquals(DEFAULT_SCORE.recentDamage(), pillager.recentDamage(), TOLERANCE);
+        assertEquals(DEFAULT_SCORE.unreachable(), pillager.unreachable(), TOLERANCE);
+        String custom = replace(PILLAGER_SCORE, PILLAGER_SCORE + "stickiness = 0\n");
+        assertEquals(0, HumanoidBrainConfigLoader.parse(custom).threat().scoring().of(PILLAGER).stickiness(),
+                TOLERANCE);
+    }
+
+    @Test
+    public void oldFileWithoutThreatScoreRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有打分表：按 JAR 默认运行，缺的键列入启动提示。
+        String old = DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("# 选敌打分"))
+                + DEFAULT_TEXT.substring(DEFAULT_TEXT.indexOf("[assessment]"));
+        assertEquals(HumanoidBrainConfigLoader.defaults().threat().scoring(),
+                HumanoidBrainConfigLoader.parse(old).threat().scoring());
+        var missing = HumanoidBrainConfigLoader.missingDefaultKeys(old);
+        assertTrue(missing.toString(), missing.contains(Toml.joinKeyPath(List.of("threat", "score", "distance"))));
+        assertTrue(missing.toString(), missing.contains(
+                Toml.joinKeyPath(List.of("threat", "score", "species", PILLAGER, "distance"))));
+    }
+
+    @Test
+    public void invalidThreatScoresAreRejected() {
+        // 扣分项为正、加分项为负、未知键、物种无命名空间、物种表未知键和默认表缺键都在加载时拒绝。
+        var invalid = Map.of(
+                "扣分项为正", replace("summon = -0.5", "summon = 0.5"),
+                "加分项为负", replace("stickiness = 0.35", "stickiness = -0.35"),
+                "未知键", replace(SCORE_SECTION, SCORE_SECTION + "loot = 1\n"),
+                "无命名空间", replace(PILLAGER_SCORE, "[threat.score.species.pillager]\n"),
+                "物种未知键", replace(PILLAGER_SCORE, PILLAGER_SCORE + "loot = 1\n"),
+                "物种扣分为正", replace(PILLAGER_SCORE, PILLAGER_SCORE + "unreachable = 0.8\n"),
+                "缺键", replace("min_hold_seconds = 2 ", "# min_hold_seconds = 2 "));
+        invalid.forEach((label, text) -> {
+            var failure = assertThrows(label, IllegalArgumentException.class,
+                    () -> HumanoidBrainConfigLoader.parse(text));
+            assertTrue(label, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
+        });
     }
 
     @Test
