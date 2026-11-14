@@ -22,6 +22,7 @@ public final class HumanoidBrainConfigLoader {
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
+    private static final String RETURN_UNPRESSED_SECONDS = "return_unpressed_seconds";
     private static final String NOTICE_DISTANCE = "notice_distance";
     /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
     private static final double MAX_NOTICE_DISTANCE = 128;
@@ -173,10 +174,11 @@ public final class HumanoidBrainConfigLoader {
     }
 
     private static AssessmentRules assessment(TomlTable table, double safeDistance) {
-        // 权重非负，门槛为 [0, 1] 比例；对敌余量可以为负。
+        // 权重非负，门槛为 [0, 1] 比例；对敌余量可以为负；没被逼的秒数为正。
         TOML.checkKeys(table, Set.of("realm_weight", "strike_weight", "armed_weight", "body_weight", "qi_weight",
                 "casting_weight", "engage_margin", "retreat_hp_ratio", "retreat_part_hp_ratio",
-                "arm_exhausted_ratio", "return_hp_ratio", "return_arm_ratio"), "assessment.");
+                "arm_exhausted_ratio", "return_hp_ratio", "return_arm_ratio", RETURN_UNPRESSED_SECONDS),
+                "assessment.");
         var weights = new AssessmentRules.Weights(nonNegative(table, "realm_weight", "assessment"),
                 nonNegative(table, "strike_weight", "assessment"),
                 nonNegative(table, "armed_weight", "assessment"),
@@ -186,7 +188,7 @@ public final class HumanoidBrainConfigLoader {
                 ratio(table, "retreat_part_hp_ratio", "assessment"),
                 ratio(table, "arm_exhausted_ratio", "assessment"));
         var recovery = new AssessmentRules.Recovery(ratio(table, "return_hp_ratio", "assessment"),
-                ratio(table, "return_arm_ratio", "assessment"), safeDistance);
+                ratio(table, "return_arm_ratio", "assessment"), safeDistance, returnUnpressedSeconds(table));
         return new AssessmentRules(weights, nonNegative(table, "casting_weight", "assessment"),
                 TOML.number(table, "engage_margin", "assessment.engage_margin"), retreat, recovery);
     }
@@ -206,6 +208,15 @@ public final class HumanoidBrainConfigLoader {
                 positive(table, "assault_stand_off", "response"),
                 TOML.integer(table, "failure_limit", "response.failure_limit"),
                 millis(table, "failure_block_millis"));
+    }
+
+    private static double returnUnpressedSeconds(TomlTable table) {
+        // 这个键在旧导出文件里没有：缺失时读 JAR 默认资源的同名键，load 启动时另行提示。
+        TomlTable source = table;
+        if (!table.contains(RETURN_UNPRESSED_SECONDS)) {
+            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "assessment", "assessment");
+        }
+        return positive(source, RETURN_UNPRESSED_SECONDS, "assessment");
     }
 
     private static double corneredStandDistance(TomlTable table) {

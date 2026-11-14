@@ -371,6 +371,7 @@ public final class HumanoidEnclosedArenaGameTest {
             return mob.getType() + " hp=" + health(mob) + " pos=" + relative
                     + " condition=" + HumanoidFighters.condition(body)
                     + " legForce=" + HumanoidFighters.legForceNewtons(body)
+                    + " unhurtLegForce=" + HumanoidFighters.unhurtLegForceNewtons(body)
                     + " navDone=" + navigation.isDone() + " path=" + destination + " decision=" + decision;
         }
 

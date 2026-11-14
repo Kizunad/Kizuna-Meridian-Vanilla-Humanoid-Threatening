@@ -161,6 +161,7 @@ final class HumanoidRepertoires {
     private static Set<Means> means(Source source, Optional<HumanoidOpponent> opponent, List<Ready> ready) {
         // 会一个绑定、费用、做功与持物都通过的打击式即算可施放，冷却中也算；防守腿法学会即另记一项，
         // 可施放见 defenseReady，学会了但腿力没过出腿门槛另记腿力不够；有当前施放另记，不限速的式也算。
+        // 出腿门槛比的是不计伤势的腿力（见 unhurtLegForceNewtons）：腿累了才算腿力不够，腿伤了不算。
         var means = EnumSet.noneOf(Means.class);
         if (ready.stream().anyMatch(entry -> entry.role() == AiRole.AI_ROLE_UNSPECIFIED
                 && firstStrike(entry.definition()).isPresent())) {
@@ -170,7 +171,7 @@ final class HumanoidRepertoires {
                 .anyMatch(known -> PEDDLER_DEFENSES.contains(known.getTechnique().getId()))) {
             means.add(Means.KNOWN_DEFENSE);
         }
-        boolean weakLegs = HumanoidFighters.legForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE;
+        boolean weakLegs = HumanoidFighters.unhurtLegForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE;
         if (means.contains(Means.KNOWN_DEFENSE) && weakLegs) {
             means.add(Means.WEAK_LEGS);
         }
@@ -220,7 +221,7 @@ final class HumanoidRepertoires {
         double distance = opponent.map(target -> HumanoidMotion.distance(mob, target.entity())).orElse(0.0);
         var situation = new TechniqueSelector.Situation(body.settledAt().elapsedMillis(),
                 Math.min(1, body.partHpRatio()), HumanoidFighters.qiRatio(body), distance,
-                TechniqueSelector.TargetState.ENGAGED, HumanoidFighters.legForceNewtons(body));
+                TechniqueSelector.TargetState.ENGAGED, HumanoidFighters.unhurtLegForceNewtons(body));
         Map<TechniqueReference, BindingOutcome> bindings = ready.stream()
                 .collect(Collectors.toMap(entry -> entry.known().getTechnique(), Ready::binding));
         var availability = new TechniqueSelector.Availability(bindings, bindings.keySet(),
@@ -267,7 +268,8 @@ final class HumanoidRepertoires {
         if (!id.startsWith(PEDDLER_PREFIX)) {
             return true;
         }
-        if (opponent.isEmpty() || HumanoidFighters.legForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE) {
+        boolean weakLegs = HumanoidFighters.unhurtLegForceNewtons(source.body()) < PEDDLER_MINIMUM_LEG_FORCE;
+        if (opponent.isEmpty() || weakLegs) {
             return false;
         }
         LivingEntity target = opponent.get().entity();

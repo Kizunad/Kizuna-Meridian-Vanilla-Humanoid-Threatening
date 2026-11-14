@@ -161,7 +161,8 @@ public final class HumanoidBrain {
                 TechniqueFabric.service().registry());
         HumanoidThreatScores.seen(opponent.entity(), other);
         double distance = HumanoidMotion.distance(mob, opponent.entity());
-        var assessed = HumanoidAssessment.stance(self, other, mind.stance(), distance, config.assessment());
+        var separation = new HumanoidAssessment.Separation(distance, unpressedSeconds(mob, mind, opponent, now));
+        var assessed = HumanoidAssessment.stance(self, other, mind.stance(), separation, config.assessment());
         HumanoidAssessment.Stance stance;
         if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
             stance = HumanoidAssessment.Stance.RETREAT;
@@ -186,6 +187,15 @@ public final class HumanoidBrain {
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent)),
                 decision);
         scheduleCastPlan(mob, mind, readout, opponent);
+    }
+
+    private static double unpressedSeconds(Mob mob, HumanoidMind mind, HumanoidOpponent opponent, long now) {
+        // 撤退中对手连着多久没逼近、也没打到我；第一次看到这个对手时没得比，当作刚被逼过。
+        var seen = HumanoidPressure.sight(mob, opponent.entity(), now);
+        boolean pressed = mind.sighting()
+                .map(before -> HumanoidPressure.pressing(mob.position(), before, seen))
+                .orElse(true);
+        return mind.notePressure(seen, pressed);
     }
 
     private static void scheduleCastPlan(Mob mob, HumanoidMind mind, HumanoidRepertoires.Readout readout,
@@ -627,6 +637,11 @@ public final class HumanoidBrain {
     static Optional<HumanoidMotion.Directive> directive(UUID entity) {
         // 当前每 tick 执行的移动指令；施放中的决策沿用它，GameTest 与排查用。
         return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::directive);
+    }
+
+    static Optional<HumanoidAssessment.Stance> stance(UUID entity) {
+        // 上次决策的姿态，GameTest 与排查用。
+        return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::stance);
     }
 
     static int failureStreak(UUID entity) {

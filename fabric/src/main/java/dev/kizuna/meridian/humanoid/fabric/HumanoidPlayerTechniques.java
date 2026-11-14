@@ -40,7 +40,7 @@ final class HumanoidPlayerTechniques {
         var availability = new TechniqueSelector.Availability(bindings, bindings.keySet(), progress.getCooldownsMap());
         var situation = new TechniqueSelector.Situation(body.settledAt().elapsedMillis(),
                 Math.min(1, body.partHpRatio()), HumanoidFighters.qiRatio(body), player.distanceTo(target),
-                TechniqueSelector.TargetState.ENGAGED, HumanoidFighters.legForceNewtons(body));
+                TechniqueSelector.TargetState.ENGAGED, HumanoidFighters.unhurtLegForceNewtons(body));
         var combat = new TechniqueSelector.CombatContext(Set.of(), progress, Optional.of(target(player, target)));
         var context = new TechniqueSelector.Context(registry, situation, availability, combat);
         long seed = player.getUUID().getLeastSignificantBits() ^ input.getSequence();

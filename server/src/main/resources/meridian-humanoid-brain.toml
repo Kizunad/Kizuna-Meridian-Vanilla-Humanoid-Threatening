@@ -53,7 +53,8 @@ retreat_hp_ratio = 0.35        # 完好率低于此值撤退
 retreat_part_hp_ratio = 0.25   # 最弱存活部位 HP 比低于此值撤退
 arm_exhausted_ratio = 0.8      # 较强一臂有效力量比低于此值视为双臂虚脱，撤退
 return_hp_ratio = 0.6          # 撤退后完好率恢复到此值以上
-return_arm_ratio = 0.9         # 且较强一臂力量比恢复到此值以上，并已拉开到安全距离，才重新评估
+return_arm_ratio = 0.9         # 且较强一臂力量比恢复到此值以上，并且拉开了，才重新评估
+return_unpressed_seconds = 5.0 # 拉开：到了安全距离，或者连着这么多秒对手没逼近、也没打到我（屋里退不到安全距离时靠这条）
 
 [response]
 reaction_window_millis = 1000  # 来袭命中剩余不超过此值才考虑躲或抗

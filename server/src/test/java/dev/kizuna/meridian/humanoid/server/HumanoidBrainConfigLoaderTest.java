@@ -39,6 +39,9 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double DEFAULT_STAND_DISTANCE = 2;
     private static final double CUSTOM_STAND_DISTANCE = 3;
     private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
+    private static final double DEFAULT_UNPRESSED_SECONDS = 5;
+    private static final double CUSTOM_UNPRESSED_SECONDS = 8;
+    private static final String UNPRESSED_LINE = "return_unpressed_seconds = 5.0";
     private static final String PILLAGER = "minecraft:pillager";
     private static final double DEFAULT_PILLAGER_NOTICE = 100;
     private static final double CUSTOM_PILLAGER_NOTICE = 64;
@@ -113,6 +116,24 @@ public class HumanoidBrainConfigLoaderTest {
         String custom = replace(STAND_DISTANCE_LINE, "cornered_stand_distance = " + CUSTOM_STAND_DISTANCE);
         var customTactics = HumanoidBrainConfigLoader.parse(custom).response().tactics();
         assertEquals(CUSTOM_STAND_DISTANCE, customTactics.corneredStandDistance(), TOLERANCE);
+    }
+
+    @Test
+    public void oldFileWithoutUnpressedSecondsRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有「没被逼多少秒算拉开」：按默认值运行并列入缺键清单；写了就用写的值，零和负数在加载时拒绝。
+        String old = replace(UNPRESSED_LINE, "");
+        var recovery = HumanoidBrainConfigLoader.parse(old).assessment().recovery();
+        assertEquals(DEFAULT_UNPRESSED_SECONDS, recovery.unpressedSeconds(), TOLERANCE);
+        assertEquals(List.of("assessment.return_unpressed_seconds"), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        String custom = replace(UNPRESSED_LINE, "return_unpressed_seconds = " + CUSTOM_UNPRESSED_SECONDS);
+        var customRecovery = HumanoidBrainConfigLoader.parse(custom).assessment().recovery();
+        assertEquals(CUSTOM_UNPRESSED_SECONDS, customRecovery.unpressedSeconds(), TOLERANCE);
+        for (String bad : List.of("0", "-1.0")) {
+            String text = replace(UNPRESSED_LINE, "return_unpressed_seconds = " + bad);
+            var failure = assertThrows(bad, IllegalArgumentException.class,
+                    () -> HumanoidBrainConfigLoader.parse(text));
+            assertTrue(bad, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
+        }
     }
 
     @Test

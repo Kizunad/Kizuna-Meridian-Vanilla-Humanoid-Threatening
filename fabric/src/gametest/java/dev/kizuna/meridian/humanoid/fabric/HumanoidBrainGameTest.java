@@ -3,6 +3,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.Encounter;
+import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
@@ -77,6 +78,8 @@ public final class HumanoidBrainGameTest {
     private static final String STRAY_HIT_BATCH = "meridian_humanoid_test:brain_stray_hit";
     private static final String SCORE_DAMAGE_BATCH = "meridian_humanoid_test:brain_score_damage";
     private static final String SCORE_SWITCH_BATCH = "meridian_humanoid_test:brain_score_switch";
+    private static final String LEFT_ALONE_BATCH = "meridian_humanoid_test:brain_left_alone";
+    private static final String PRESSED_BATCH = "meridian_humanoid_test:brain_pressed";
     /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
     private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
     private static final String RETREAT_STRUCTURE = "meridian_humanoid_test:retreat";
@@ -140,6 +143,16 @@ public final class HumanoidBrainGameTest {
     private static final BlockPos RIGHT_POS = new BlockPos(6, 0, 5);
     private static final BlockPos MIDDLE_SUBJECT_POS = new BlockPos(3, 0, 1);
     private static final int DUEL_TIMEOUT = 4200;
+    private static final int ROOM_EDGE = 9;
+    private static final int ROOM_CEILING = 6;
+    private static final BlockPos ROOM_SUBJECT = new BlockPos(2, 1, 2);
+    private static final BlockPos ROOM_OPPONENT = new BlockPos(7, 1, 7);
+    private static final long BRIEF_FATIGUE_MILLIS = 2_000;
+    private static final int RETURN_TICKS = 200;
+    private static final int PRESSED_TICKS = 240;
+    private static final int HIT_INTERVAL_TICKS = 40;
+    private static final float LIGHT_HIT = 1.0F;
+    private static final double TICKS_PER_SECOND = 20;
     private static final int FAILURE_STREAK_LIMIT = 3;
     private static final double RETREAT_GAIN = 2;
     private static final double TARGET_HEALTH = 1000;
@@ -224,7 +237,7 @@ public final class HumanoidBrainGameTest {
         Vindicator exhausted = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "exhausted",
                 RETREAT_SUBJECT);
         exhausted.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
-        fatigue(exhausted, HumanoidSpecies.VINDICATOR, ARM_MUSCLES, FATIGUED_STRENGTH);
+        fatigue(exhausted, HumanoidSpecies.VINDICATOR, Fatigue.lasting(ARM_MUSCLES, FATIGUED_STRENGTH));
         Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "exhausted-hunter",
                 RETREAT_NEAR);
         hunter.setNoAi(true /* aiDisabled */);
@@ -248,7 +261,7 @@ public final class HumanoidBrainGameTest {
         HumanoidTechniqueHost.prepare(vindicator);
         List<String> rested = candidates(vindicator);
         context.assertTrue(rested.containsAll(LEG_WORK), "腿没累时撞门、掩门就不在候选里：" + rested);
-        fatigue(vindicator, HumanoidSpecies.VINDICATOR, LEG_MUSCLES, SPENT_PEAK);
+        fatigue(vindicator, HumanoidSpecies.VINDICATOR, Fatigue.lasting(LEG_MUSCLES, SPENT_PEAK));
         var body = BodyProtobuf.fromMessage(((HumanoidEntityAccess) vindicator).meridian$humanoidBody().snapshot());
         var registry = TechniqueFabric.service().registry();
         for (String id : LEG_WORK) {
@@ -271,7 +284,7 @@ public final class HumanoidBrainGameTest {
         // 无威胁时四肢疲劳达到调息门槛，村民自行调息。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "breath", SUBJECT_POS);
-        fatigue(villager, HumanoidSpecies.VILLAGER, LIMB_MUSCLES, FATIGUED_STRENGTH);
+        fatigue(villager, HumanoidSpecies.VILLAGER, Fatigue.lasting(LIMB_MUSCLES, FATIGUED_STRENGTH));
         var watch = new Watch(villager);
         arena.await(BREATH_TICKS, () -> watch.observe().cast(BREATH),
                 () -> "疲劳村民无威胁时没有调息：" + watch + " / " + decisions(villager) + " / "
@@ -481,6 +494,85 @@ public final class HumanoidBrainGameTest {
         return labels.getOrDefault(opponent, opponent.getType().toShortString());
     }
 
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = LEFT_ALONE_BATCH, structure = CROWD_STRUCTURE)
+    public void recoveredVindicatorReturnsToFightWhenLeftAloneIndoors(GameTestHelper context) {
+        // 8×8 封闭石室退不到安全距离。持斧真炁卫道士双臂虚脱 2 秒、转入撤退；对手站着不动、也没打它，
+        // 臂力回来以后不必退到安全距离，连着没被逼够配置的秒数就回到对敌。
+        var arena = new Arena(context);
+        enclose(context);
+        Vindicator vindicator = retreater(arena, "left-alone-vindicator");
+        Cow bystander = arena.target(ROOM_OPPONENT);
+        vindicator.setTarget(bystander);
+        var watch = new StanceWatch(vindicator, bystander);
+        arena.await(RETURN_TICKS, () -> watch.observe().returned(),
+                () -> "没被逼的卫道士没有回到对敌：" + watch + " / " + decisions(vindicator), () -> {
+                    assertIndoors(context, watch);
+                    var rules = HumanoidBrain.config();
+                    double waited = rules.assessment().recovery().unpressedSeconds() * TICKS_PER_SECOND
+                            - rules.schedule().decisionIntervalTicks();
+                    context.assertTrue(watch.retreatTicks() >= waited, "没等够没被逼的秒数就回头了：" + watch);
+                    arena.finish();
+                });
+    }
+
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = PRESSED_BATCH, structure = CROWD_STRUCTURE)
+    public void recoveredVindicatorKeepsAwayWhileStillBeingHit(GameTestHelper context) {
+        // 同一间石室、同样虚脱 2 秒；这回对手每 2 秒打到它一下。完好率和臂力都过了回归门槛，
+        // 但一直被逼着，12 秒里姿态始终是撤退。
+        var arena = new Arena(context);
+        enclose(context);
+        Vindicator vindicator = retreater(arena, "pressed-vindicator");
+        Cow striker = arena.target(ROOM_OPPONENT);
+        vindicator.setTarget(striker);
+        var watch = new StanceWatch(vindicator, striker);
+        var hits = new int[1];
+        arena.observe(PRESSED_TICKS, () -> {
+            if (hits[0]++ % HIT_INTERVAL_TICKS == 0) {
+                vindicator.hurt(vindicator.damageSources().mobAttack(striker), LIGHT_HIT);
+            }
+            return watch.observe().returned();
+        }, () -> {
+            context.assertTrue(watch.retreated() && !watch.returned(),
+                    "一直挨打的卫道士回到了对敌：" + watch + " / " + decisions(vindicator));
+            assertIndoors(context, watch);
+            var body = BodyProtobuf.fromMessage(((HumanoidEntityAccess) vindicator).meridian$humanoidBody().snapshot());
+            var condition = HumanoidFighters.condition(body);
+            var recovery = HumanoidBrain.config().assessment().recovery();
+            context.assertTrue(condition.hpRatio() >= recovery.hpRatio()
+                            && condition.armStrengthRatio() >= recovery.armStrengthRatio(),
+                    "夹具应当只剩「被逼着」这一条拦着：" + condition);
+            arena.finish();
+        });
+    }
+
+    private static Vindicator retreater(Arena arena, String name) {
+        // 持斧真炁卫道士，双臂短暂虚脱：先因臂力转入撤退，2 秒后臂力回来，剩下只看有没有拉开。
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, name, ROOM_SUBJECT);
+        vindicator.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+        fatigue(vindicator, HumanoidSpecies.VINDICATOR, new Fatigue(ARM_MUSCLES, FATIGUED_STRENGTH,
+                BRIEF_FATIGUE_MILLIS));
+        return vindicator;
+    }
+
+    private static void assertIndoors(GameTestHelper context, StanceWatch watch) {
+        // 石室里始终没到安全距离，姿态变化不是靠拉开距离来的。
+        double safeDistance = HumanoidBrain.config().response().tactics().safeDistance();
+        context.assertTrue(watch.farthest() < safeDistance, "石室里不该退得到安全距离：" + watch);
+    }
+
+    private static void enclose(GameTestHelper context) {
+        // 8×8 内室有完整地面、四壁与顶棚，走不出去。
+        for (int x = 0; x <= ROOM_EDGE; x++) {
+            for (int y = 0; y <= ROOM_CEILING; y++) {
+                for (int z = 0; z <= ROOM_EDGE; z++) {
+                    if (x == 0 || x == ROOM_EDGE || y == 0 || y == ROOM_CEILING || z == 0 || z == ROOM_EDGE) {
+                        context.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+                    }
+                }
+            }
+        }
+    }
+
     @GameTest(maxTicks = DUEL_TIMEOUT, environment = DUEL_BATCH)
     public void trueQiVindicatorsDuelForThreeMinutes(GameTestHelper context) {
         // 两只持斧真炁卫道士互设目标打三分钟或打到一方倒下，检查应对、准备与失败上限；虚脱后拉开另有确定性用例。
@@ -633,10 +725,18 @@ public final class HumanoidBrainGameTest {
         return context.absolutePos(headPos);
     }
 
-    private static void fatigue(Mob mob, HumanoidSpecies species, Set<String> muscles, double peak) {
+    /** 一段疲劳夹具：哪些标签的肌肉、力量与功率降到几成、持续多少毫秒。 */
+    private record Fatigue(Set<String> muscles, double peak, long millis) {
+        static Fatigue lasting(Set<String> muscles, double peak) {
+            // 用例全程都在疲劳里。
+            return new Fatigue(muscles, peak, FATIGUE_MILLIS);
+        }
+    }
+
+    private static void fatigue(Mob mob, HumanoidSpecies species, Fatigue fatigue) {
         // 先准备会话学卷，再把带疲劳的快照恢复成唯一 Store 并重新准备会话。
         HumanoidTechniqueHost.prepare(mob);
-        var fatigued = fatigued(((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot(), muscles, peak);
+        var fatigued = fatigued(((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot(), fatigue);
         HumanoidTechniqueHost.removed(mob);
         bind(mob, species, fatigued);
         HumanoidTechniqueHost.prepare(mob);
@@ -671,17 +771,18 @@ public final class HumanoidBrainGameTest {
         return "通过 付得起=" + TechniqueAvailability.affordable(body, definition, outcome.getBinding());
     }
 
-    private static BodyMessages.BodySnapshot fatigued(BodyMessages.BodySnapshot body, Set<String> muscles,
-                                                      double peak) {
+    private static BodyMessages.BodySnapshot fatigued(BodyMessages.BodySnapshot body, Fatigue fatigue) {
         // 指定标签的肌肉施加一段恒定的力量与功率下降；取 FATIGUED_STRENGTH 时疲劳比高于调息门槛，
-        // 较强一臂也低于虚脱门槛。
+        // 较强一臂也低于虚脱门槛。时长一过曲线失效，力量回到原样。
+        Set<String> muscles = fatigue.muscles();
+        double peak = fatigue.peak();
         var result = body.toBuilder();
         var start = BodyMessages.CurvePoint.newBuilder()
                 .setOffsetMillis(0)
                 .setValue(1)
                 .build();
         var end = BodyMessages.CurvePoint.newBuilder()
-                .setOffsetMillis(FATIGUE_MILLIS)
+                .setOffsetMillis(fatigue.millis())
                 .setValue(1)
                 .build();
         for (var tissue : body.getStructure().getTissuesList()) {
@@ -845,6 +946,59 @@ public final class HumanoidBrainGameTest {
             spawned.clear();
             cleanups.forEach(Runnable::run);
             cleanups.clear();
+        }
+    }
+
+    /** 逐 tick 记下一只实体的姿态：第几 tick 转入撤退、第几 tick 回到对敌，以及离对手最远到过多少格。 */
+    private static final class StanceWatch {
+        private static final int UNSEEN = -1;
+        private final Mob mob;
+        private final Entity opponent;
+        private int ticks;
+        private int retreatedAt = UNSEEN;
+        private int returnedAt = UNSEEN;
+        private double farthest;
+
+        private StanceWatch(Mob mob, Entity opponent) {
+            this.mob = mob;
+            this.opponent = opponent;
+        }
+
+        StanceWatch observe() {
+            // 先见到撤退，之后第一次见到对敌才算回头。
+            ticks++;
+            farthest = Math.max(farthest, mob.distanceTo(opponent));
+            var stance = HumanoidBrain.stance(mob.getUUID());
+            if (retreatedAt == UNSEEN && stance.filter(HumanoidAssessment.Stance.RETREAT::equals).isPresent()) {
+                retreatedAt = ticks;
+            }
+            if (retreated() && !returned() && stance.filter(HumanoidAssessment.Stance.ENGAGE::equals).isPresent()) {
+                returnedAt = ticks;
+            }
+            return this;
+        }
+
+        boolean retreated() {
+            return retreatedAt != UNSEEN;
+        }
+
+        boolean returned() {
+            return returnedAt != UNSEEN;
+        }
+
+        int retreatTicks() {
+            // 从转入撤退到回到对敌隔了多少 tick。
+            return returnedAt - retreatedAt;
+        }
+
+        double farthest() {
+            return farthest;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "第 %d tick 撤退，第 %d tick 回头，最远 %.1f 格，共看了 %d tick",
+                    retreatedAt, returnedAt, farthest, ticks);
         }
     }
 

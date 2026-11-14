@@ -147,10 +147,47 @@ final class HumanoidFighters {
     }
 
     static double legForceNewtons(BodySnapshot body) {
-        // 两腿的有效力量合计，供千里腿的虚脱门槛使用。
+        // 两腿的有效力量合计：伤势、疲劳和功法曲线都算在内。
         return tissues(body, LEG_MUSCLE).stream()
                 .mapToDouble(tissue -> TissueCapabilities.available(body, tissue.id()).strengthNewtons())
                 .sum();
+    }
+
+    static double unhurtLegForceNewtons(BodySnapshot body) {
+        // 两腿只扣疲劳和功法曲线、不扣伤势的力量合计，供千里腿的出腿门槛使用。
+        // 门槛防的是腿累了还踢、越踢越回不来；伤腿歇不回来，拿有效力量比，受了伤的商人会一直出不了腿。
+        return tissues(body, LEG_MUSCLE).stream()
+                .mapToDouble(tissue -> unhurtStrengthNewtons(body, tissue))
+                .sum();
+    }
+
+    private static double unhurtStrengthNewtons(BodySnapshot body, Anatomy.TissueDefinition tissue) {
+        // 有效力量里伤势是乘上去的完好率，除回去；完好率为 0（这块肌肉或所在部位已毁）的不算。
+        double health = healthRatio(body, tissue);
+        if (health <= 0) {
+            return 0;
+        }
+        return TissueCapabilities.available(body, tissue.id()).strengthNewtons() / health;
+    }
+
+    private static double healthRatio(BodySnapshot body, Anatomy.TissueDefinition tissue) {
+        // 与框架算有效能力同一口径：这块组织和它所在部位的完好率取低的，不超过 1。
+        double tissueRatio = body.tissueStates().stream()
+                .filter(state -> state.id().equals(tissue.id()))
+                .mapToDouble(state -> state.hp() / tissue.maxHp())
+                .findFirst()
+                .orElse(0);
+        double partMaximum = body.structure().parts().stream()
+                .filter(part -> part.id().equals(tissue.partId()))
+                .mapToDouble(Anatomy.PartDefinition::maxHp)
+                .findFirst()
+                .orElseThrow();
+        double partRatio = body.partStates().stream()
+                .filter(part -> part.id().equals(tissue.partId()))
+                .mapToDouble(part -> part.hp() / partMaximum)
+                .findFirst()
+                .orElse(0);
+        return Math.min(1, Math.min(tissueRatio, partRatio));
     }
 
     static double fatigueRatio(BodySnapshot body, Set<Anatomy.TissueId> tissueIds) {

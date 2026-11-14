@@ -11,7 +11,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
 /** 把大脑指令落到原版导航与朝向上；每 tick 由接入适配器调用，路径按固定节奏重算，上次寻路的时刻记在 HumanoidMind。 */
@@ -104,14 +106,7 @@ final class HumanoidMotion {
                     applyHoldRange(mob, mind, range, speeds);
                 }
             }
-            case MOVE_TO -> {
-                Vec3 destination = directive.destination().orElseThrow();
-                if (refresh && mob.position().distanceToSqr(destination) > ARRIVED_DISTANCE * ARRIVED_DISTANCE) {
-                    mob.getNavigation().moveTo(destination.x, destination.y, destination.z,
-                            speeds.of(directive.pace()));
-                    mind.pathed(mob.tickCount);
-                }
-            }
+            case MOVE_TO -> applyMoveTo(mob, mind, directive, speeds, refresh);
             case STAY -> mob.getNavigation().stop();
             case FACE -> {
                 // 视线控制只转头；身前、身后和打击扇区按身体朝向算，站着不走时要自己把身体转过去。
@@ -122,6 +117,29 @@ final class HumanoidMotion {
                 // 原版控制自己移动。
             }
         }
+    }
+
+    private static void applyMoveTo(Mob mob, HumanoidMind mind, Directive directive, Speeds speeds,
+                                    boolean refresh) {
+        // 走向落点，按节奏重算路径；手上那条路径若不是为当前导航目标算的，当场清掉重新寻路。
+        Vec3 destination = directive.destination().orElseThrow();
+        PathNavigation navigation = mob.getNavigation();
+        boolean stale = probedOver(navigation);
+        if (stale) {
+            navigation.stop();
+        }
+        boolean away = mob.position().distanceToSqr(destination) > ARRIVED_DISTANCE * ARRIVED_DISTANCE;
+        if ((refresh || stale) && away) {
+            navigation.moveTo(destination.x, destination.y, destination.z, speeds.of(directive.pace()));
+            mind.pathed(mob.tickCount);
+        }
+    }
+
+    private static boolean probedOver(PathNavigation navigation) {
+        // 试算退路会把原版导航记的目标格改成新落点，却不换掉正在走的路径；之后按同一格寻路，原版直接沿用旧路径。
+        // 正在走的路径终点与导航目标格不一致，说明它通往别处（例如原版攻击走向对手的那条），不能冒充去新落点的路。
+        Path path = navigation.getPath();
+        return path != null && !path.isDone() && !path.getTarget().equals(navigation.getTargetPos());
     }
 
     private static boolean pathDue(Mob mob, HumanoidMind mind) {

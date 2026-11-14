@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -98,6 +99,10 @@ public final class HumanoidPeddlerGameTest {
             .setProgress(1)
             .build();
     private static final double EXHAUSTED_RATIO = 0.5;
+    // 千里腿目录 ai_hints.combat.minimum_leg_force：出腿门槛（牛）。
+    private static final double LEG_FORCE_GATE = 3000;
+    private static final double INJURED_LEG_RATIO = 0.6;
+    private static final Set<String> FRONT_KICKS = Set.of(ROAD_TECHNIQUE, PUSH_KICK);
     private static final long EXHAUSTION_MILLIS = 60_000;
     private static final double TRIP_UPWARD_PER_TICK = 0.1;
     private static final double SPEED_TOLERANCE = 1e-6;
@@ -243,6 +248,35 @@ public final class HumanoidPeddlerGameTest {
         trader.setNoAi(true /* aiDisabled */);
         hunter.discard();
         HumanoidTechniqueHost.removed(trader);
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void injuredLegsStillKickWhileTiredLegsDoNot(GameTestHelper context) {
+        // 两腿带伤、有效力量掉到出腿门槛以下，歇多久也回不来的真炁商人：腿没累，照样算出得了防守腿法，
+        // 对手在身前近处时弹腿或正蹬在候选里；同样的伤再加上两腿虚脱才算腿力不够。伤只写进身体副本喂给读候选。
+        WanderingTrader trader = kicker(context, HumanoidTier.TRUE_QI, ORIGIN_X, ORIGIN_Z);
+        Cow front = target(context, ORIGIN_X, TARGET_Z);
+        var injuredSnapshot = injuredLegs(snapshot(trader));
+        BodySnapshot injured = BodyProtobuf.fromMessage(injuredSnapshot);
+        double effective = HumanoidFighters.legForceNewtons(injured);
+        double unhurt = HumanoidFighters.unhurtLegForceNewtons(injured);
+        context.assertTrue(effective < LEG_FORCE_GATE && unhurt >= LEG_FORCE_GATE,
+                "夹具应是伤到有效腿力不过门槛、不计伤势却过门槛：" + effective + " / " + unhurt);
+        var readout = HumanoidRepertoires.read(trader, injured, opponent(front), technique -> false);
+        context.assertTrue(readout.means().contains(Fighter.Means.CASTABLE_DEFENSE)
+                        && !readout.means().contains(Fighter.Means.WEAK_LEGS),
+                "腿伤了但没累，却算出不了防守腿法：" + readout.means());
+        context.assertTrue(readout.strikes().stream()
+                        .anyMatch(known -> FRONT_KICKS.contains(known.getTechnique().getId())),
+                "伤腿商人对身前近处的对手没有弹腿、正蹬候选：" + readout.strikes());
+        BodySnapshot tired = BodyProtobuf.fromMessage(exhaustedLegs(injuredSnapshot));
+        var tiredReadout = HumanoidRepertoires.read(trader, tired, opponent(front), technique -> false);
+        context.assertTrue(tiredReadout.means().contains(Fighter.Means.WEAK_LEGS)
+                        && !tiredReadout.means().contains(Fighter.Means.CASTABLE_DEFENSE)
+                        && tiredReadout.strikes().isEmpty(),
+                "腿又伤又累仍算出得了腿：" + tiredReadout.means() + " / " + tiredReadout.strikes());
+        trader.discard();
         context.succeed();
     }
 
@@ -581,6 +615,21 @@ public final class HumanoidPeddlerGameTest {
                     .addCurve(end)
                     .build();
             result.addModifiers(modifier);
+        }
+        return result.build();
+    }
+
+    private static BodyMessages.BodySnapshot injuredLegs(BodyMessages.BodySnapshot body) {
+        // 腿肌所在的部位都只剩 INJURED_LEG_RATIO 的 HP：伤势压住两腿发力，疲劳一点没有。
+        var legParts = body.getStructure().getTissuesList().stream()
+                .filter(tissue -> tissue.getTagsList().contains(HumanoidFighters.LEG_MUSCLE))
+                .map(tissue -> tissue.getPartId())
+                .collect(Collectors.toSet());
+        var result = body.toBuilder();
+        for (var state : result.getPartStatesBuilderList()) {
+            if (legParts.contains(state.getId())) {
+                state.setHp(state.getHp() * INJURED_LEG_RATIO);
+            }
         }
         return result.build();
     }

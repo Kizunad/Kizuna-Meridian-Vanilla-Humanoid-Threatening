@@ -3,6 +3,7 @@ package dev.kizuna.meridian.humanoid.server;
 import dev.kizuna.meridian.core.Realm;
 import dev.kizuna.meridian.humanoid.server.Fighter.Condition;
 import dev.kizuna.meridian.humanoid.server.Fighter.Means;
+import dev.kizuna.meridian.humanoid.server.HumanoidAssessment.Separation;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment.Stance;
 import org.junit.Test;
 
@@ -16,6 +17,9 @@ public class HumanoidAssessmentTest {
     private static final AssessmentRules RULES = HumanoidBrainConfigLoader.defaults().assessment();
     private static final double NEAR = 3;
     private static final double SAFE = 12;
+    private static final double JUST_PRESSED = 0;
+    private static final double LEFT_ALONE = 5;
+    private static final double ALMOST_LEFT_ALONE = 4.9;
     private static final double HEAVY_HP = 0.3;
     private static final double WRECKED_PART = 0.2;
     private static final double EXHAUSTED_ARM = 0.7;
@@ -94,10 +98,35 @@ public class HumanoidAssessmentTest {
         Fighter opponent = fighter(Realm.WANDERING_QI, FULL, AXE_ADEPT);
         Fighter wounded = fighter(Realm.TRUE_QI, new Condition(WOUNDED_HP, 1, 1, 1, 1), AXE_ADEPT);
         Fighter healed = fighter(Realm.TRUE_QI, FULL, AXE_ADEPT);
-        assertEquals(Stance.ENGAGE, HumanoidAssessment.stance(wounded, opponent, Stance.ENGAGE, NEAR, RULES));
-        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(wounded, opponent, Stance.RETREAT, SAFE, RULES));
-        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, NEAR, RULES));
-        assertEquals(Stance.ENGAGE, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, SAFE, RULES));
+        var far = pressedAt(SAFE);
+        var near = pressedAt(NEAR);
+        assertEquals(Stance.ENGAGE, stance(wounded, opponent, Stance.ENGAGE));
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(wounded, opponent, Stance.RETREAT, far, RULES));
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, near, RULES));
+        assertEquals(Stance.ENGAGE, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, far, RULES));
+    }
+
+    @Test
+    public void retreatEndsWhenLeftAloneShortOfSafeDistance() {
+        // 屋里退不到安全距离：对手连着 5 秒没逼近、也没打到我，就算拉开了，重新比战力；差一点不算。
+        Fighter opponent = fighter(Realm.WANDERING_QI, FULL, AXE_ADEPT);
+        Fighter healed = fighter(Realm.TRUE_QI, FULL, AXE_ADEPT);
+        var leftAlone = new Separation(NEAR, LEFT_ALONE);
+        var almost = new Separation(NEAR, ALMOST_LEFT_ALONE);
+        assertEquals(Stance.ENGAGE, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, leftAlone, RULES));
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(healed, opponent, Stance.RETREAT, almost, RULES));
+    }
+
+    @Test
+    public void beingLeftAloneDoesNotOverrideInjuryOrOdds() {
+        // 没被逼只顶替「拉开到安全距离」这一条：伤没养回来的不回头；战力差不够的重新比完还是撤退。
+        Fighter opponent = fighter(Realm.WANDERING_QI, FULL, AXE_ADEPT);
+        Fighter wounded = fighter(Realm.TRUE_QI, new Condition(WOUNDED_HP, 1, 1, 1, 1), AXE_ADEPT);
+        Fighter stronger = fighter(Realm.TRUE_QI, FULL, AXE_ADEPT);
+        Fighter weaker = fighter(Realm.WANDERING_QI, FULL, AXE_ADEPT);
+        var leftAlone = new Separation(NEAR, LEFT_ALONE);
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(wounded, opponent, Stance.RETREAT, leftAlone, RULES));
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(weaker, stronger, Stance.RETREAT, leftAlone, RULES));
     }
 
     @Test
@@ -113,7 +142,12 @@ public class HumanoidAssessmentTest {
 
     private static Stance stance(Fighter self, Fighter opponent, Stance previous) {
         // 近身处境，距离不影响对敌中的判断。
-        return HumanoidAssessment.stance(self, opponent, previous, NEAR, RULES);
+        return HumanoidAssessment.stance(self, opponent, previous, pressedAt(NEAR), RULES);
+    }
+
+    private static Separation pressedAt(double distance) {
+        // 对手刚逼近过或刚打到我，只能靠距离算拉开。
+        return new Separation(distance, JUST_PRESSED);
     }
 
     private static Fighter fighter(Realm realm, Condition condition, Set<Means> means) {

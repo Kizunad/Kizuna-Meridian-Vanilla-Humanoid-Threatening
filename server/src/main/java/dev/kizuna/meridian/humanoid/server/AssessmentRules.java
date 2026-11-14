@@ -9,6 +9,6 @@ public record AssessmentRules(Weights weights, double castingWeight, double enga
     /** 完好率、最弱部位比例或较强一臂的有效力量比低于这些值时撤退。 */
     public record Retreat(double hpRatio, double partHpRatio, double armStrengthRatio) { }
 
-    /** 撤退后要同时恢复到这些比例并拉开到这一距离才重新评估。 */
-    public record Recovery(double hpRatio, double armStrengthRatio, double distance) { }
+    /** 撤退后要恢复到这些比例并且拉开了才重新评估：拉到这一距离，或者连着这么多秒没被对手逼近、也没挨它打。 */
+    public record Recovery(double hpRatio, double armStrengthRatio, double distance, double unpressedSeconds) { }
 }

@@ -13,6 +13,7 @@ import net.minecraft.world.phys.Vec3;
 /** 一个被接管实体的大脑状态：姿态、对手、当前指令、决策序号、失败屏蔽与最近的决策记录。 */
 final class HumanoidMind {
     static final int LOG_CAPACITY = 32;
+    private static final double MILLIS_PER_SECOND = 1000;
     private final ArrayDeque<Logged> log = new ArrayDeque<>();
     private final Map<String, Failure> failures = new HashMap<>();
     private Stance stance = Stance.ENGAGE;
@@ -27,6 +28,8 @@ final class HumanoidMind {
     private boolean contactPending;
     private boolean pathed;
     private int pathedTick;
+    private HumanoidPressure.Sighting sighting;
+    private long unpressedSinceMillis;
 
     Optional<Vec3> retreatPoint() {
         return retreatPoint;
@@ -51,6 +54,20 @@ final class HumanoidMind {
     boolean pathedWithin(int tick, int ticks) {
         // 距上次寻路还不到 ticks 个 tick；从没寻过路，或实体 tick 计数被重置过，都算不在间隔内。
         return pathed && tick >= pathedTick && tick - pathedTick < ticks;
+    }
+
+    Optional<HumanoidPressure.Sighting> sighting() {
+        // 上次决策看到的对手；刚换对手或没有对手时为空。
+        return Optional.ofNullable(sighting);
+    }
+
+    double notePressure(HumanoidPressure.Sighting seen, boolean pressed) {
+        // 记下这次看到的对手，返回撤退中连着多少秒没被它逼着（按身体时钟）；对敌中、刚被逼过都从这一刻重新计。
+        sighting = seen;
+        if (pressed || stance != Stance.RETREAT) {
+            unpressedSinceMillis = seen.millis();
+        }
+        return (seen.millis() - unpressedSinceMillis) / MILLIS_PER_SECOND;
     }
 
     void castBlockedByStagger() {
@@ -114,6 +131,7 @@ final class HumanoidMind {
             cornered = false;
             retreatPoint = Optional.empty();
             castPlan = null;
+            sighting = null;
         }
         opponent = next;
     }
@@ -125,6 +143,7 @@ final class HumanoidMind {
         retreatPoint = Optional.empty();
         cornered = false;
         castPlan = null;
+        sighting = null;
     }
 
     void direct(HumanoidMotion.Directive next) {

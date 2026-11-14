@@ -5,17 +5,20 @@ public final class HumanoidAssessment {
     /** 对敌或撤退。 */
     public enum Stance { ENGAGE, RETREAT }
 
+    /** 和对手拉开的情况：现在相距多少格，撤退中连着多少秒没被它逼近、也没挨它打。 */
+    public record Separation(double distance, double unpressedSeconds) { }
+
     private HumanoidAssessment() {
         // 纯函数集合，不持有实体或配置。
     }
 
-    public static Stance stance(Fighter self, Fighter opponent, Stance previous, double distance,
+    public static Stance stance(Fighter self, Fighter opponent, Stance previous, Separation separation,
                                 AssessmentRules rules) {
-        // 重伤、双臂虚脱、没有进攻手段一律撤退；撤退中的一方恢复并拉开距离后才重新比较战力。
+        // 重伤、双臂虚脱、没有进攻手段一律撤退；撤退中的一方恢复并拉开以后才重新比较战力。
         if (mustRetreat(self, rules.retreat()) || !offensive(self)) {
             return Stance.RETREAT;
         }
-        if (previous == Stance.RETREAT && !recovered(self, distance, rules.recovery())) {
+        if (previous == Stance.RETREAT && !recovered(self, separation, rules.recovery())) {
             return Stance.RETREAT;
         }
         double margin = power(self, rules) - power(opponent, rules);
@@ -51,12 +54,18 @@ public final class HumanoidAssessment {
         return self.has(Fighter.Means.CASTABLE_STRIKE) || self.has(Fighter.Means.VANILLA_OFFENSE);
     }
 
-    private static boolean recovered(Fighter self, double distance, AssessmentRules.Recovery recovery) {
-        // 完好率、臂力和距离同时达标才结束撤退。
+    private static boolean recovered(Fighter self, Separation separation, AssessmentRules.Recovery recovery) {
+        // 完好率、臂力达标，并且拉开了，才结束撤退。
         var condition = self.condition();
         return condition.hpRatio() >= recovery.hpRatio()
                 && condition.armStrengthRatio() >= recovery.armStrengthRatio()
-                && distance >= recovery.distance();
+                && apart(separation, recovery);
+    }
+
+    private static boolean apart(Separation separation, AssessmentRules.Recovery recovery) {
+        // 到了安全距离算拉开；屋里、谷底这些地方永远退不到那么远，对手连着一阵不逼近、也没打到我，也算拉开。
+        return separation.distance() >= recovery.distance()
+                || separation.unpressedSeconds() >= recovery.unpressedSeconds();
     }
 
     private static double presence(Fighter fighter, Fighter.Means means) {

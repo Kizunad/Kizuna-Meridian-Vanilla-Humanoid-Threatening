@@ -1,8 +1,11 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.humanoid.server.Decision;
+import dev.kizuna.meridian.humanoid.server.HumanoidAssessment.Stance;
 import net.minecraft.world.phys.Vec3;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -14,6 +17,10 @@ public final class HumanoidMindTest {
     private static final long EXPIRES_MILLIS = 3200;
     private static final int PATHED_TICK = 40;
     private static final int REPATH_TICKS = 5;
+    private static final long RETREAT_STARTED_MILLIS = 10_000;
+    private static final long DECISION_MILLIS = 500;
+    private static final double HALF_SECOND = 0.5;
+    private static final double TOLERANCE = 1e-9;
 
     @Test
     public void targetSwitchDisengageAndReleaseClearCastPlan() {
@@ -54,6 +61,41 @@ public final class HumanoidMindTest {
         assertTrue(mind.pathedWithin(PATHED_TICK + REPATH_TICKS - 1, REPATH_TICKS));
         assertFalse(mind.pathedWithin(PATHED_TICK + REPATH_TICKS, REPATH_TICKS));
         assertFalse(mind.pathedWithin(PATHED_TICK - 1, REPATH_TICKS));
+    }
+
+    @Test
+    public void unpressedTimeOnlyAccumulatesWhileRetreatingAndUnpressed() {
+        // 对敌中不计；转入撤退的那次决策起算，没被逼就一直累计，被逼一次从头来。
+        HumanoidMind mind = new HumanoidMind();
+        long now = RETREAT_STARTED_MILLIS;
+        assertEquals(0, mind.notePressure(seen(now), false /* pressed */), TOLERANCE);
+        mind.decided(0, Stance.RETREAT, Decision.of(Decision.Action.RETREAT, "测试撤退"));
+        now += DECISION_MILLIS;
+        assertEquals(HALF_SECOND, mind.notePressure(seen(now), false /* pressed */), TOLERANCE);
+        now += DECISION_MILLIS;
+        assertEquals(2 * HALF_SECOND, mind.notePressure(seen(now), false /* pressed */), TOLERANCE);
+        now += DECISION_MILLIS;
+        assertEquals(0, mind.notePressure(seen(now), true /* pressed */), TOLERANCE);
+        now += DECISION_MILLIS;
+        assertEquals(HALF_SECOND, mind.notePressure(seen(now), false /* pressed */), TOLERANCE);
+        mind.decided(0, Stance.ENGAGE, Decision.of(Decision.Action.APPROACH, "测试对敌"));
+        now += DECISION_MILLIS;
+        assertEquals(0, mind.notePressure(seen(now), false /* pressed */), TOLERANCE);
+    }
+
+    @Test
+    public void losingTheOpponentForgetsWhereItWasSeen() {
+        // 威胁消失后不留上次看到的对手，下一个对手没得比，由大脑当作刚被逼过。
+        HumanoidMind mind = new HumanoidMind();
+        mind.notePressure(seen(RETREAT_STARTED_MILLIS), false /* pressed */);
+        assertTrue(mind.sighting().isPresent());
+        mind.disengage();
+        assertFalse(mind.sighting().isPresent());
+    }
+
+    private static HumanoidPressure.Sighting seen(long millis) {
+        // 位置和挨打时刻由 HumanoidPressure 比较，这里只关心时钟。
+        return new HumanoidPressure.Sighting(Vec3.ZERO, HumanoidPressure.NEVER_STRUCK, millis);
     }
 
     private static HumanoidMind.CastPlan plan() {
