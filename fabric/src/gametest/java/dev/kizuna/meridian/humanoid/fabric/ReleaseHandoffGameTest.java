@@ -33,6 +33,14 @@ public final class ReleaseHandoffGameTest {
     private static final int HANDOFF_TICKS = 4;
     private static final int CREDIT_WINDOW_TICKS = 600;
     private static final int FORGET_TEST_LIMIT = 750;
+    /**
+     * 交接区域放在测试结构以外的远处，每笔释放按自己的 ID 落进一格新区域。
+     * 区域供给窗从建区时起算 30 秒，到期才把待入账并进库存；新区域在用例的几 tick 内不会到期。
+     * 共用的区域窗口相位不定，到期点落在受理和写盘之间时，文件里只剩已入账的库存、没有待入账记录。
+     */
+    private static final int HANDOFF_REGION_ORIGIN = 1_000_000;
+    private static final int HANDOFF_REGION_SPACING = 256;
+    private static final int HANDOFF_REGION_SLOTS = 100_000;
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = "meridian_humanoid_test:handoff_directory_unsupported")
     public void unsupportedDirectorySyncPersistsSenderDeletionBeforeForget(GameTestHelper context) throws Exception {
@@ -296,14 +304,18 @@ public final class ReleaseHandoffGameTest {
     }
 
     private static RegionRelease release(GameTestHelper context) {
-        // 使用真实维度及独立 ID，不借助实体生命周期生成额外的测试释放。
+        // 使用真实维度、独立 ID 和独立的新区域，不借助实体生命周期生成额外的测试释放。
+        UUID id = UUID.randomUUID();
+        int slot = Math.floorMod(id.getLeastSignificantBits(), HANDOFF_REGION_SLOTS);
         var position = RegionQuery.newBuilder()
                 .setDimensionId(context.getLevel().dimension().identifier().toString())
+                .setBlockX(HANDOFF_REGION_ORIGIN + slot * HANDOFF_REGION_SPACING)
+                .setBlockZ(HANDOFF_REGION_ORIGIN)
                 .build();
         var qi = new QiInventory(List.of(new Qi(Qi.QiAttribute.of("qi_variants:wither"),
                 RELEASE_AMOUNT, RELEASE_DENSITY)));
         return RegionRelease.newBuilder()
-                .setReleaseId("gametest:handoff:" + UUID.randomUUID())
+                .setReleaseId("gametest:handoff:" + id)
                 .setPosition(position)
                 .setReleasedQi(BodyProtobuf.toInventory(qi))
                 .build();
@@ -400,7 +412,7 @@ public final class ReleaseHandoffGameTest {
                 matchingIds++;
             }
         }
-        context.assertTrue(matchingIds == 1, "重复重试产生多笔去重事实");
+        context.assertTrue(matchingIds == 1, "同一释放的去重事实应为 1 笔，实际 " + matchingIds + " 笔");
     }
 
     private static void assertOneSavedCredit(GameTestHelper context, RegionRelease release, ListTag credits) {
@@ -415,6 +427,6 @@ public final class ReleaseHandoffGameTest {
                 matchingCredits++;
             }
         }
-        context.assertTrue(matchingCredits == 1, "重复重试产生多笔入账记录");
+        context.assertTrue(matchingCredits == 1, "同一释放的待入账记录应为 1 笔，实际 " + matchingCredits + " 笔");
     }
 }

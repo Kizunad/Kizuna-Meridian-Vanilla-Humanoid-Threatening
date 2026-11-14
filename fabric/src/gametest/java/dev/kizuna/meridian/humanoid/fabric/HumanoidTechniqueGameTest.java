@@ -73,6 +73,8 @@ public final class HumanoidTechniqueGameTest {
     private static final int DEFAULT_DECISION_INTERVAL_TICKS = 10;
     private static final int DECISION_TICKS = DEFAULT_DECISION_INTERVAL_TICKS + 2;
     private static final int DECISION_CYCLES = 3;
+    /** 原版刚认出目标、大脑还没有对手时，下一个 tick 补的那一次决策。 */
+    private static final int CONTACT_DECISIONS = 1;
     private static final int VOLUME_SAMPLE_LIMIT = 1000;
     private static final int SHIELD_READY_TICKS = 6;
     private static final int KNOCK_HIT_TICKS = 25;
@@ -131,9 +133,12 @@ public final class HumanoidTechniqueGameTest {
         runDecisions(mob, goals, targets);
         context.assertTrue(HumanoidBrain.decisions(mob.getUUID()).isEmpty(), "无威胁时仍进入决策");
         mob.setTarget(target);
+        stepBrain(mob, goals, targets);
+        int contacted = HumanoidBrain.decisions(mob.getUUID()).size();
+        context.assertTrue(contacted == CONTACT_DECISIONS, "认出目标后下一个 tick 没有补决策：" + contacted);
         runDecisions(mob, goals, targets);
         int decided = HumanoidBrain.decisions(mob.getUUID()).size();
-        context.assertTrue(decided == DECISION_CYCLES, "决策未按配置周期限流：" + decided);
+        context.assertTrue(decided == CONTACT_DECISIONS + DECISION_CYCLES, "决策未按配置周期限流：" + decided);
         context.assertTrue(!progress(mob).hasActiveCast(), "无工具时意外施放");
         mob.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         start(context, mob, "knock", target);
@@ -153,9 +158,14 @@ public final class HumanoidTechniqueGameTest {
         // 连续整周期覆盖任意实体相位，同步执行不混入世界里的原版 Goal。
         int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
         for (int tick = 0; tick < DECISION_CYCLES * interval; tick++) {
-            mob.tickCount++;
-            HumanoidBrain.tick(mob, goals, targets);
+            stepBrain(mob, goals, targets);
         }
+    }
+
+    private static void stepBrain(Vindicator mob, GoalSelector goals, GoalSelector targets) {
+        // 推进一个 tick 的实体年龄，调用一次大脑入口。
+        mob.tickCount++;
+        HumanoidBrain.tick(mob, goals, targets);
     }
 
     @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)

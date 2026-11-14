@@ -101,7 +101,7 @@ public final class HumanoidBrain {
         if (((TechniqueLeapAccess) mob).meridian$getLeap() != null || !decisionDue(mob, mind)) {
             return;
         }
-        mind.clearStaggerWait();
+        mind.clearDecisionWaits();
         try {
             decide(mob, mind);
         } catch (RuntimeException failure) {
@@ -113,6 +113,10 @@ public final class HumanoidBrain {
     private static boolean decisionDue(Mob mob, HumanoidMind mind) {
         // 按 ID 错相每个间隔决策一次；选中的式因僵直没发出去时，僵直一结束就补一次。
         // 原版近战约一秒一击、每击僵直将近一秒，固定节拍会一直落在僵直里。
+        // 原版目标选择刚认出对手时下一个 tick 就接手，不让原版攻击先朝对手走上整整一个间隔。
+        if (mind.contactPending()) {
+            return true;
+        }
         int interval = config.schedule().decisionIntervalTicks();
         if (Math.floorMod((long) mob.tickCount + mob.getId(), interval) == 0) {
             return true;
@@ -582,10 +586,15 @@ public final class HumanoidBrain {
     }
 
     public static void targetChanged(Mob mob, LivingEntity previous, LivingEntity next) {
-        // 原版改目标时同步敌意反查表。
+        // 原版改目标时同步敌意反查表、作废蓄力计划；大脑还没有对手时，原版刚认出的目标下一个 tick 就交给大脑决策。
         HumanoidThreats.targeted(mob, previous, next);
-        if (previous != next) {
-            Optional.ofNullable(minds.get(mob.getUUID())).ifPresent(HumanoidMind::clearCastPlan);
+        HumanoidMind mind = minds.get(mob.getUUID());
+        if (previous == next || mind == null) {
+            return;
+        }
+        mind.clearCastPlan();
+        if (next != null && mind.opponent().isEmpty()) {
+            mind.contact();
         }
     }
 

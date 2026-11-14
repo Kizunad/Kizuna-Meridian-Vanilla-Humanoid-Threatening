@@ -71,6 +71,7 @@ public final class HumanoidBrainGameTest {
     private static final String CROWD_BATCH = "meridian_humanoid_test:brain_crowd";
     private static final String DUEL_BATCH = "meridian_humanoid_test:brain_duel";
     private static final String SUMMON_BATCH = "meridian_humanoid_test:brain_summon";
+    private static final String STRAY_HIT_BATCH = "meridian_humanoid_test:brain_stray_hit";
     /** 10×10 的空结构，一百个村民一格一个都在结构以内。 */
     private static final String CROWD_STRUCTURE = "meridian_humanoid_test:crowd";
     private static final String RETREAT_STRUCTURE = "meridian_humanoid_test:retreat";
@@ -116,6 +117,10 @@ public final class HumanoidBrainGameTest {
     /** 第一口咬到以后再看 3 秒（几次决策）。 */
     private static final int AFTER_BITE_TICKS = 60;
     private static final int VEX_COUNT = 2;
+    /** 误伤以后再看 3 秒（几次决策）；原版受击记忆 100 tick 才过期，观察期内一直在。 */
+    private static final int AFTER_STRAY_HIT_TICKS = 60;
+    /** 同伴误伤的伤害：一下轻伤，不至于打倒或打残。 */
+    private static final float STRAY_HIT = 1.0F;
     private static final int DUEL_TIMEOUT = 4200;
     private static final int FAILURE_STREAK_LIMIT = 3;
     private static final double RETREAT_GAIN = 2;
@@ -362,6 +367,30 @@ public final class HumanoidBrainGameTest {
                     "村民的对手不只是唤魔者：" + opponents + " / " + decisions(villager));
             context.assertTrue(HumanoidBrain.opponent(villager).orElse(null) == evoker,
                     "恼鬼咬了 3 秒后村民的对手不是唤魔者：" + HumanoidBrain.opponent(villager));
+            arena.finish();
+        });
+    }
+
+    @GameTest(maxTicks = SHORT_TIMEOUT, environment = STRAY_HIT_BATCH)
+    public void allyStrayHitDoesNotStartAFight(GameTestHelper context) {
+        // 同伴误伤：不动的掠夺者在 6 格外误伤真炁卫道士一下，原版受击记忆记着掠夺者；
+        // 卫道士之后几次决策都不把同伴当对手，也不以它为目标。
+        var arena = new Arena(context);
+        Vindicator vindicator = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "stray-hit-vindicator",
+                FAR_SUBJECT_POS);
+        Pillager pillager = arena.spawnUnborn(EntityTypes.PILLAGER, "stray-hit-pillager", FAR_POS);
+        pillager.setNoAi(true /* aiDisabled */);
+        vindicator.hurt(vindicator.damageSources().mobAttack(pillager), STRAY_HIT);
+        var remembered = vindicator.getLastHurtByMob();
+        var opponents = new LinkedHashSet<String>();
+        arena.observe(AFTER_STRAY_HIT_TICKS, () -> {
+            HumanoidBrain.opponent(vindicator).ifPresent(opponent -> opponents.add(opponent.getType().toShortString()));
+            return vindicator.getTarget() == pillager;
+        }, () -> {
+            context.assertTrue(remembered == pillager, "误伤没有留在原版受击记忆里：" + remembered);
+            context.assertTrue(opponents.isEmpty(), "误伤后卫道士把同伴当了对手：" + opponents + " / "
+                    + decisions(vindicator));
+            context.assertTrue(vindicator.getTarget() != pillager, "误伤后卫道士以掠夺者为目标");
             arena.finish();
         });
     }

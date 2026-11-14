@@ -24,6 +24,7 @@ final class HumanoidMind {
     private Optional<Vec3> retreatPoint = Optional.empty();
     private boolean cornered;
     private boolean awaitingStaggerEnd;
+    private boolean contactPending;
     private boolean pathed;
     private int pathedTick;
 
@@ -61,9 +62,19 @@ final class HumanoidMind {
         return awaitingStaggerEnd;
     }
 
-    void clearStaggerWait() {
-        // 每次决策都重新判断；这次还被僵直挡住时由施放入口再登记。
+    void contact() {
+        // 原版目标选择先认出了对手、大脑还没有对手；下一个 tick 就决策，不等错相节拍。
+        contactPending = true;
+    }
+
+    boolean contactPending() {
+        return contactPending;
+    }
+
+    void clearDecisionWaits() {
+        // 每次决策都重新判断；这次还被僵直挡住时由施放入口再登记，接敌补决策只补这一次。
         awaitingStaggerEnd = false;
+        contactPending = false;
     }
 
     /** 一条决策记录：世界 tick、当时的对手与决策。 */

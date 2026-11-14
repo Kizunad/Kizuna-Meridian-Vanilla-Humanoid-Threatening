@@ -137,10 +137,14 @@ final class HumanoidThreats {
 
     private static List<LivingEntity> candidates(Mob mob, Optional<LivingEntity> previous) {
         // 我的目标、上次的对手、攻击我的、以我为目标的、受击记忆，以及村民的敌对与受击记忆。
+        // 原版受击记忆不分敌我；记着的同伴是误伤，和登记攻击者时一样不算，同伴真以我为目标时由反查表取到。
         var candidates = new ArrayList<LivingEntity>();
         previous.ifPresent(candidates::add);
         addIfPresent(candidates, mob.getTarget());
-        addIfPresent(candidates, mob.getLastHurtByMob());
+        LivingEntity attacker = mob.getLastHurtByMob();
+        if (attacker != null && !allied(mob, attacker)) {
+            candidates.add(attacker);
+        }
         var hunters = targetedBy.get(mob);
         if (hunters != null) {
             hunters.stream().filter(hunter -> hunter.getTarget() == mob).forEach(candidates::add);
