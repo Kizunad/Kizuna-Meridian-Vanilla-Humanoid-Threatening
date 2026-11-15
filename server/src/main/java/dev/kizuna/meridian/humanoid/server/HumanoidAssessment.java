@@ -28,6 +28,12 @@ public final class HumanoidAssessment {
         return Stance.RETREAT;
     }
 
+    public static Stance standing(Fighter self, AssessmentRules rules) {
+        // 有「不退」职守的一方不比战力、不看伤势：只有两臂虚脱或没有进攻手段时才撤，其余一律对敌。
+        boolean spent = self.condition().armStrengthRatio() < rules.retreat().armStrengthRatio();
+        return spent || !offensive(self) ? Stance.RETREAT : Stance.ENGAGE;
+    }
+
     public static double power(Fighter fighter, AssessmentRules rules) {
         // 境界档、可施放打击式、持武器、身体与臂力中较弱者、真元占容和正在施放线性相加。
         var weights = rules.weights();

@@ -11,6 +11,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
+import dev.kizuna.meridian.protocol.pb.ActivityMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.protocol.pb.HealthMessages;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
@@ -256,6 +257,79 @@ public final class HumanoidBodyState {
         }
         return healthReceipt(request.getRequestId()).map(HealthMessages.HealthResult::getReleasedQi)
                 .orElse(BodyMessages.QiInventory.getDefaultInstance());
+    }
+
+    boolean openOne(String meridianTag, double addedVolume) {
+        // 带这个标签的经脉里已经有开了的就不动；一条都没开，就按构型里的先后开第一条，返回 true。
+        // 走 Framework 可信活动里的经脉完成项，和正常开脉完成是同一条路：扩内腔体积、标记已开。
+        BodyMessages.BodySnapshot body = snapshot();
+        String first = null;
+        for (int index = 0; index < body.getMeridianStatesCount(); index++) {
+            BodyMessages.MeridianDefinition meridian = body.getStructure().getMeridians(index);
+            if (!meridian.getTagsList().contains(meridianTag)) {
+                continue;
+            }
+            var stage = body.getMeridianStates(index).getOpening().getStage();
+            if (stage == BodyMessages.MeridianOpeningStage.OPENED) {
+                return false;
+            }
+            first = first == null ? meridian.getId() : first;
+        }
+        if (first == null) {
+            return false;
+        }
+        var completion = ActivityMessages.CompleteMeridian.newBuilder().setMeridianId(first).setAddedVolume(addedVolume);
+        MeridianMessages.RequestEnvelope request = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(MeridianProtocol.VERSION)
+                .setRequestId(UUID.randomUUID().toString())
+                .setBodyCommand(MeridianMessages.BodyCommand.newBuilder()
+                        .setBodyId(bodyId)
+                        .setExpectedRevision(currentBody().revision())
+                        .setExecuteActivity(ActivityMessages.BodyActivity.newBuilder().addCompletions(completion)))
+                .build();
+        byte[] responseBytes = commands.handleActivity(bodyId, MeridianProtocol.encodeRequest(request));
+        MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
+        if (response.hasFailure()) {
+            throw new HumanoidHealthFailure(response.getFailure().getCode());
+        }
+        return true;
+    }
+
+    void raiseArmGrowth(double growth) {
+        // 两臂肌肉的训练成长抬到给定值：各自不超过训练定义的上限，只升不降；没有一块要抬时不发命令。
+        // 走 Framework 的训练成长命令，身体的版本、回执和存盘照常。
+        BodyMessages.BodySnapshot body = snapshot();
+        var raise = MeridianMessages.RaiseTrainingGrowth.newBuilder();
+        for (BodyMessages.TissueDefinition tissue : body.getStructure().getTissuesList()) {
+            if (!tissue.getTagsList().contains(HumanoidFighters.ARM_MUSCLE) || !tissue.hasTraining()) {
+                continue;
+            }
+            double target = Math.min(growth, tissue.getTraining().getMaximumGrowth());
+            double current = body.getTissueStatesList().stream()
+                    .filter(state -> state.getId().equals(tissue.getId()))
+                    .mapToDouble(BodyMessages.TissueState::getTrainingGrowth)
+                    .findFirst().orElse(0);
+            if (target > current) {
+                raise.addTissues(MeridianMessages.TissueGrowth.newBuilder().setTissueId(tissue.getId())
+                        .setGrowth(target));
+            }
+        }
+        if (raise.getTissuesCount() == 0) {
+            return;
+        }
+        MeridianMessages.RequestEnvelope request = MeridianMessages.RequestEnvelope.newBuilder()
+                .setProtocolVersion(MeridianProtocol.VERSION)
+                .setRequestId(UUID.randomUUID().toString())
+                .setBodyCommand(MeridianMessages.BodyCommand.newBuilder()
+                        .setBodyId(bodyId)
+                        .setExpectedRevision(currentBody().revision())
+                        .setRaiseTrainingGrowth(raise))
+                .build();
+        byte[] responseBytes = commands.handleTrainingGrowth(bodyId, MeridianProtocol.encodeRequest(request));
+        MeridianMessages.ResponseEnvelope response = MeridianProtocol.decodeResponse(responseBytes);
+        if (response.hasFailure()) {
+            throw new HumanoidHealthFailure(response.getFailure().getCode());
+        }
     }
 
     void exert(MeridianMessages.RequestEnvelope request, BodyMessages.TimeCursor now) {

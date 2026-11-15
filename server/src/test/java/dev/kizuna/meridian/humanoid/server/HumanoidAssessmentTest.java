@@ -150,6 +150,21 @@ public class HumanoidAssessmentTest {
         return new Separation(distance, JUST_PRESSED);
     }
 
+    @Test
+    public void standingGroundOnlyYieldsToSpentArmsOrNoMeans() {
+        // 有「不退」职守：打不过、重伤、部位打烂都照样对敌；两臂虚脱或没有进攻手段才撤。
+        Set<Means> strike = Set.of(Means.CASTABLE_STRIKE);
+        var strong = fighter(Realm.TRUE_QI, FULL, Set.of(Means.CASTABLE_STRIKE, Means.MELEE_WEAPON));
+        var weak = fighter(Realm.WANDERING_QI, FULL, strike);
+        assertEquals(Stance.RETREAT, HumanoidAssessment.stance(weak, strong, Stance.ENGAGE, pressedAt(NEAR), RULES));
+        assertEquals(Stance.ENGAGE, HumanoidAssessment.standing(weak, RULES));
+        var injured = fighter(Realm.WANDERING_QI, new Condition(HEAVY_HP, WRECKED_PART, 1, 1, 1), strike);
+        assertEquals(Stance.ENGAGE, HumanoidAssessment.standing(injured, RULES));
+        var exhausted = fighter(Realm.WANDERING_QI, new Condition(1, 1, 1, EXHAUSTED_ARM, 1), strike);
+        assertEquals(Stance.RETREAT, HumanoidAssessment.standing(exhausted, RULES));
+        assertEquals(Stance.RETREAT, HumanoidAssessment.standing(fighter(Realm.TRUE_QI, FULL, Set.of()), RULES));
+    }
+
     private static Fighter fighter(Realm realm, Condition condition, Set<Means> means) {
         // 有身体的一方按境界取档。
         return new Fighter(Fighter.tier(realm), condition, means);

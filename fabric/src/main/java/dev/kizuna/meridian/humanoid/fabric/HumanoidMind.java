@@ -30,6 +30,7 @@ final class HumanoidMind {
     private int pathedTick;
     private HumanoidPressure.Sighting sighting;
     private long unpressedSinceMillis;
+    private String lastFailure = "";
 
     Optional<Vec3> retreatPoint() {
         return retreatPoint;
@@ -204,6 +205,15 @@ final class HumanoidMind {
             blockedUntil = nowMillis + blockMillis;
         }
         failures.put(technique, new Failure(count, blockedUntil));
+    }
+
+    void noteFailure(String detail) {
+        // 最近一次施放失败的原因，排查用。
+        lastFailure = detail;
+    }
+
+    String lastFailure() {
+        return lastFailure;
     }
 
     void succeeded(String technique) {

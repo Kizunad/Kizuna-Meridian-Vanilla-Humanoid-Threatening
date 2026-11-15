@@ -67,6 +67,10 @@ public final class HumanoidBrainGameTest {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_test");
     private static final String UNARMED_BATCH = "meridian_humanoid_test:brain_unarmed";
     private static final String ARMED_VILLAGER_BATCH = "meridian_humanoid_test:brain_armed_villager";
+    private static final String STAND_GROUND_BATCH = "meridian_humanoid_test:brain_stand_ground";
+    /** 胸口打到两成：低于「最弱部位」的撤退门槛 0.25，又没到死；两臂的力量不受影响。 */
+    private static final String WOUNDED_PART = "chest";
+    private static final double WOUNDED_HP_RATIO = 0.2;
     private static final String LIGHT_STEP_BATCH = "meridian_humanoid_test:brain_light_step";
     private static final String BREATH_BATCH = "meridian_humanoid_test:brain_breath";
     private static final String CHARGE_BATCH = "meridian_humanoid_test:brain_charge";
@@ -212,6 +216,34 @@ public final class HumanoidBrainGameTest {
                             "村民没有对敌出手：" + watch);
                     arena.finish();
                 });
+    }
+
+    @GameTest(maxTicks = LONG_TIMEOUT, environment = STAND_GROUND_BATCH, structure = RETREAT_STRUCTURE)
+    public void standGroundDutyKeepsAWoundedVillagerFighting(GameTestHelper context) {
+        // 会破门上卷、持斧的游炁村民胸口只剩两成血，被卫道士盯上：重伤，照评估撤退。挂上「不退」以后转为对敌；
+        // 撤掉以后又照评估撤退。伤只在胸口，两臂完好也没用过，不是虚脱；卫道士不动、不还手，只当敌意来源。
+        var arena = new Arena(context);
+        Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "stand-ground",
+                RETREAT_SUBJECT);
+        villager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+        HumanoidTechniqueHost.prepare(villager);
+        TechniqueFabric.service().learn(villager.getUUID(), DOOR_BREAKER_PREFIX + "upper");
+        wound(villager, HumanoidSpecies.VILLAGER, WOUNDED_PART, WOUNDED_HP_RATIO);
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "stand-ground-hunter",
+                RETREAT_NEAR);
+        hunter.setNoAi(true /* aiDisabled */);
+        hunter.setTarget(villager);
+        BooleanSupplier retreating = () -> stanceIs(villager, HumanoidAssessment.Stance.RETREAT)
+                && lastActionIs(villager, Decision.Action.RETREAT);
+        BooleanSupplier engaging = () -> stanceIs(villager, HumanoidAssessment.Stance.ENGAGE);
+        arena.await(RETREAT_TICKS, retreating, () -> "重伤的村民没有先撤：" + decisions(villager), () -> {
+            HumanoidDuties.standGround(villager, true);
+            arena.await(RETREAT_TICKS, engaging, () -> "挂上不退以后没有转为对敌：" + decisions(villager), () -> {
+                HumanoidDuties.standGround(villager, false);
+                arena.await(RETREAT_TICKS, () -> stanceIs(villager, HumanoidAssessment.Stance.RETREAT),
+                        () -> "撤掉不退以后没有照评估撤退：" + decisions(villager), arena::finish);
+            });
+        });
     }
 
     @GameTest(maxTicks = SHORT_TIMEOUT, environment = LIGHT_STEP_BATCH, structure = RETREAT_STRUCTURE)
@@ -650,6 +682,11 @@ public final class HumanoidBrainGameTest {
         }
     }
 
+    private static boolean stanceIs(Mob mob, HumanoidAssessment.Stance stance) {
+        // 上一次决策定下的姿态。
+        return HumanoidBrain.stance(mob.getUUID()).filter(stance::equals).isPresent();
+    }
+
     private static boolean lastActionIs(Mob mob, Decision.Action action) {
         // 最近一条决策是否为该动作；没有决策时为否。
         var log = HumanoidBrain.decisions(mob.getUUID());
@@ -731,6 +768,21 @@ public final class HumanoidBrainGameTest {
             // 用例全程都在疲劳里。
             return new Fatigue(muscles, peak, FATIGUE_MILLIS);
         }
+    }
+
+    private static void wound(Mob mob, HumanoidSpecies species, String part, double hpRatio) {
+        // 先准备会话学卷，再把这一个部位的血量降到给定比例的快照恢复成唯一 Store 并重新准备会话。
+        HumanoidTechniqueHost.prepare(mob);
+        var body = ((HumanoidEntityAccess) mob).meridian$humanoidBody().snapshot().toBuilder();
+        for (int index = 0; index < body.getPartStatesCount(); index++) {
+            var definition = body.getStructure().getParts(index);
+            if (definition.getId().equals(part)) {
+                body.setPartStates(index, body.getPartStates(index).toBuilder().setHp(definition.getMaxHp() * hpRatio));
+            }
+        }
+        HumanoidTechniqueHost.removed(mob);
+        bind(mob, species, body.build());
+        HumanoidTechniqueHost.prepare(mob);
     }
 
     private static void fatigue(Mob mob, HumanoidSpecies species, Fatigue fatigue) {

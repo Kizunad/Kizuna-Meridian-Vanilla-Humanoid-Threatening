@@ -155,6 +155,11 @@ public final class HumanoidFabric implements ModInitializer {
         return activeServer;
     }
 
+    static HumanoidConfig config() {
+        // 生成参数（开脉扩容量等）出生以后补开经脉时也要用同一份。
+        return config;
+    }
+
     static HumanoidBodyGenerator generator() {
         // 生成器只读固定目录，实体查询不会重建随机配置。
         return generator;

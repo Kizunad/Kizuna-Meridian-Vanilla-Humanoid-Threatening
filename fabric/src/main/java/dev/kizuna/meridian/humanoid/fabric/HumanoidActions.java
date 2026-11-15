@@ -288,6 +288,8 @@ final class HumanoidActions {
             HumanoidBrainConfig.ResponseRules rules = HumanoidBrain.config().response();
             long now = turn.body().settledAt().elapsedMillis();
             turn.mind().failed(technique, now, rules.failureLimit(), rules.failureBlockMillis());
+            turn.mind().noteFailure(technique + " " + outcome.getFailure() + " " + outcome.getFrameworkFailure()
+                    + " " + outcome.getReason());
             logFailure(mob, technique, outcome);
             return false;
         }

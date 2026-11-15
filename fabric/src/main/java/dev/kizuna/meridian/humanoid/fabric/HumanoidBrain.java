@@ -162,7 +162,9 @@ public final class HumanoidBrain {
         HumanoidThreatScores.seen(opponent.entity(), other);
         double distance = HumanoidMotion.distance(mob, opponent.entity());
         var separation = new HumanoidAssessment.Separation(distance, unpressedSeconds(mob, mind, opponent, now));
-        var assessed = HumanoidAssessment.stance(self, other, mind.stance(), separation, config.assessment());
+        var assessed = HumanoidDuties.standsGround(mob)
+                ? HumanoidAssessment.standing(self, config.assessment())
+                : HumanoidAssessment.stance(self, other, mind.stance(), separation, config.assessment());
         HumanoidAssessment.Stance stance;
         if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
             stance = HumanoidAssessment.Stance.RETREAT;
@@ -642,6 +644,11 @@ public final class HumanoidBrain {
     static Optional<HumanoidAssessment.Stance> stance(UUID entity) {
         // 上次决策的姿态，GameTest 与排查用。
         return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::stance);
+    }
+
+    static String lastFailure(UUID entity) {
+        // 最近一次施放失败的式和原因，没失败过是空串；GameTest 与排查用。
+        return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::lastFailure).orElse("");
     }
 
     static int failureStreak(UUID entity) {

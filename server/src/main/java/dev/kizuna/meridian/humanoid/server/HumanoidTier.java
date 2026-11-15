@@ -4,6 +4,8 @@ import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningStage;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,6 +16,8 @@ public enum HumanoidTier {
     WANDERING_QI(HumanoidVariant.WANDERING_QI),
     TRUE_QI(HumanoidVariant.TRUE_QI);
 
+    /** 实体带「前缀 + 档位 ID」的记分板标签（如 meridian_humanoid.tier.true_qi），自然出生时就按这一档。 */
+    public static final String TAG_PREFIX = "meridian_humanoid.tier.";
     private final HumanoidVariant variant;
 
     HumanoidTier(HumanoidVariant variant) {
@@ -34,6 +38,16 @@ public enum HumanoidTier {
     public static Optional<HumanoidTier> fromId(String id) {
         // 只接受小写名，未知名保持为空，由调用方报告配置错误。
         return Arrays.stream(values()).filter(tier -> tier.id().equals(id)).findFirst();
+    }
+
+    public static Optional<HumanoidTier> tagged(Collection<String> tags) {
+        // 只认恰好指向一个档位的标签：没有、档位名写错、或者同时指了两个不同的档，都当没指定，照自然抽档。
+        List<HumanoidTier> named = tags.stream()
+                .filter(tag -> tag.startsWith(TAG_PREFIX))
+                .flatMap(tag -> fromId(tag.substring(TAG_PREFIX.length())).stream())
+                .distinct()
+                .toList();
+        return named.size() == 1 ? Optional.of(named.getFirst()) : Optional.empty();
     }
 
     public static HumanoidTier of(HumanoidVariant variant) {

@@ -24,6 +24,8 @@ Threatening 内置七种原版生人。其他模组可以在初始化时登记�
 | `HumanoidSpeciesBirths`（fabric） | `static void birth(LivingEntity, HumanoidTier)` | 实体创建、就位后，加入世界前调用，按指定档位出生身体 |
 | `HumanoidSpawns`（fabric） | `static void registerPlacement(HumanoidSpecies, Placement)` | 登记物种的 `/meridian humanoid spawn` 放置钩子；钩子创建实体、调用 `birth` 后加入世界并返回实体，内置物种与重复登记被拒绝 |
 | `HumanoidTier`（server） | `MORTAL` / `WANDERING_QI` / `TRUE_QI`，`static HumanoidTier of(BodySnapshot)` | 出生档位，可从身体快照读回 |
+| `HumanoidTiers`（fabric） | `static Optional<HumanoidTier> of(LivingEntity)` | 查一个在世界里的生人是哪一档；身体还没出生的按需出生。不是已认领的生人、世界没接好、区域服务这一刻不可用时为空，下一 tick 再问 |
+| `HumanoidDuties`（fabric） | `standGround(LivingEntity, boolean)`、`standsGround(LivingEntity)`、`trainArms(LivingEntity, double, double)`、`ensureOpened(LivingEntity, String)` | 给生人挂、撤「职守」：不退；任职时把两臂肌肉的训练成长抬到给定值；某类经脉一条都没开时保底开一条。见计划文档「职守」 |
 
 **调用时机**：登记必须在世界加载前完成，例如在 `ModInitializer.onInitialize` 里。
 
