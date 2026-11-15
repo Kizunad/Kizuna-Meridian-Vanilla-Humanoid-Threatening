@@ -203,7 +203,7 @@ final class HumanoidTechniqueEffects {
 
     private Vec3 towardTarget(String targetId, Vec3 forward) {
         // 和玩家宿主同一条规则：起手时就没有目标的，按面朝的方向推进，不让整式放到一半失败。
-        // 起手时有目标、中途目标没了或不在同一个世界，照旧保留原效果供服务重试或取消；水平上重合照旧拒绝零向量。
+        // 起手时有目标、中途目标没了或不在同一个世界，照旧保留原效果供服务重试或取消。
         if (targetId.isEmpty()) {
             return forward;
         }
@@ -220,7 +220,8 @@ final class HumanoidTechniqueEffects {
         }
         Vec3 direction = target.position().subtract(entity.position()).multiply(1, 0, 1);
         if (direction.lengthSqr() == 0) {
-            throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
+            // 和目标水平重合（踩在它头顶、它在正上方或正下方）：同样没有方向可朝，按面朝的方向推进。
+            return forward;
         }
         return direction.normalize();
     }
