@@ -183,7 +183,7 @@ final class HumanoidTechniqueEffects {
             case FORWARD -> forward;
             case BACKWARD -> forward.reverse();
             case INPUT -> inputDirection(effect, forward);
-            case TOWARD_TARGET -> towardTarget(effect.getTargetId());
+            case TOWARD_TARGET -> towardTarget(effect.getTargetId(), forward);
             default -> throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
         };
     }
@@ -201,9 +201,20 @@ final class HumanoidTechniqueEffects {
         return new Vec3(input.getX() / scale, 0, input.getZ() / scale).normalize();
     }
 
-    private Vec3 towardTarget(String targetId) {
-        // 目标必须仍在同世界，失效时保留原效果供服务重试或取消。
-        LivingEntity target = HumanoidFabric.findEntity(UUID.fromString(targetId));
+    private Vec3 towardTarget(String targetId, Vec3 forward) {
+        // 和玩家宿主同一条规则：起手时就没有目标的，按面朝的方向推进，不让整式放到一半失败。
+        // 起手时有目标、中途目标没了或不在同一个世界，照旧保留原效果供服务重试或取消；水平上重合照旧拒绝零向量。
+        if (targetId.isEmpty()) {
+            return forward;
+        }
+        UUID targetUuid;
+        try {
+            targetUuid = UUID.fromString(targetId);
+        } catch (IllegalArgumentException invalid) {
+            // 带了目标却不是合法编号，是上游的错，照旧拒绝。
+            throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
+        }
+        LivingEntity target = HumanoidFabric.findEntity(targetUuid);
         if (target == null || target.level() != entity.level()) {
             throw new TechniqueErrors.HostRejected(FailureCode.MODULE_UNAVAILABLE);
         }
