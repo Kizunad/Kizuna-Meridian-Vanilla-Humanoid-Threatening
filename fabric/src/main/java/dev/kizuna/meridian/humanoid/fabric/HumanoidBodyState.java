@@ -27,6 +27,7 @@ import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -121,22 +122,48 @@ public final class HumanoidBodyState {
         HumanoidTier forced = subject.forcedTier();
         HumanoidTier tier = forced == null ? rolled : forced;
         var request = new HumanoidBodyGenerator.GenerationRequest(species, tier.variant(), entityId, inventory, now);
-        BodyMessages.BodySnapshot body = generate(generator, tier, request, random);
+        BodyMessages.BodySnapshot body = generate(generator, subject.grade(), tier, request, random);
         return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis(), species);
     }
 
-    private static BodyMessages.BodySnapshot generate(HumanoidBodyGenerator generator, HumanoidTier tier,
+    private static BodyMessages.BodySnapshot generate(HumanoidBodyGenerator generator, BirthGrade grade,
+                                                      HumanoidTier tier,
                                                       HumanoidBodyGenerator.GenerationRequest request,
                                                       RandomGenerator random) {
-        // 凡人档不开脉，其余两档按变体抽取开脉。
+        // 凡人档不开脉，精锐两层全开、装填取上限，其余按变体抽取开脉。
         if (tier == HumanoidTier.MORTAL) {
             return generator.generateUnopened(request, random);
+        }
+        if (grade == BirthGrade.ELITE) {
+            return generator.generateElite(request, random);
         }
         return generator.generate(request, random);
     }
 
-    /** forcedTier 为空时沿用自然抽档。 */
-    record BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier) { }
+    /** 出生等级：寻常，或招敌派来的精锐头目。 */
+    enum BirthGrade { ORDINARY, ELITE }
+
+    /**
+     * 出生对象。
+     *
+     * @param forcedTier 为空时沿用自然抽档
+     * @param grade 精锐只能配真炁档
+     */
+    record BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier, BirthGrade grade) {
+        // 构造时核对，精锐必须指定真炁档。
+        BirthSubject {
+            // 等级不能为空；精锐的档位不能靠自然抽。
+            Objects.requireNonNull(grade, "grade");
+            if (grade == BirthGrade.ELITE && forcedTier != HumanoidTier.TRUE_QI) {
+                throw new IllegalArgumentException("精锐出生必须指定真炁档");
+            }
+        }
+
+        BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier) {
+            // 寻常出生，绝大多数调用方用这个。
+            this(species, entityId, forcedTier, BirthGrade.ORDINARY);
+        }
+    }
 
     static HumanoidBodyState restore(UUID entityId, SavedBody saved, BodyMessages.TimeCursor now,
                                      HumanoidSpecies species) {

@@ -35,6 +35,23 @@ public record VolumeTable(Map<String, Map<HumanoidTier, List<Grant>>> species) {
                 .toList();
     }
 
+    public List<String> listed(String entityId, HumanoidTier tier) {
+        // 这一档写着的每一卷，不看概率，按表里的顺序（前置卷在前）；招敌的精锐头目全会。
+        return species.getOrDefault(entityId, Map.of()).getOrDefault(tier, List.of()).stream()
+                .map(Grant::volume)
+                .toList();
+    }
+
+    public boolean rare(String volume, double rareChance) {
+        // 表里至少有一处授这卷，并且每一处的概率都不超过线，才算稀有卷；只出现在卷轴掉落里、表里没有的不算。
+        List<Grant> grants = species.values().stream()
+                .flatMap(tiers -> tiers.values().stream())
+                .flatMap(List::stream)
+                .filter(grant -> grant.volume().equals(volume))
+                .toList();
+        return !grants.isEmpty() && grants.stream().allMatch(grant -> grant.chance() <= rareChance);
+    }
+
     public VolumeTable plus(VolumeTable added) {
         // 把另一张表的卷接在同一物种同一档的后面；这一档已经有的卷不重复加，先到的那条（连同概率）算数。
         var merged = new HashMap<String, Map<HumanoidTier, List<Grant>>>();

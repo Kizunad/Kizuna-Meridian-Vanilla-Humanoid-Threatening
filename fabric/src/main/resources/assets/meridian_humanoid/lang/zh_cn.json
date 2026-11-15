@@ -48,5 +48,21 @@
   "book.meridian_humanoid.field_notes.page.15": "〔唤魔者〕\n修炼过的唤魔者不再把蓝羊变红。真炁的在你 8 格外会念咒，就是寻常唤魔者变羊时那一声，双手冒出光点，金白、土黄、火红、水黑，各是一行，前后 2 秒，这 2 秒里打得断。念成之后约 18 秒，他和他召来的尖牙、恼鬼打人，都另带一记那一行的伤。",
   "book.meridian_humanoid.field_notes.page.16": "你在 12 格外，他还会起手两三秒，放厚土、归水，让自己腿上更经用、缓得更快。看见他两手冒光，就趁那 2 秒一记重手打断。",
   "book.meridian_humanoid.field_notes.page.17": "〔村民〕\n村民也练过底子功夫，却从不出手打人。遇上敌人只顾退，轻步跳开，退远了喘气调息。有敌人时，凑够 3 个村民，就会唤出铁傀儡来。打了一个村民，16 格内的村民、商人、铁傀儡都要记你半分钟的仇。",
-  "book.meridian_humanoid.field_notes.page.18": "〔余话〕\n生人成伙互保：掠夺者、卫道士、唤魔者、女巫、幻术师是一伙；村民、商人、铁傀儡是一伙。幻术师也只会那三样底子功夫。你的狼和召来的东西咬他，他只记你的账；那东西贴身咬他、他又走不到你跟前，才顺手打它。见谁站定蓄势，莫迟疑，抢先一记钝器砸散了再说。这些都是我亲眼所见，后来人照着走，少流些血。"
+  "book.meridian_humanoid.field_notes.page.18": "〔余话〕\n生人成伙互保：掠夺者、卫道士、唤魔者、女巫、幻术师是一伙；村民、商人、铁傀儡是一伙。幻术师也只会那三样底子功夫。你的狼和召来的东西咬他，他只记你的账；那东西贴身咬他、他又走不到你跟前，才顺手打它。见谁站定蓄势，莫迟疑，抢先一记钝器砸散了再说。这些都是我亲眼所见，后来人照着走，少流些血。",
+  "item.meridian_humanoid.crisis_note": "字条",
+  "crisis.meridian_humanoid.covetous.leader_name": "索卷客",
+  "crisis.meridian_humanoid.covetous.omen.rumor.1": "村头来了几个拎斧子的外乡人，四处打听你的住处。",
+  "crisis.meridian_humanoid.covetous.omen.rumor.2": "有生面孔在巷口打探，悄悄问你身上带没带功法卷轴。",
+  "crisis.meridian_humanoid.covetous.omen.note.1": "盯上了你，还有你身上的卷轴药水。",
+  "crisis.meridian_humanoid.covetous.omen.note.2": "好生留着，到时候自有人来取。",
+  "crisis.meridian_humanoid.covetous.omen.note.3": "就这几日，天一擦黑就来。",
+  "crisis.meridian_humanoid.covetous.leader_return": "又撞上了。上回让你捡了条命，这遭再瞧瞧你身上带了什么好货。",
+  "advancements.meridian_humanoid_host.cultivators.omen.title": "风声",
+  "advancements.meridian_humanoid_host.cultivators.omen.description": "碰上村民压低声音说有外乡人在打听你，或者床边、身后地上多了张放话要来取东西的字条。",
+  "advancements.meridian_humanoid_host.cultivators.repelled.title": "不速之客",
+  "advancements.meridian_humanoid_host.cultivators.repelled.description": "找上门来的那伙人，领头的死了才算打退。跟着的人自会散去，领头的身上还会掉下一卷少见的功法卷轴。",
+  "advancements.meridian_humanoid_host.cultivators.grudge_slain.title": "冤家路窄",
+  "advancements.meridian_humanoid_host.cultivators.grudge_slain.description": "记仇的领头人再领人找来时死了，或是撤走时被追上打死；他要是拿过你的东西，会掉回来。",
+  "advancements.meridian_humanoid_host.cultivators.feud_ended.title": "了断",
+  "advancements.meridian_humanoid_host.cultivators.feud_ended.description": "生来带的仇家总有个尽头。打死最后找上门的领头人，这份宿仇才算了断，往后便再没人为此找来。"
 }

@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -48,8 +49,8 @@ public final class HumanoidSpawns {
 
     static Mob spawn(ServerLevel world, Selection selection, Vec3 position, EntitySpawnReason reason) {
         // 刷怪蛋与测试按选定的物种和变体出生。
-        return spawnMob(world, selection.species(), Optional.of(HumanoidTier.of(selection.variant())), position,
-                reason);
+        HumanoidTier tier = HumanoidTier.of(selection.variant());
+        return spawnMob(world, selection.species(), mob -> HumanoidSpeciesBirths.birth(mob, tier), position, reason);
     }
 
     static LivingEntity command(ServerLevel world, HumanoidSpecies species, Optional<HumanoidTier> tier,
@@ -61,12 +62,18 @@ public final class HumanoidSpawns {
                     () -> new IllegalStateException("登记物种出生缺少档位：" + species.entityId()));
             return placement.place(world, position, sourceYaw, chosen);
         }
-        return spawnMob(world, species, tier, position, EntitySpawnReason.COMMAND);
+        return spawnMob(world, species, mob -> tier.ifPresent(chosen -> HumanoidSpeciesBirths.birth(mob, chosen)),
+                position, EntitySpawnReason.COMMAND);
     }
 
-    private static Mob spawnMob(ServerLevel world, HumanoidSpecies species, Optional<HumanoidTier> tier,
+    static Mob event(ServerLevel world, HumanoidSpecies species, Consumer<Mob> birth, Vec3 position) {
+        // 招敌来人：原版事件出生（不当巡逻队、不随机扛旗），身体由调用方按档位或精锐出生。
+        return spawnMob(world, species, birth, position, EntitySpawnReason.EVENT);
+    }
+
+    private static Mob spawnMob(ServerLevel world, HumanoidSpecies species, Consumer<Mob> birth,
                                 Vec3 position, EntitySpawnReason reason) {
-        // 原版初始化负责装备；指定档位时在入世界前创建身体，否则由技法宿主首次准备时按自然概率抽档。
+        // 原版初始化负责装备；出生回调在入世界前创建身体，什么都不做时由技法宿主首次准备时按自然概率抽档。
         var entity = entityType(species).create(world, reason);
         if (!(entity instanceof Mob mob)) {
             throw new IllegalStateException("无法创建类人实体：" + species.entityId());
@@ -74,7 +81,7 @@ public final class HumanoidSpawns {
         mob.snapTo(position.x, position.y, position.z, 0, 0);
         mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, null);
         mob.setPersistenceRequired();
-        tier.ifPresent(chosen -> HumanoidSpeciesBirths.birth(mob, chosen));
+        birth.accept(mob);
         if (!world.addFreshEntity(mob)) {
             throw new IllegalStateException("类人实体无法加入世界");
         }

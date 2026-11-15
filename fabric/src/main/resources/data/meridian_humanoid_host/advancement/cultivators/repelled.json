@@ -1,0 +1,27 @@
+{
+  "parent": "meridian_humanoid_host:cultivators/omen",
+  "display": {
+    "icon": {
+      "id": "minecraft:shield"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.repelled.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.repelled.description"
+    }
+  },
+  "criteria": {
+    "repelled": {
+      "trigger": "meridian_humanoid_host:crisis",
+      "conditions": {
+        "event": "repelled"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "repelled"
+    ]
+  ]
+}

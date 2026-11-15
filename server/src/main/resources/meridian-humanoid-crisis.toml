@@ -1,0 +1,74 @@
+# 修为招敌：玩家的风声过线就排一场来犯，出身的仇家按出身参数里的日程来。
+# 这里的「天」都是玩家自己的在线时间：在线满 24000 tick 算一天，不在线不走。
+# 第一次启动导出本文件，之后只读；缺新键按默认值运行并在日志里提示，有不认识的键拒绝启动。
+
+# 总开关。关掉以后风声照记，但不排新的一场，已排的照常走完。
+enabled = true
+# 通用招敌（风声招来的）用哪张队伍表；出身的仇家用各自参数里写的那张。
+generic_party = "meridian_humanoid:covetous"
+
+[frequency]
+# 两场之间至少隔几天；通用招敌和出身的仇家共用，不会叠着来。
+min_interval_days = 10
+# 玩家进世界的头几天不排。
+protection_days = 5
+# 游炁玩家开到几条脉才会被风声招来；八条游炁正经开齐才能突破，所以默认 8。出身的仇家不看这一条。
+wandering_ready_meridians = 8
+
+[omen]
+# 排上以后过几天来人，这期间给征兆。
+days = 3
+# 征兆期给几次征兆，最少和最多。
+count = [2, 3]
+# 玩家走到村民身边多近，村民才说传言。
+rumor_radius = 8.0
+# 床在玩家多远以内，字条放床边；更远就放在玩家身后。
+note_bed_radius = 48.0
+
+[heat]
+# 风声到这个数就可能排一场。
+threshold = 50.0
+# 一场了结后风声留几成：赢了只留一小半，逃了留一半。输了和逃了一样。
+kept_after_win = 0.2
+kept_after_escape = 0.5
+
+[heat.rise]
+# 突破到真炁，一次涨这么多。
+true_qi_breakthrough = 60.0
+# 开脉开到这些条数时各涨一截。
+meridian_node = 15.0
+meridian_nodes = [4, 8, 12, 16]
+# 被别的生人看见杀了修炼者生人；看见的距离（格）。
+witnessed_kill = 5.0
+witness_radius = 24.0
+# 学会一卷稀有卷。学卷表里每一处授这卷的概率都不超过 rare_chance，就算稀有卷。
+rare_volume = 10.0
+rare_chance = 0.25
+
+[heat.decay]
+# 风声多少天没涨以后开始落，之后每天落多少。
+after_days = 2
+per_day = 10.0
+
+[strength]
+# 一场最多来几个人，头目在内。
+max_party = 4
+# 真炁玩家开到几条脉算「开脉多」，来的人更强。
+true_many_meridians = 12
+
+[arrival]
+# 来人在离玩家多远的地方现身（格），选看不见玩家的地方。
+min_distance = 24.0
+max_distance = 40.0
+# 到点了但不是黄昏或夜里、不在主世界、找不到落脚点，就隔这么多秒再试。
+retry_seconds = 10
+
+[outcome]
+# 输了的代价：light 只有平常死一次的代价；medium 另被头目夺走一件东西（先挑没读的卷轴，再挑药）；
+# heavy（medium 之外再伤一条经脉）暂时不能用，写了启动失败：经脉伤了还没有恢复的规矩，伤了就再也好不了。
+# 哪一档都不跌境、不删进度和已学功法。
+loss_penalty = "medium"
+# 逃：离所有来人这么远，并且这么多秒没被他们看见；或者撑过这么多天，来的人就撤。
+escape_distance = 64.0
+escape_unseen_seconds = 30
+escape_time_limit_days = 1

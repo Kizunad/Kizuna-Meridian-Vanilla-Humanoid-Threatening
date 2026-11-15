@@ -15,8 +15,18 @@ public final class HumanoidSpeciesBirths {
 
     public static void birth(LivingEntity entity, HumanoidTier tier) {
         // 只接受已认领物种的服务端实体；已有身体或存档时拒绝，出生档位不能覆盖已有事实。
-        Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(tier, "tier");
+        born(entity, tier, HumanoidBodyState.BirthGrade.ORDINARY);
+    }
+
+    static void birthElite(LivingEntity entity) {
+        // 招敌派来的精锐头目：真炁档，两层经脉全开、装填取上限；其余和指定档位出生一样。
+        born(entity, HumanoidTier.TRUE_QI, HumanoidBodyState.BirthGrade.ELITE);
+    }
+
+    private static void born(LivingEntity entity, HumanoidTier tier, HumanoidBodyState.BirthGrade grade) {
+        // 按物种和等级出生身体，挂到实体上，再按档位配兵器。
+        Objects.requireNonNull(entity, "entity");
         if (!(entity.level() instanceof ServerLevel world)) {
             throw new IllegalStateException("只能在服务端出生类人身体");
         }
@@ -27,7 +37,7 @@ public final class HumanoidSpeciesBirths {
         if (access.meridian$humanoidBody() != null || access.meridian$humanoidSavedBody() != null) {
             throw new IllegalStateException("指定出生档位不能覆盖已有身体");
         }
-        var subject = new HumanoidBodyState.BirthSubject(species, entity.getUUID(), tier);
+        var subject = new HumanoidBodyState.BirthSubject(species, entity.getUUID(), tier, grade);
         var body = HumanoidBodyState.born(subject, world.getSeed(), HumanoidFabric.region(entity),
                 HumanoidFabric.now());
         access.meridian$humanoidBody(body);

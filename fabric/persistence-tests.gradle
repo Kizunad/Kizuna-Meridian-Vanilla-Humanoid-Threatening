@@ -14,7 +14,9 @@ def reproClasses = [
                'HumanoidWayfarerNaturalAiGameTest', 'HumanoidPillagerRangeGameTest', 'HumanoidEnclosedArenaGameTest',
                'HumanoidBodyCacheGameTest', 'HumanoidEvokerBirthGameTest',
                'HumanoidEvokerGameTest', 'HumanoidAdvancementGameTest',
-               'HumanoidFieldNotesGameTest'],
+               'HumanoidFieldNotesGameTest', 'HumanoidCrisisGameTest',
+               'HumanoidCrisisFeudGameTest', 'HumanoidCrisisRaidGameTest', 'HumanoidCrisisOutcomeGameTest',
+               'HumanoidCrisisOmenGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
         cache: ['HumanoidBodyCacheGameTest'],
         // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。

@@ -11,4 +11,4 @@
 python3 "scripts/check_docs.py"
 ```
 
-实现范围和当前 7 种生人清单见 [TODO.md](TODO.md)。计划文档位于 [docs/wiki/Implementation-Plan.md](docs/wiki/Implementation-Plan.md)；其他模组登记自己的类人物种见 [docs/wiki/Species-Registration.md](docs/wiki/Species-Registration.md)。编译不再需要预先构建 Human 的 shared/server JAR；GameTest 与开发客户端仍需相邻仓库先构建各自的安装 JAR。
+实现范围和当前 7 种生人清单见 [TODO.md](TODO.md)。计划文档位于 [docs/wiki/Implementation-Plan.md](docs/wiki/Implementation-Plan.md)；其他模组登记自己的类人物种见 [docs/wiki/Species-Registration.md](docs/wiki/Species-Registration.md)。修为招敌（风声、征兆、来犯、记仇的人）见 [docs/wiki/Crisis.md](docs/wiki/Crisis.md)。编译不再需要预先构建 Human 的 shared/server JAR；GameTest 与开发客户端仍需相邻仓库先构建各自的安装 JAR。

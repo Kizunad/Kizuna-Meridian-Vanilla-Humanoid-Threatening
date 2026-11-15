@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric.mixin;
 
+import dev.kizuna.meridian.humanoid.fabric.CrisisRaiders;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBrain;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidRestrictions;
@@ -43,9 +44,10 @@ public abstract class MobTechniqueMixin {
 
     @Inject(method = "setTarget", at = @At("HEAD"), cancellable = true)
     private void meridian$targetChanged(LivingEntity target, CallbackInfo callback) {
-        // 原版改目标时同步「以谁为目标」的反查表，只在服务端记。
+        // 原版改目标时同步「以谁为目标」的反查表，只在服务端记；被魅惑的、招敌派来的只接受指定的对手。
         Mob self = (Mob) (Object) this;
-        if (!self.level().isClientSide() && !HumanoidCharmController.acceptsTarget(self, target)) {
+        if (!self.level().isClientSide() && (!HumanoidCharmController.acceptsTarget(self, target)
+                || !CrisisRaiders.acceptsTarget(self, target))) {
             callback.cancel();
             return;
         }

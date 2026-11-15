@@ -5,6 +5,7 @@
   "mixins": ["LivingEntityHumanoidMixin", "EntityHumanoidLifecycleMixin", "VillagerHumanoidLightningMixin",
     "MobTechniqueMixin", "VillagerHumanoidBrainMixin", "BrainHumanoidInvoker", "PanicTaskHumanoidMixin",
     "LivingEntityWayfarerUseMixin", "PillagerWayfarerAttackMixin", "MeleeTempoMixin", "RangedTempoMixin",
-    "CrossbowTempoMixin", "WitchUseMixin", "SpellcasterSpellGoalMixin", "EvokerWololoGoalMixin"],
+    "CrossbowTempoMixin", "WitchUseMixin", "SpellcasterSpellGoalMixin", "EvokerWololoGoalMixin",
+    "ServerPlayerCrisisMixin"],
   "injectors": {"defaultRequire": 1}
 }

@@ -48,5 +48,21 @@
   "book.meridian_humanoid.field_notes.page.15": "[Evoker]\nPractised Evokers no longer dye sheep red. True Qi ones chant past 8 blocks, hands glowing for 2s (breakable). For about 18s after, his attacks and summoned Fangs and Vex inflict extra harm of that element.",
   "book.meridian_humanoid.field_notes.page.16": "Beyond 12 blocks, he takes 2 to 3 seconds to cast Thick Earth or Returning Water, bolstering his legs and speeding recovery. When his hands glow, strike hard during those 2 seconds to interrupt him.",
   "book.meridian_humanoid.field_notes.page.17": "[Villager]\nVillagers know basics but never strike. Facing foes they Light Step back and Breath afar. If enemies threaten, 3 Villagers summon an Iron Golem. Harm one, and Villagers, traders, and Iron Golems in 16 blocks grudge for half a minute.",
-  "book.meridian_humanoid.field_notes.page.18": "[Afterword]\nPillagers, Vindicators, Evokers, Witches, Illusioners are one band; Villagers, traders, Iron Golems another. Your wolves or summons count as you: they hit one only if it bites them and you are out of reach. Smash wind-ups with blunt force."
+  "book.meridian_humanoid.field_notes.page.18": "[Afterword]\nPillagers, Vindicators, Evokers, Witches, Illusioners are one band; Villagers, traders, Iron Golems another. Your wolves or summons count as you: they hit one only if it bites them and you are out of reach. Smash wind-ups with blunt force.",
+  "item.meridian_humanoid.crisis_note": "Note",
+  "crisis.meridian_humanoid.covetous.leader_name": "The Scroll-Claimer",
+  "crisis.meridian_humanoid.covetous.omen.rumor.1": "Axe-bearing strangers arrived at the village edge, asking around for where you lodge.",
+  "crisis.meridian_humanoid.covetous.omen.rumor.2": "Unfamiliar faces probe by the alley mouth, quietly asking if you carry cultivation scrolls.",
+  "crisis.meridian_humanoid.covetous.omen.note.1": "Eyes are upon you, and the scrolls and potions upon your person.",
+  "crisis.meridian_humanoid.covetous.omen.note.2": "Keep them well; when the time comes, someone will come to take them.",
+  "crisis.meridian_humanoid.covetous.omen.note.3": "In these coming days, the moment dusk falls, we come.",
+  "crisis.meridian_humanoid.covetous.leader_return": "We meet again. You kept your life last time; let us see what prize you carry now.",
+  "advancements.meridian_humanoid_host.cultivators.omen.title": "Whispers on the Wind",
+  "advancements.meridian_humanoid_host.cultivators.omen.description": "Hear a villager speak in hushed tones of strangers asking after you, or find a note left by your bed or on the ground behind you, warning that they come to take what you carry.",
+  "advancements.meridian_humanoid_host.cultivators.repelled.title": "Uninvited Guests",
+  "advancements.meridian_humanoid_host.cultivators.repelled.description": "The band that comes knocking is repelled only when their leader falls; the followers will scatter, and from the leader drops a rare martial scroll.",
+  "advancements.meridian_humanoid_host.cultivators.grudge_slain.title": "Old Foes Cross Paths",
+  "advancements.meridian_humanoid_host.cultivators.grudge_slain.description": "The grudge-bearing leader perishes when returning with his band, or is overtaken and cut down in retreat; whatever he took from you shall be recovered.",
+  "advancements.meridian_humanoid_host.cultivators.feud_ended.title": "Settling Old Scores",
+  "advancements.meridian_humanoid_host.cultivators.feud_ended.description": "Foes carried from birth have an end. Slay the leader of the last to seek you out, and this old feud is settled; henceforth, none shall come for it."
 }

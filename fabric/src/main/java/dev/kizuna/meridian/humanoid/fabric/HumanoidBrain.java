@@ -124,18 +124,24 @@ public final class HumanoidBrain {
         return mind.awaitingStaggerEnd() && TechniqueFabric.service().staggerRemainingMillis(mob.getUUID()) == 0;
     }
 
+    private static Optional<LivingEntity> threat(Mob mob, HumanoidMind mind) {
+        // 被魅惑的只打施术者指定的对手；招敌派来的只盯那名玩家，撤走的谁也不打；其余综合打分选。
+        if (HumanoidCharmController.controlled(mob)) {
+            return Optional.ofNullable(HumanoidCharmController.opponent(mob));
+        }
+        if (CrisisRaiders.sent(mob)) {
+            return CrisisRaiders.quarry(mob);
+        }
+        return HumanoidThreats.choose(mob, config.threat(), mind.opponent());
+    }
+
     private static void decide(Mob mob, HumanoidMind mind) {
         // 女巫先处理行药诀；其他生物再找威胁，无威胁路径只查已有会话的恢复式。
         if (mob instanceof Witch witch && HumanoidWitchAi.decide(witch)) {
             mind.release();
             return;
         }
-        Optional<LivingEntity> threat;
-        if (HumanoidCharmController.controlled(mob)) {
-            threat = Optional.ofNullable(HumanoidCharmController.opponent(mob));
-        } else {
-            threat = HumanoidThreats.choose(mob, config.threat(), mind.opponent());
-        }
+        Optional<LivingEntity> threat = threat(mob, mind);
         if (threat.isEmpty()) {
             idle(mob, mind);
             return;

@@ -13,7 +13,8 @@
     "meridian_player_control_driver": ["dev.kizuna.meridian.humanoid.fabric.HumanoidPlayerDriver"],
     "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"],
     "meridian_activity_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidActivityHost"],
-    "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"]
+    "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"],
+    "meridian_origin": ["dev.kizuna.meridian.humanoid.fabric.CrisisOrigins"]
   },
   "mixins": ["meridian_humanoid.mixins.json"],
   "depends": {
@@ -25,6 +26,7 @@
     "meridian_framework": "*",
     "meridian_human_host": "*",
     "meridian_brewing": "*",
+    "meridian_origin": "*",
     "meridian_witch": "*",
     "meridian_technique": "*",
     "meridian_door_breaker": "*",

@@ -33,6 +33,11 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidEvokerBirthGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidEvokerGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidAdvancementGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisFeudGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisRaidGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOutcomeGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOmenGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidFieldNotesGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidVolumeSourcesGameTest"
     ]

@@ -140,6 +140,42 @@ public class HumanoidBodyGeneratorTest {
     }
 
     @Test
+    public void eliteOpensBothRealmsAtTheFillCeiling() {
+        // 精锐：游炁、真炁两层十六条全开，开着的经脉内腔、外壁装填和主密度都在上限；游炁不能是精锐。
+        UUID id = UUID.nameUUIDFromBytes("elite-evoker".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        RegionInventory region = RegionInventory.fromShares(1.0, Map.of("meridian:fire", 1.0));
+        var request = new HumanoidBodyGenerator.GenerationRequest(HumanoidSpecies.EVOKER, HumanoidVariant.TRUE_QI,
+                id, region, null);
+        BodyMessages.BodySnapshot elite = generator.generateElite(request,
+                HumanoidBodyGenerator.randomFor(REPRODUCIBLE_WORLD_SEED, id));
+        HumanoidConfig.FillRange fill = config.trueQiFill();
+        HumanoidConfig.SpeciesProfile profile = config.profile(HumanoidSpecies.EVOKER);
+        int opened = 0;
+        for (int index = 0; index < elite.getStructure().getMeridiansCount(); index++) {
+            BodyMessages.MeridianDefinition definition = elite.getStructure().getMeridians(index);
+            BodyMessages.MeridianState state = elite.getMeridianStates(index);
+            BodyMessages.Realm minimum = HumanOpening.minimumRealm(definition.getId());
+            boolean lowerRealms = minimum == BodyMessages.Realm.WANDERING_QI || minimum == BodyMessages.Realm.TRUE_QI;
+            assertEquals(definition.getId(), lowerRealms,
+                    state.getOpening().getStage() == MeridianOpeningStage.OPENED);
+            if (!lowerRealms) {
+                continue;
+            }
+            opened++;
+            double lumen = Math.min(Math.nextDown(1.0), fill.lumenMaximum() * profile.fillMultiplier());
+            double wall = Math.min(Math.nextDown(1.0), fill.wallMaximum() * profile.wallFillMultiplier());
+            assertEquals(definition.getLumenVolume() * lumen, QiDensity.volume(state.getLumenQi()), VOLUME_TOLERANCE);
+            assertEquals(definition.getWallVolume() * wall, QiDensity.volume(state.getWallQi()), VOLUME_TOLERANCE);
+            assertEquals(Math.nextDown(fill.densityMaximum()), state.getLumenQi().getEntries(0).getDensity(), 0);
+        }
+        assertEquals(16, opened);
+        var wandering = new HumanoidBodyGenerator.GenerationRequest(HumanoidSpecies.EVOKER,
+                HumanoidVariant.WANDERING_QI, id, region, null);
+        assertThrows(IllegalArgumentException.class, () -> generator.generateElite(wandering,
+                HumanoidBodyGenerator.randomFor(REPRODUCIBLE_WORLD_SEED, id)));
+    }
+
+    @Test
     public void wanderingTraderLegMusclesStartWithConfiguredTrainingGrowth() {
         // 流浪商人的六块腿肌肉按境界获得配置成长，其他组织和物种保持零成长。
         RegionInventory region = RegionInventory.fromShares(1.0, Map.of("meridian:fire", 1.0));

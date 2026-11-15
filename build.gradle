@@ -1,6 +1,7 @@
 plugins {
     id 'base'
     alias(libs.plugins.fabric.loom) apply false
+    alias(libs.plugins.protobuf) apply false
 }
 
 allprojects {

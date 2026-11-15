@@ -6,6 +6,8 @@ final class HumanoidErrors {
     static final String BRAIN = "类人大脑配置无效";
     static final String SPECIES = "类人物种登记无效";
     static final String REGION = "区域真元库存无效";
+    static final String CRISIS = "招敌配置无效";
+    static final String CRISIS_RECORD = "招敌记录无效";
     static final String TEMPLATE = "类人实体必须使用 human:adult 模板";
 
     private HumanoidErrors() {

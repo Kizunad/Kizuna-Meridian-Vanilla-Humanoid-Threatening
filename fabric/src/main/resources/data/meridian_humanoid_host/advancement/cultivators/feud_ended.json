@@ -1,0 +1,28 @@
+{
+  "parent": "meridian_humanoid_host:cultivators/repelled",
+  "display": {
+    "icon": {
+      "id": "minecraft:golden_sword"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.feud_ended.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.feud_ended.description"
+    },
+    "frame": "challenge"
+  },
+  "criteria": {
+    "feud_ended": {
+      "trigger": "meridian_humanoid_host:crisis",
+      "conditions": {
+        "event": "feud_ended"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "feud_ended"
+    ]
+  ]
+}

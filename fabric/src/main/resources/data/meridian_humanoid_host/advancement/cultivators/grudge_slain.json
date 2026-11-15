@@ -1,0 +1,28 @@
+{
+  "parent": "meridian_humanoid_host:cultivators/repelled",
+  "display": {
+    "icon": {
+      "id": "minecraft:iron_sword"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.grudge_slain.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.grudge_slain.description"
+    },
+    "frame": "goal"
+  },
+  "criteria": {
+    "grudge_slain": {
+      "trigger": "meridian_humanoid_host:crisis",
+      "conditions": {
+        "event": "grudge_slain"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "grudge_slain"
+    ]
+  ]
+}

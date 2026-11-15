@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package kizuna.meridian.humanoid.crisis.v1;
+
+option java_package = "dev.kizuna.meridian.humanoid.protocol.pb";
+option java_outer_classname = "CrisisMessages";
+
+// 存在玩家唯一身体的 addon_progress["meridian_humanoid:crisis"]，只有招敌引擎读写。
+// 记录里的时刻都是这名玩家自己的在线 tick：在线满 24000 tick 算一天，不在线不走。
+message CrisisRecord {
+  int32 schema_version = 1;
+  // 玩家在线累计的 tick。
+  int64 online_ticks = 2;
+  // 风声：涨了会招人来，没事时慢慢落。
+  double heat = 3;
+  // 风声最近一次涨的时刻；没事满配置的天数以后才开始落。
+  int64 heat_raised_at = 4;
+  // 风声已经按天落到了哪个时刻，下次从这里接着算，不重复扣。
+  int64 heat_decayed_at = 5;
+  // 上次读到的身体。true 表示读到过；第一次读到只记下来，不涨风声。
+  bool body_seen = 6;
+  bool true_qi = 7;
+  int32 opened_meridians = 8;
+  // 一共了结过几场（赢、逃、输都算）和最近一场了结的时刻；0 场时 settled_at 无意义。
+  int32 settled_count = 9;
+  int64 settled_at = 10;
+  // 出身的仇家，每条 crisis 威胁一条，按出身里写的先后。
+  repeated Feud feuds = 11;
+  // 排着的那一场；没有就不设。
+  Pending pending = 12;
+  // 记仇的人；没有就不设。
+  Grudge grudge = 13;
+}
+
+// 出身的一条 crisis 威胁。身份是「出身 ID#它在 threats(crisis) 里的下标」。
+message Feud {
+  string key = 1;
+  // 已经打赢了几拨。
+  int32 stage = 2;
+  // 是否已开始计日（境界到了 min_realm 才开始）。
+  bool started = 3;
+  // 下一拨该到的时刻。
+  int64 due_at = 4;
+  // 最后一拨已打赢，这条了断了。
+  bool finished = 5;
+}
+
+// 排上的一场：先过征兆期，到点来人，来了以后等结局。
+message Pending {
+  // 队伍表 ID。
+  string party = 1;
+  // 出身的仇家时是 Feud.key，通用招敌为空。
+  string feud = 2;
+  // 这一拨是第几拨（从 0 起）；通用招敌为 0。
+  int32 stage = 3;
+  // 排上的时刻和该来人的时刻。
+  int64 scheduled_at = 4;
+  int64 strike_at = 5;
+  // 每次征兆的时刻，从早到晚；已给到第几次。
+  repeated int64 omen_at = 6;
+  int32 omens_given = 7;
+  // 字条给过没有；一场只给一张。
+  bool note_given = 8;
+  // 来人以后：来的时刻、头目和全部来人的实体 UUID（头目在内）。
+  bool arrived = 9;
+  int64 arrived_at = 10;
+  string leader = 11;
+  repeated string raiders = 12;
+  // 玩家最后一次被来人看见的时刻，逃脱按它计时。
+  int64 last_seen_at = 13;
+  // 来人时记下的头目：物种、档位 ID、会的卷（注册表顺序）。结局时头目不在身边也能照这份记仇。
+  string leader_species = 14;
+  string leader_tier = 15;
+  repeated string leader_volumes = 16;
+  // 这一场是记仇的人带队回来的。
+  bool grudge_leads = 17;
+}
+
+// 记仇的人：一场里活着走掉的头目，下一场由它带队回来。
+message Grudge {
+  // 实体 ID（如 minecraft:pillager）、档位 ID 和会的卷。
+  string species = 1;
+  string tier = 2;
+  repeated string volumes = 3;
+  // 它是哪张队伍表的头目、属于哪条仇家（通用为空）；回来时用同一张表的名字和话。
+  string party = 4;
+  string feud = 5;
+  // 和这名玩家交过几次手。
+  int32 encounters = 6;
+  // 输了被它夺走的东西，一次一件：每件是原版物品存档的 NBT 二进制。打死它就掉回来。
+  repeated bytes carried = 7;
+  // 它最近这一身的实体 UUID：撤走途中被追上打死也算了断。
+  string entity = 8;
+}

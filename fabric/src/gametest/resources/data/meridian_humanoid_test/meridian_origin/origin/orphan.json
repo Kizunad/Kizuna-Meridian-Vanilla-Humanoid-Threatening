@@ -1,0 +1,27 @@
+{
+  "weight": 10,
+  "icon": "minecraft:iron_sword",
+  "talents": [],
+  "threats": [
+    {
+      "type": "meridian_humanoid:crisis",
+      "params": {
+        "party": "meridian_humanoid_test:feud",
+        "first_after_days": [8, 8],
+        "interval_days": [1, 2],
+        "stages": 2,
+        "foe_volume": "meridian_door_breaker:lower"
+      }
+    },
+    {
+      "type": "meridian_humanoid:crisis",
+      "params": {
+        "party": "meridian_humanoid_test:feud",
+        "first_after_days": [2, 2],
+        "interval_days": [3, 3],
+        "stages": 0,
+        "min_realm": "true_qi"
+      }
+    }
+  ]
+}

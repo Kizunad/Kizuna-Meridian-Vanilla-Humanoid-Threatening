@@ -1,3 +1,5 @@
+plugins { id 'com.google.protobuf' }
+
 description = '原版生人批次的纯 Java 身体变体生成与配置规则。'
 
 dependencies {
@@ -7,7 +9,13 @@ dependencies {
     api 'dev.kizuna.meridian.human:server'
     api 'dev.kizuna.meridian.human:shared'
     implementation libs.tomlj
+    api libs.protobuf.java
     testImplementation libs.junit4
+}
+
+// 招敌记录存在玩家身体的附属进度里，消息定义在 src/main/proto。
+protobuf {
+    protoc { artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.java.get()}" }
 }
 
 test {

@@ -87,6 +87,18 @@ public final class HumanoidBodyGenerator {
         return buildSnapshot(request, humanTemplate(), random, time, Opening.NONE);
     }
 
+    public BodyMessages.BodySnapshot generateElite(GenerationRequest request, RandomGenerator random) {
+        // 精锐只有真炁：十六条经脉全开，开着的经脉装填和密度取上限；属性、年龄照常抽。
+        validateSubject(request);
+        if (request.variant() != HumanoidVariant.TRUE_QI) {
+            throw HumanoidErrors.invalid(HumanoidErrors.CONFIG + ": 精锐身体只能是真炁境界");
+        }
+        Objects.requireNonNull(request.region(), "region");
+        Objects.requireNonNull(random, "random");
+        BodyMessages.TimeCursor time = generationTime(request);
+        return buildSnapshot(request, humanTemplate(), random, time, Opening.ELITE);
+    }
+
     public BodyMessages.BodySnapshot generateFromTemplate(GenerationRequest request,
                                                           BodyMessages.BodyTemplate template,
                                                           RandomGenerator random) {
@@ -174,7 +186,7 @@ public final class HumanoidBodyGenerator {
                 .setSettledAt(time)
                 .setVitality(vitality);
         addHealthyStates(snapshot, structure, new TrainingGrowth(legTrainingGrowth, armTrainingGrowth));
-        var birth = new BirthParameters(variant, profile, opened, mainAttribute, mainShare);
+        var birth = new BirthParameters(variant, profile, opened, mainAttribute, mainShare, opening);
         addMeridianStates(snapshot, birth, random);
         BodyMessages.BodySnapshot result = snapshot.build();
         // 这里只执行快照合法性校验；非法结构、库存或生命状态会抛出协议校验异常。
@@ -288,8 +300,8 @@ public final class HumanoidBodyGenerator {
             double rawLumenFill;
             double rawWallFill;
             if (opened) {
-                rawLumenFill = between(fill.lumenMinimum(), fill.lumenMaximum(), random);
-                rawWallFill = between(fill.wallMinimum(), fill.wallMaximum(), random);
+                rawLumenFill = openedFill(birth, fill.lumenMinimum(), fill.lumenMaximum(), random);
+                rawWallFill = openedFill(birth, fill.wallMinimum(), fill.wallMaximum(), random);
             } else {
                 double naturalFill = config.naturalFillVolumeRatio();
                 rawLumenFill = naturalFill * between(UNOPENED_LUMEN_MIN, 1, random);
@@ -376,11 +388,12 @@ public final class HumanoidBodyGenerator {
         if (opening == Opening.NONE) {
             return Set.of();
         }
-        return selectOpenedMeridians(structure, variant, profile, random);
+        return selectOpenedMeridians(structure, variant, profile, random, opening);
     }
 
     private Set<String> selectOpenedMeridians(BodyMessages.BodyStructure structure, HumanoidVariant variant,
-                                               HumanoidConfig.SpeciesProfile profile, RandomGenerator random) {
+                                               HumanoidConfig.SpeciesProfile profile, RandomGenerator random,
+                                               Opening opening) {
         // 复用 Human 的最低境界表，将 8 条游炁层和 8 条真炁层按内容定义分组。
         List<String> wandering = new ArrayList<>();
         List<String> trueQi = new ArrayList<>();
@@ -397,6 +410,12 @@ public final class HumanoidBodyGenerator {
             throw HumanoidErrors.invalid(HumanoidErrors.TEMPLATE + ": 开脉分层不是 8+8");
         }
         var result = new HashSet<String>();
+        if (opening == Opening.ELITE) {
+            // 精锐两层全开，不抽条数也不抽哪几条。
+            result.addAll(wandering);
+            result.addAll(trueQi);
+            return result;
+        }
         if (variant == HumanoidVariant.TRUE_QI) {
             // 真炁变体必须把完整游炁层作为前置，再随机开启 0–8 条真炁层。
             result.addAll(wandering);
@@ -472,7 +491,7 @@ public final class HumanoidBodyGenerator {
             densityMaximum = Math.min(configuredMaximum,
                     Math.max(densityMinimum * UNOPENED_DENSITY_MULTIPLIER, Math.nextUp(densityMinimum)));
         }
-        double mainDensity = density(densityMinimum, densityMaximum, random);
+        double mainDensity = openedDensity(birth, opened, densityMinimum, densityMaximum, random);
         String mainAttribute = birth.mainAttribute();
         boolean useResidual = birth.variant() == HumanoidVariant.TRUE_QI && opened
                 && !mainAttribute.equals(NONE_ATTRIBUTE)
@@ -574,6 +593,24 @@ public final class HumanoidBodyGenerator {
         return minimum + (maximum - minimum) * random.nextDouble();
     }
 
+    private static double openedFill(BirthParameters birth, double minimum, double maximum,
+                                     RandomGenerator random) {
+        // 精锐开着的经脉取装填上限、不抽；其余照常在区间里抽。
+        if (birth.opening() == Opening.ELITE) {
+            return maximum;
+        }
+        return between(minimum, maximum, random);
+    }
+
+    private static double openedDensity(BirthParameters birth, boolean opened, double minimum, double maximum,
+                                        RandomGenerator random) {
+        // 精锐开着的经脉取本档密度上限（右开区间里最大的那个数）、不抽；其余照常抽。
+        if (opened && birth.opening() == Opening.ELITE) {
+            return Math.nextDown(maximum);
+        }
+        return density(minimum, maximum, random);
+    }
+
     private static double density(double minimum, double maximum, RandomGenerator random) {
         // 密度相态采用左闭右开区间，避免随机尾差跨入下一档。
         double upper = Math.nextDown(maximum);
@@ -589,15 +626,15 @@ public final class HumanoidBodyGenerator {
     }
 
     /** 一次生成所需的实体身份、变体、区域与时钟。 */
-    /** 是否按变体抽取开脉。 */
-    private enum Opening { ROLLED, NONE }
+    /** 怎么开脉：按变体抽、不开（凡人）、全开且装填取上限（精锐）。 */
+    private enum Opening { ROLLED, NONE, ELITE }
 
     public record GenerationRequest(HumanoidSpecies species, HumanoidVariant variant, UUID entityId,
                                     RegionInventory region, BodyMessages.TimeCursor settledAt) {
     }
 
     private record BirthParameters(HumanoidVariant variant, HumanoidConfig.SpeciesProfile profile,
-                                    Set<String> opened, String mainAttribute, double mainShare) {
+                                    Set<String> opened, String mainAttribute, double mainShare, Opening opening) {
     }
 
     private record TrainingGrowth(double leg, double arm) { }

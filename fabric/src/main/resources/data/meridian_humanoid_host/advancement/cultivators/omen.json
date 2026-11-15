@@ -1,0 +1,27 @@
+{
+  "parent": "meridian_progression:cultivation/cultivators",
+  "display": {
+    "icon": {
+      "id": "minecraft:paper"
+    },
+    "title": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.omen.title"
+    },
+    "description": {
+      "translate": "advancements.meridian_humanoid_host.cultivators.omen.description"
+    }
+  },
+  "criteria": {
+    "omen": {
+      "trigger": "meridian_humanoid_host:crisis",
+      "conditions": {
+        "event": "omen"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "omen"
+    ]
+  ]
+}
