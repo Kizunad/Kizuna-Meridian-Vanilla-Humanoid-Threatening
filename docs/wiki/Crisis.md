@@ -69,6 +69,38 @@
 - 和通用招敌共用「同时只排一场」、开局保护期和最短间隔。几条同时到了按出身里写的先后；仇家先于风声。
 - 记录里有、出身里已经没有的仇家（数据包改过）留着不动，只是不再排。
 
+## 首批出身
+
+本仓自带五个出身（`fabric/src/main/resources/data/meridian_humanoid/meridian_origin/origin/`）和它们的四张仇家队伍表，
+出身卡和征兆的文字在本仓语言文件的 `origin.meridian_humanoid.*`、`crisis.meridian_humanoid.<队伍表>.*` 下。
+玩家生来就在游炁，所以 `min_realm` 都用默认值：一选定就开始计日。
+
+| 出身 | 天赋 | 仇家（队伍表、第一拨、两拨之间、拨数、必掉卷） |
+|---|---|---|
+| `farmer` 寻常农户 | 村民声望 +20 | 没有 |
+| `orphan` 灭门遗孤 | 开局会《行矢·百步》（`meridian_wayfarer:bow_upper`） | `clan_foes`，8–14 天，12–20 天，3 拨，`meridian_wayfarer:bow_lower` |
+| `apprentice` 药铺学徒 | 开局会《炼药卷·熬药》（`meridian_brewing:brewing_basics`）；开局会聚气汤、苦黄膏两张药方 | `recipe_thief`，6–10 天，12–20 天，1 拨 |
+| `disgraced` 罪臣之后 | 开局会《破门斩·木门》（`meridian_door_breaker:upper`） | `captors`，10–16 天，24–36 天，没有了断，`meridian_door_breaker:lower` |
+| `merchant` 行商之后 | 参考负重 ×1.25 | `highwaymen`，5–9 天，10–14 天，没有了断 |
+
+- 队伍表：`clan_foes` 掠夺者为主，三档各分 0/1/2 拨，一拨比一拨强，第 2 拨头目是真炁精锐；`recipe_thief` 头目是真炁女巫，
+  `wandering` 档有时一个人来、有时带一个随从，往上的档随从多些，`true_many` 档她是精锐；`captors` 只有卫道士；
+  `highwaymen` 人少、多是游炁。
+- 药方天赋由炼药附属登记（`meridian_brewing:starting_recipes`），负重天赋由负重附属登记（`meridian_burden:carry_capacity`），
+  所以本仓硬依赖这两个附属：缺了它们出身数据读不进来。
+- 文字由 Gemini 照会话仓 `handoff/origin-lore-20261115/3b/` 的资料写，逐句对过代码；改文字改资料重写，不手改语言文件。
+
+## 开局卷与村民声望
+
+本仓还经同一个入口登记两类出身天赋（`fabric/.../OriginTalents.java`）：
+
+- `meridian_humanoid:starting_volume`，一次性，参数 `{"volume": "<卷 ID>"}`：选定出身时经功法服务学会这一卷，已经会了不变。
+  身体宿主不在、前置卷没会时这次不算发成，出身附属下次进服再发。一个出身写几条就按写的先后学。
+  这一类放在本仓不放功法库：出身附属要 Human 或本仓的身体宿主才能初始化，功法库自己的测试装配里没有。
+- `meridian_humanoid:villager_standing`，常驻，参数 `{"reputation": <-100..100>}`：加在原版 `Villager.getPlayerReputation` 的返回值上
+  （`VillagerOriginStandingMixin`），原版打折和铁傀儡认人都读这个数。几条相加；没选出身是 0。
+- 开局卷学会时照常走功法库的「会的卷变了」，但这几卷在学卷表里都是必授的，不算稀有卷，不涨风声。
+
 ## 队伍表
 
 数据包内容：`data/<命名空间>/meridian_humanoid/crisis_party/<名字>.json`，ID 是「命名空间:名字」。
@@ -213,8 +245,9 @@
 - 第一个服务器 tick 核对一次（那时功法注册表和出身才齐），不对直接失败：
   - `generic_party` 指向的队伍表在；
   - 每张队伍表的人数不超过 `strength.max_party`；
-  - 每个出身每条 crisis 的 `party` 在，写了 `foe_volume` 的那一卷已装、有卷轴（赢了要掉）。
-- `/reload` 成功后重读并核对；新的不对就留着旧的队伍表，记一条错误。这一步排在重载事件默认阶段之后，
+  - 每个出身每条 crisis 的 `party` 在，写了 `foe_volume` 的那一卷已装、有卷轴（赢了要掉）；
+  - 每个出身的开局卷已装，前置卷写在同一出身更前面的开局卷里（`OriginVolumes`，和学卷表一起核对）。
+- `/reload` 成功后重读并核对；新的不对就留着旧的队伍表，记一条错误。开局卷也再核对一次，不对只记错误（出身已经换成新的了）。这一步排在重载事件默认阶段之后，
   出身附属先重读完出身再核对。
 
 ## 配置
@@ -234,15 +267,17 @@
 - `strike [targets [party]]`：不看时辰立刻来人。排着没来的那一场马上来，还没给的征兆不再补；没排的按 `party`（缺省 `generic_party`）
   排第 0 拨、不给征兆、马上来。已经来了人、排着另一张队伍表、没有这张队伍表、找不到落脚点都失败并说明原因。
   `party` 补全当前收下的队伍表，只能跟在目标后面（省略目标时后面那个词按目标省略解析）；给自己指定队伍表写 `@s`。
-- `omen [targets]`：不等时刻，立刻给下一次征兆，给什么照上面的规矩。没排着就先照风声招来的那样排一场通用队伍表
-  （`generic_party`、第 0 拨、照常定征兆次数和来人时刻），给成了才记下。没接上记录、已经来了人、
-  征兆给完、字条留过身边又没有村民、字条没处放都失败并说明原因。
+- `omen [targets [party]]`：不等时刻，立刻给下一次征兆，给什么照上面的规矩。没排着就先照风声招来的那样排一场
+  （按 `party`，缺省 `generic_party`；第 0 拨、照常定征兆次数和来人时刻），给成了才记下。没接上记录、已经来了人、
+  排着另一张队伍表、没有这张队伍表、征兆给完、字条留过身边又没有村民、字条没处放都失败并说明原因。
+  `party` 和 `strike` 一样补全当前收下的队伍表、只能跟在目标后面；用来看某张队伍表（比如出身的仇家）的传言和字条。
 
 ## 测试
 
 - 单测（`server`）：`CrisisRulesTest`、`CrisisRecordsTest`、`CrisisHeatTest`、`CrisisScheduleTest`、`CrisisFeudsTest`、
   `CrisisPartyTest`、`CrisisArrivalTest`（时辰、挑阵容、随从个数、仇家的卷、来人的记录、调试叫人时没到点的征兆时刻压到来人那一刻）、
-  `CrisisOutcomeTest`（三种结局的风声、仇家拨次、记仇和攒东西、逃脱条件、掉哪一卷、记仇的人回来变强、稀有卷），
+  `CrisisOutcomeTest`（三种结局的风声、仇家拨次、记仇和攒东西、逃脱条件、掉哪一卷、记仇的人回来变强、稀有卷）、
+  `OriginVolumesTest`（开局卷要装着、前置卷写在前面），
   以及 `HumanoidBodyGeneratorTest` 里的精锐出生。
 - GameTest：`HumanoidCrisisGameTest`（记录、风声、状态指令）、`HumanoidCrisisFeudGameTest`（出身的仇家：选定后计日、
   老玩家重进补上、到期排上、启动核对、功法谱的仇家来源已登记且去重）、`HumanoidCrisisRaidGameTest`（叫来一拨精锐：人数、档位、精锐、学卷、名字、
@@ -250,7 +285,9 @@
   头目死后随从撤走、没人看见就消失；逃了记仇、再来变强；输了被夺卷轴、追上打死掉回来；记仇的人带队、掉回药水；
   下线算逃并清走来人；名下没人按逃了结、孤儿清走；当着生人杀人和学稀有卷涨风声）、`HumanoidCrisisOmenGameTest`
   （没有村民只留字条、在玩家身后、不消失；村民说传言、最后一次必留字条；调试指令把字条留在近处的床上；
-  记仇的人照面说一句、只说一次；说的话从 `HumanoidSpeech.SPOKE` 听）。
+  记仇的人照面说一句、只说一次；说的话从 `HumanoidSpeech.SPOKE` 听）、`HumanoidOriginTalentGameTest`（首批五个出身和四张队伍表读进来、
+  出身卡每一行都有文字；遗孤的仇家一拨比一拨强；罪臣之后选定就会木门卷、再定一次不出错；寻常农户的村民声望多 20、行商之后不加；
+  参数写错的开局卷和声望读不进来）。
   四条进度的断言放在这两类里：征兆三条用例看「风声」给的时刻；收场五条用例在头目死前、死后看三条结局进度
   （`CrisisGameTests.endings`：正好哪几条完成，别的都没完成）。
   要看「有没有人看见」的用例各自送到远处一道（`CrisisGameTests.standApart` 的 `lane`），彼此隔 512 格。测试数据包里有测试出身 `meridian_humanoid_test:orphan`（两条仇家）和

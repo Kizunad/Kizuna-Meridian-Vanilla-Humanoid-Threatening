@@ -50,7 +50,9 @@ final class CrisisEngine {
     enum Strike { ARRIVED, NOT_ATTACHED, ALREADY_ARRIVED, OTHER_PARTY, UNKNOWN_PARTY, NO_SPOT }
 
     /** 调试指令 omen 的结果。 */
-    enum Omen { RUMOR, NOTE, NOT_ATTACHED, ALREADY_ARRIVED, ALL_GIVEN, NO_VILLAGER, NO_SPOT }
+    enum Omen {
+        RUMOR, NOTE, NOT_ATTACHED, ALREADY_ARRIVED, OTHER_PARTY, UNKNOWN_PARTY, ALL_GIVEN, NO_VILLAGER, NO_SPOT
+    }
 
     CrisisEngine(CrisisRules rules, CrisisBodies bodies) {
         // 规则在启动时定死，身体宿主在构造时取齐。
@@ -151,15 +153,18 @@ final class CrisisEngine {
         return arrived.isPresent() ? Strike.ARRIVED : Strike.NO_SPOT;
     }
 
-    Omen omen(ServerPlayer player) {
-        // 调试：不等时刻，立刻给下一次征兆；没排着就先照风声招来的那样排一场通用队伍表（给成了才记下）。
-        // 给什么照平时的规矩，只是不等。
+    Omen omen(ServerPlayer player, Optional<String> party) {
+        // 调试：不等时刻，立刻给下一次征兆；没排着就先照风声招来的那样排一场（给成了才记下），
+        // 队伍表按给的，缺省通用。给什么照平时的规矩，只是不等。
         CrisisRecord stored = records.get(player.getUUID());
         if (stored == null) {
             return Omen.NOT_ATTACHED;
         }
-        CrisisRecord record = stored.hasPending() ? stored
-                : schedule(player, stored, CrisisSchedule.heatRaid(stored, rules));
+        Optional<Omen> wrongParty = omenPartyRefused(stored, party);
+        if (wrongParty.isPresent()) {
+            return wrongParty.get();
+        }
+        CrisisRecord record = stored.hasPending() ? stored : schedule(player, stored, omenRaid(stored, party));
         Optional<Omen> refused = omenRefused(record);
         if (refused.isPresent()) {
             return refused.get();
@@ -174,6 +179,25 @@ final class CrisisEngine {
         }
         update(player, ignored -> CrisisSchedule.omenDone(record, kind));
         return kind == CrisisSchedule.OmenStep.RUMOR ? Omen.RUMOR : Omen.NOTE;
+    }
+
+    private static Optional<Omen> omenPartyRefused(CrisisRecord record, Optional<String> party) {
+        // 指定了队伍表：得有这张表，已排着没来人的那一场也得是这张表（已经来人的照旧说来人了）。
+        if (party.isEmpty() || record.hasPending() && record.getPending().getArrived()) {
+            return Optional.empty();
+        }
+        if (!CrisisFabric.parties().containsKey(party.get())) {
+            return Optional.of(Omen.UNKNOWN_PARTY);
+        }
+        boolean other = record.hasPending() && !record.getPending().getParty().equals(party.get());
+        return other ? Optional.of(Omen.OTHER_PARTY) : Optional.empty();
+    }
+
+    private CrisisSchedule.Raid omenRaid(CrisisRecord record, Optional<String> party) {
+        // 调试指令排的一场：和风声招来的同一个来人时刻，只是队伍表可以指定。
+        CrisisSchedule.Raid heat = CrisisSchedule.heatRaid(record, rules);
+        return party.map(chosen -> new CrisisSchedule.Raid(chosen, heat.feud(), heat.stage(), heat.strikeAt()))
+                .orElse(heat);
     }
 
     private static Optional<Omen> omenRefused(CrisisRecord record) {

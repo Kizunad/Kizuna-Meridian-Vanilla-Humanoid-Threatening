@@ -14,7 +14,8 @@
     "meridian_health_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost"],
     "meridian_activity_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidActivityHost"],
     "meridian_technique_host": ["dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost"],
-    "meridian_origin": ["dev.kizuna.meridian.humanoid.fabric.CrisisOrigins"]
+    "meridian_origin": ["dev.kizuna.meridian.humanoid.fabric.CrisisOrigins",
+      "dev.kizuna.meridian.humanoid.fabric.OriginTalents"]
   },
   "mixins": ["meridian_humanoid.mixins.json"],
   "depends": {
@@ -26,6 +27,7 @@
     "meridian_framework": "*",
     "meridian_human_host": "*",
     "meridian_brewing": "*",
+    "meridian_burden": "*",
     "meridian_origin": "*",
     "meridian_witch": "*",
     "meridian_technique": "*",

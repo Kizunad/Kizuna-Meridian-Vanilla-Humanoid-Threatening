@@ -45,15 +45,15 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * 征兆：到了时刻身边有村民就由村民说传言、一场只留一张字条、最后一次必留；没有村民只留字条；
- * 床近字条放床上，不然放身后；字条不会消失；调试指令不等时刻；记仇的人回来照面说一句认得玩家的话，只说一次。
+ * 床近字条放床上，不然放身后；字条不会消失；调试指令不等时刻、可以指定队伍表；记仇的人回来照面说一句认得玩家的话，只说一次。
  * 说的话从 {@link HumanoidSpeech} 事件里听。
  */
 public final class HumanoidCrisisOmenGameTest {
     private static final int TIMEOUT = 600;
     private static final String COVETOUS = "meridian_humanoid:covetous";
     private static final String PARTY = "meridian_humanoid_test:feud";
+    private static final String UNKNOWN_PARTY = "meridian_humanoid_test:nobody";
     private static final String RUMOR_FIRST = "crisis.meridian_humanoid.covetous.omen.rumor.1";
-    private static final String NOTE_LINE = "crisis.meridian_humanoid.covetous.omen.note.";
     private static final String LEADER_RETURN = "crisis.meridian_humanoid.covetous.leader_return";
     private static final long STRIKE_AT = 10 * CrisisRules.DAY_TICKS;
     private static final int OMENS = 2;
@@ -87,7 +87,7 @@ public final class HumanoidCrisisOmenGameTest {
             check(context, !advanced(player, "omen"), "还没有征兆就有了「风声」");
             engine().update(player, record -> omenTime(scheduled(record), 0));
             waitUntil(context, () -> pending(player).getOmensGiven() == 1, () -> {
-                List<ItemEntity> notes = notesNear(context, player);
+                List<ItemEntity> notes = notesNear(context, player, COVETOUS);
                 check(context, pending(player).getNoteGiven() && notes.size() == 1, "字条：" + notes);
                 check(context, advanced(player, "omen"), "留了字条没给「风声」");
                 check(context, notes.getFirst().getAge() == UNLIMITED_AGE, "字条会消失");
@@ -95,8 +95,8 @@ public final class HumanoidCrisisOmenGameTest {
                 check(context, heard(player).isEmpty(), "没有村民却有人说了话：" + heard(player));
                 engine().update(player, record -> omenTime(record, 1));
                 context.runAfterDelay(QUIET_STEPS * CrisisEngine.STEP_TICKS, () -> {
-                    check(context, pending(player).getOmensGiven() == 1 && notesNear(context, player).size() == 1,
-                            "没有村民的第二次：" + pending(player));
+                    check(context, pending(player).getOmensGiven() == 1
+                            && notesNear(context, player, COVETOUS).size() == 1, "没有村民的第二次：" + pending(player));
                     check(context, run(context, omenCommand(player)) == COMMAND_FAILED, "调试指令又给了一次");
                     finish(context, fixture);
                 });
@@ -115,14 +115,14 @@ public final class HumanoidCrisisOmenGameTest {
                     mob -> mob.setNoAi(true));
             engine().update(player, record -> omenTime(scheduled(record), 0));
             waitUntil(context, () -> pending(player).getOmensGiven() == 1, () -> {
-                check(context, !pending(player).getNoteGiven() && notesNear(context, player).isEmpty(),
+                check(context, !pending(player).getNoteGiven() && notesNear(context, player, COVETOUS).isEmpty(),
                         "说传言的那一次留了字条");
                 check(context, heard(player).equals(List.of(new Spoken(villager.getUUID(), player.getUUID(),
                         RUMOR_FIRST))), "传言：" + heard(player));
                 check(context, advanced(player, "omen"), "听了传言没给「风声」");
                 engine().update(player, record -> omenTime(record, 1));
                 waitUntil(context, () -> pending(player).getOmensGiven() == OMENS, () -> {
-                    check(context, pending(player).getNoteGiven() && notesNear(context, player).size() == 1,
+                    check(context, pending(player).getNoteGiven() && notesNear(context, player, COVETOUS).size() == 1,
                             "最后一次没留字条：" + pending(player));
                     check(context, heard(player).size() == 1, "留字条那一次也说了话：" + heard(player));
                     finish(context, fixture);
@@ -148,7 +148,7 @@ public final class HumanoidCrisisOmenGameTest {
             check(context, suggestions(context.getLevel().getServer().createCommandSourceStack(),
                     "meridian humanoid crisis ").contains("omen"), "补全里没有 omen");
             check(context, run(context, omenCommand(player)) > 0, "调试指令没给出征兆");
-            List<ItemEntity> notes = notesNear(context, player);
+            List<ItemEntity> notes = notesNear(context, player, COVETOUS);
             check(context, notes.size() == 1 && notes.getFirst().getAge() == UNLIMITED_AGE, "字条：" + notes);
             check(context, notes.getFirst().position().distanceTo(Vec3.atBottomCenterOf(bed)) < ON_BED,
                     "字条不在床上：" + notes.getFirst().position());
@@ -157,6 +157,28 @@ public final class HumanoidCrisisOmenGameTest {
                     "调试指令没排上、没记进记录：" + pending(player));
             check(context, advanced(player, "omen"), "调试指令留了字条没给「风声」");
             check(context, run(context, omenCommand(player)) == COMMAND_FAILED, "没有村民又给了一次");
+            finish(context, fixture);
+        });
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void omenCommandCanNameTheParty(GameTestHelper context) {
+        // omen 后面写队伍表：没有这张表就失败、什么也不排；有就排这张表的一场，字条按这张表推键；
+        // 排着这张表时再写别的表失败；补全里有收下的队伍表。
+        CrisisTestPlayer fixture = CrisisTestPlayer.create(context);
+        ServerPlayer player = fixture.player();
+        standApart(context, player, 13);
+        waitUntil(context, () -> attached(player), () -> {
+            String command = omenCommand(player);
+            check(context, suggestions(context.getLevel().getServer().createCommandSourceStack(), command + " ")
+                    .contains(PARTY), "补全里没有队伍表");
+            check(context, run(context, command + " " + UNKNOWN_PARTY) == COMMAND_FAILED, "没有的队伍表也给了");
+            check(context, !engine().record(player).orElseThrow().hasPending(), "没有的队伍表也排上了");
+            check(context, run(context, command + " " + PARTY) > 0, "指定队伍表没给出征兆");
+            check(context, pending(player).getParty().equals(PARTY) && pending(player).getOmensGiven() == 1,
+                    "排的不是指定的队伍表：" + pending(player));
+            check(context, notesNear(context, player, PARTY).size() == 1, "字条不是指定队伍表的");
+            check(context, run(context, command + " " + COVETOUS) == COMMAND_FAILED, "排着别的队伍表也给了");
             finish(context, fixture);
         });
     }
@@ -227,17 +249,17 @@ public final class HumanoidCrisisOmenGameTest {
         return Vec3.directionFromRotation(0, player.getYRot()).dot(position.subtract(player.position())) < 0;
     }
 
-    private static List<ItemEntity> notesNear(GameTestHelper context, ServerPlayer player) {
-        // 玩家几格内地上的字条。
+    private static List<ItemEntity> notesNear(GameTestHelper context, ServerPlayer player, String party) {
+        // 玩家几格内地上这张队伍表的字条。
         return context.getLevel().getEntitiesOfClass(ItemEntity.class, player.getBoundingBox().inflate(NOTE_SEARCH),
-                item -> isNote(item.getItem()));
+                item -> isNote(item.getItem(), party));
     }
 
-    private static boolean isNote(ItemStack stack) {
-        // 原版纸，物品名是字条的键，正文三行是通用队伍表推出来的键。
+    private static boolean isNote(ItemStack stack, String party) {
+        // 原版纸，物品名是字条的键，正文几行是这张队伍表推出来的键。
         ItemLore lore = stack.getOrDefault(DataComponents.LORE, ItemLore.EMPTY);
-        List<String> expected = IntStream.rangeClosed(1, CrisisOmens.NOTE_LINES).mapToObj(line -> NOTE_LINE + line)
-                .toList();
+        List<String> expected = IntStream.rangeClosed(1, CrisisOmens.NOTE_LINES)
+                .mapToObj(line -> CrisisArrivals.textKey(party, "omen.note." + line)).toList();
         Component name = stack.get(DataComponents.ITEM_NAME);
         return stack.is(Items.PAPER) && name != null && key(name).equals(CrisisOmens.NOTE_NAME)
                 && lore.lines().stream().map(HumanoidCrisisOmenGameTest::key).toList().equals(expected);

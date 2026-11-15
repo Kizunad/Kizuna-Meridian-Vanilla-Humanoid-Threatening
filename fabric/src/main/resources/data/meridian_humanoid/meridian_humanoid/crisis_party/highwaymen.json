@@ -1,0 +1,72 @@
+{
+  "lineups": [
+    {
+      "band": "wandering",
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "wandering_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:pillager",
+          "tier": "wandering_qi",
+          "count": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "band": "wandering",
+      "leader": {
+        "species": "minecraft:vindicator",
+        "tier": "wandering_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:pillager",
+          "tier": "wandering_qi",
+          "count": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_few",
+      "leader": {
+        "species": "minecraft:vindicator",
+        "tier": "wandering_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:pillager",
+          "tier": "wandering_qi",
+          "count": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_many",
+      "leader": {
+        "species": "minecraft:vindicator",
+        "tier": "true_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:pillager",
+          "tier": "wandering_qi",
+          "count": [
+            2,
+            2
+          ]
+        }
+      ]
+    }
+  ]
+}

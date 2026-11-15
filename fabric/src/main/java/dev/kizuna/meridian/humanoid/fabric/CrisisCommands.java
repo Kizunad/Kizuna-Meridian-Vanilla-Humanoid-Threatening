@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import dev.kizuna.meridian.fabric.MeridianCommands;
 import dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.CrisisRecord;
 import dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.Feud;
@@ -14,6 +15,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 
 /** /meridian humanoid crisis …：看招敌记录、立刻来人；调试指令，权限由注册点声明在 crisis 节点上。 */
@@ -42,26 +44,36 @@ final class CrisisCommands {
         MeridianCommands.optionalPlayers(strike, (parent, targets) -> {
             parent.executes(context -> strike(context.getSource(), engine, targets.resolve(context), Optional.empty()));
             if (parent != strike) {
-                parent.then(Commands.argument(PARTY, IdentifierArgument.id())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
-                                CrisisFabric.parties().keySet(), builder))
-                        .executes(context -> strike(context.getSource(), engine, targets.resolve(context),
-                                Optional.of(IdentifierArgument.getId(context, PARTY).toString()))));
+                parent.then(partyArgument().executes(context -> strike(context.getSource(), engine,
+                        targets.resolve(context), Optional.of(IdentifierArgument.getId(context, PARTY).toString()))));
             }
         });
         crisis.then(strike);
-        // omen [targets]：不等时刻，立刻给下一次征兆（传言或字条）；没排着就先照风声招来的那样排一场。
+        // omen [targets [party]]：不等时刻，立刻给下一次征兆（传言或字条）；没排着就先照风声招来的那样排一场，
+        // 队伍表缺省通用。队伍表和 strike 一样只接在指定目标的那支后面。
         var omen = Commands.literal("omen");
-        MeridianCommands.optionalPlayers(omen, (parent, targets) -> parent.executes(context ->
-                omen(context.getSource(), engine, targets.resolve(context))));
+        MeridianCommands.optionalPlayers(omen, (parent, targets) -> {
+            parent.executes(context -> omen(context.getSource(), engine, targets.resolve(context), Optional.empty()));
+            if (parent != omen) {
+                parent.then(partyArgument().executes(context -> omen(context.getSource(), engine,
+                        targets.resolve(context), Optional.of(IdentifierArgument.getId(context, PARTY).toString()))));
+            }
+        });
         crisis.then(omen);
     }
 
-    private static int omen(CommandSourceStack source, CrisisEngine engine, Collection<ServerPlayer> players) {
+    private static RequiredArgumentBuilder<CommandSourceStack, Identifier> partyArgument() {
+        // 队伍表参数，Tab 补全开服读进来的队伍表。
+        return Commands.argument(PARTY, IdentifierArgument.id()).suggests((context, builder) ->
+                SharedSuggestionProvider.suggest(CrisisFabric.parties().keySet(), builder));
+    }
+
+    private static int omen(CommandSourceStack source, CrisisEngine engine, Collection<ServerPlayer> players,
+                            Optional<String> party) {
         // 每名目标各给一次；给不了的说清原因。
         int given = 0;
         for (ServerPlayer player : players) {
-            CrisisEngine.Omen result = engine.omen(player);
+            CrisisEngine.Omen result = engine.omen(player, party);
             String name = player.getScoreboardName();
             switch (result) {
                 case RUMOR, NOTE -> {
@@ -80,6 +92,8 @@ final class CrisisCommands {
         return switch (result) {
             case NOT_ATTACHED -> "招敌记录还没接上";
             case ALREADY_ARRIVED -> "这一场已经来人了";
+            case OTHER_PARTY -> "已经排着另一张队伍表的一场";
+            case UNKNOWN_PARTY -> "没有这张队伍表";
             case ALL_GIVEN -> "这一场的征兆已经给完了";
             case NO_VILLAGER -> "字条已经留过，身边又没有看得见你的村民";
             case NO_SPOT -> "床不在近处，身后也找不到放字条的地方";

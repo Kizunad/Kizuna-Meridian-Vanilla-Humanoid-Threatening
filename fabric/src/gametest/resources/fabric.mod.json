@@ -35,6 +35,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidAdvancementGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisFeudGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidOriginTalentGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisRaidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOutcomeGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOmenGameTest",

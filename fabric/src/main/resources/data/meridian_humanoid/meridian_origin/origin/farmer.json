@@ -1,0 +1,13 @@
+{
+  "weight": 10,
+  "icon": "minecraft:wheat",
+  "talents": [
+    {
+      "type": "meridian_humanoid:villager_standing",
+      "params": {
+        "reputation": 20
+      }
+    }
+  ],
+  "threats": []
+}

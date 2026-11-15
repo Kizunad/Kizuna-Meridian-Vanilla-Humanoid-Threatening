@@ -30,7 +30,7 @@ final class CrisisFabric {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid/crisis");
     private static CrisisEngine engine;
     private static Map<String, CrisisParty> parties = Map.of();
-    private static final Identifier AFTER_ORIGINS =
+    static final Identifier AFTER_ORIGINS =
             Identifier.fromNamespaceAndPath("meridian_humanoid", "after_origins");
     private static boolean checked;
 

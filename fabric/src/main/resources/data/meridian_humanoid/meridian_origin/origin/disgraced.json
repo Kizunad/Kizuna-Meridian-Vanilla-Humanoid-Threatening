@@ -1,0 +1,30 @@
+{
+  "weight": 10,
+  "icon": "minecraft:iron_axe",
+  "talents": [
+    {
+      "type": "meridian_humanoid:starting_volume",
+      "params": {
+        "volume": "meridian_door_breaker:upper"
+      }
+    }
+  ],
+  "threats": [
+    {
+      "type": "meridian_humanoid:crisis",
+      "params": {
+        "party": "meridian_humanoid:captors",
+        "first_after_days": [
+          10,
+          16
+        ],
+        "interval_days": [
+          24,
+          36
+        ],
+        "stages": 0,
+        "foe_volume": "meridian_door_breaker:lower"
+      }
+    }
+  ]
+}

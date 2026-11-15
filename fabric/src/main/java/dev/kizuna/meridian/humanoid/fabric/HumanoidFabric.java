@@ -71,6 +71,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidStaggerAnimation.initialize();
         HumanoidWitchAi.initialize(configDirectory);
         CrisisFabric.initialize(configDirectory);
+        OriginTalents.initialize();
         HumanoidEvokerSpells.initialize();
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
         TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
@@ -138,11 +139,12 @@ public final class HumanoidFabric implements ModInitializer {
     }
 
     private static void checkVolumes() {
-        // 功法服务在服务器启动回调里才建好，学卷表放到第一个 tick 对注册表核对：缺卷、前置卷排在后面都直接失败。
+        // 功法服务在服务器启动回调里才建好，学卷表和出身开局卷放到第一个 tick 对注册表核对：缺卷、前置卷排在后面都直接失败。
         var registry = TechniqueFabric.service().registry();
         var volumes = HumanoidBrain.config().volumes();
         volumes.requireInstalled(volume -> registry.findVolume(volume).isPresent());
         volumes.requireOrdered(volume -> registry.findVolume(volume).orElseThrow().getPrerequisiteVolumeIdsList());
+        OriginTalents.requireVolumes();
         volumesChecked = true;
     }
 

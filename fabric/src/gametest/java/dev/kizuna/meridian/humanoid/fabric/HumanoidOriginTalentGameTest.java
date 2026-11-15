@@ -1,0 +1,143 @@
+package dev.kizuna.meridian.humanoid.fabric;
+
+import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.attached;
+import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.check;
+import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.finish;
+import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.run;
+import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.waitUntil;
+
+import com.google.gson.JsonParser;
+import com.mojang.serialization.JsonOps;
+import dev.kizuna.meridian.humanoid.server.CrisisHeat;
+import dev.kizuna.meridian.humanoid.server.CrisisParty;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import dev.kizuna.meridian.origin.fabric.Origin;
+import dev.kizuna.meridian.origin.fabric.Origins;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.SplittableRandom;
+import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.locale.Language;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.npc.villager.Villager;
+
+/**
+ * 3b 首批五个出身：五个出身、四张仇家队伍表开服就读进来，界面要的文字一行不缺；
+ * 罪臣之后选定就会破门斩木门卷，寻常农户让村民对他的声望多 20；参数写错的天赋读不进来。
+ */
+public final class HumanoidOriginTalentGameTest {
+    private static final int TIMEOUT = 200;
+    private static final List<String> ORIGINS = List.of("farmer", "orphan", "apprentice", "disgraced", "merchant");
+    private static final List<String> PARTIES = List.of("clan_foes", "recipe_thief", "captors", "highwaymen");
+    private static final String NAMESPACE = "meridian_humanoid";
+    private static final String DOOR_BREAKER_UPPER = "meridian_door_breaker:upper";
+    private static final int FARMER_STANDING = 20;
+    private static final BlockPos VILLAGER_AT = new BlockPos(1, 2, 1);
+    private static final long SEED = 1;
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void firstBatchLoadsWithPartiesAndText(GameTestHelper context) {
+        // 五个出身和四张队伍表都在；每个出身的名字、来历、每一行天赋和麻烦都有英文文字（服务端只装英文）。
+        for (String origin : ORIGINS) {
+            Origin loaded = Origins.all().get(Identifier.fromNamespaceAndPath(NAMESPACE, origin));
+            check(context, loaded != null, "出身没读进来：" + origin);
+            List<String> missing = missingText(loaded);
+            check(context, missing.isEmpty(), "出身 " + origin + " 缺文字：" + missing);
+        }
+        for (String party : PARTIES) {
+            check(context, CrisisFabric.parties().containsKey(NAMESPACE + ":" + party), "队伍表没读进来：" + party);
+        }
+        OriginTalents.requireVolumes();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void orphanFoesGrowEachWave(GameTestHelper context) {
+        // 灭门遗孤的仇家分三拨：游炁玩家碰上的头目从游炁、到真炁、到真炁精英，一拨比一拨强。
+        CrisisParty party = CrisisFabric.parties().get(NAMESPACE + ":clan_foes");
+        List<CrisisParty.Member> leaders = new ArrayList<>();
+        for (int stage = 0; stage < 3; stage++) {
+            leaders.add(party.lineup(CrisisHeat.Band.WANDERING, stage, new SplittableRandom(SEED)).leader());
+        }
+        check(context, leaders.get(0).tier() == HumanoidTier.WANDERING_QI && !leaders.get(0).elite(), "第一拨：" + leaders);
+        check(context, leaders.get(1).tier() == HumanoidTier.TRUE_QI && !leaders.get(1).elite(), "第二拨：" + leaders);
+        check(context, leaders.get(2).tier() == HumanoidTier.TRUE_QI && leaders.get(2).elite(), "第三拨：" + leaders);
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void disgracedStartsKnowingWoodenDoors(GameTestHelper context) {
+        // 定成罪臣之后：马上会破门斩木门卷；再定一次不出错，还是会这一卷。
+        CrisisTestPlayer fixture = CrisisTestPlayer.create(context);
+        ServerPlayer player = fixture.player();
+        waitUntil(context, () -> attached(player), () -> {
+            check(context, !CrisisVolumes.known(player.getUUID()).contains(DOOR_BREAKER_UPPER), "还没定出身就会了木门卷");
+            check(context, choose(context, player, "disgraced") > 0, "出身调试指令没有成功");
+            check(context, CrisisVolumes.known(player.getUUID()).contains(DOOR_BREAKER_UPPER), "定了罪臣之后没会木门卷");
+            check(context, choose(context, player, "disgraced") > 0, "再定一次出身没有成功");
+            check(context, CrisisVolumes.known(player.getUUID()).contains(DOOR_BREAKER_UPPER), "再定一次以后木门卷没了");
+            finish(context, fixture);
+        });
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void farmerIsBetterLikedByVillagers(GameTestHelper context) {
+        // 同一个村民：定成行商之后声望不变，改定寻常农户以后多 20。
+        CrisisTestPlayer fixture = CrisisTestPlayer.create(context);
+        ServerPlayer player = fixture.player();
+        Villager villager = context.spawn(EntityTypes.VILLAGER, VILLAGER_AT);
+        waitUntil(context, () -> attached(player), () -> {
+            int before = villager.getPlayerReputation(player);
+            check(context, choose(context, player, "merchant") > 0, "出身调试指令没有成功");
+            check(context, villager.getPlayerReputation(player) == before, "行商之后也加了村民声望");
+            check(context, choose(context, player, "farmer") > 0, "出身调试指令没有成功");
+            int after = villager.getPlayerReputation(player);
+            check(context, after == before + FARMER_STANDING, "寻常农户的村民声望：" + before + " → " + after);
+            finish(context, fixture);
+        });
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void badTalentParamsAreRejected(GameTestHelper context) {
+        // 开局卷漏写卷，声望超出上下限或漏写，都在读出身数据时拒。
+        check(context, parsesVolume("{\"volume\":\"meridian_door_breaker:upper\"}"), "写对的开局卷读不出来");
+        check(context, !parsesVolume("{}"), "漏写卷的开局卷没被拒");
+        check(context, parsesStanding("{\"reputation\":20}"), "写对的声望读不出来");
+        check(context, !parsesStanding("{\"reputation\":101}"), "超出上限的声望没被拒");
+        check(context, !parsesStanding("{\"reputation\":-101}"), "超出下限的声望没被拒");
+        check(context, !parsesStanding("{}"), "漏写的声望没被拒");
+        context.succeed();
+    }
+
+    private static int choose(GameTestHelper context, ServerPlayer player, String origin) {
+        // 走出身附属的管理指令定出身，和玩家选定一样发一次性天赋。
+        return run(context, "meridian debug origin set " + player.getScoreboardName() + " " + NAMESPACE + ":" + origin);
+    }
+
+    private static List<String> missingText(Origin origin) {
+        // 出身卡读的键：名字、来历、天赋第 1..n 行、麻烦第 1..n 行。
+        String key = "origin." + origin.id().getNamespace() + "." + origin.id().getPath();
+        List<String> keys = new ArrayList<>(List.of(key + ".name", key + ".story"));
+        for (int line = 1; line <= origin.talents().size(); line++) {
+            keys.add(key + ".talent." + line);
+        }
+        for (int line = 1; line <= origin.threats().size(); line++) {
+            keys.add(key + ".threat." + line);
+        }
+        return keys.stream().filter(candidate -> !Language.getInstance().has(candidate)).toList();
+    }
+
+    private static boolean parsesVolume(String json) {
+        // 开局卷的参数解码成没成。
+        return OriginTalents.VOLUME.parse(JsonOps.INSTANCE, JsonParser.parseString(json)).isSuccess();
+    }
+
+    private static boolean parsesStanding(String json) {
+        // 声望的参数解码成没成。
+        return OriginTalents.STANDING.parse(JsonOps.INSTANCE, JsonParser.parseString(json)).isSuccess();
+    }
+}
