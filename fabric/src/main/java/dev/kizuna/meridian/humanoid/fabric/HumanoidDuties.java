@@ -13,6 +13,9 @@ public final class HumanoidDuties {
     /** 不退：不比战力、不看伤势，只有两臂虚脱或没有进攻手段时才撤。 */
     public static final String STAND_GROUND_TAG = "meridian_humanoid.duty.stand_ground";
 
+    /** 守村：村子遭袭击时到钟边守着，不躲；对村里声望极差的玩家和袭击队伍主动出手。只对村民有意义。 */
+    public static final String GUARD_VILLAGE_TAG = "meridian_humanoid.duty.guard_village";
+
     private HumanoidDuties() {
         // 纯静态入口。
     }
@@ -58,6 +61,19 @@ public final class HumanoidDuties {
                     HumanoidFabric.config().openedLumenGain());
         }
         return true;
+    }
+
+    public static void guardVillage(LivingEntity entity, boolean enabled) {
+        // 挂上或撤掉「守村」；下一次决策起生效。
+        if (enabled) {
+            entity.addTag(GUARD_VILLAGE_TAG);
+        } else {
+            entity.removeTag(GUARD_VILLAGE_TAG);
+        }
+    }
+
+    public static boolean guardsVillage(LivingEntity entity) {
+        return entity.entityTags().contains(GUARD_VILLAGE_TAG);
     }
 
     public static boolean standsGround(LivingEntity entity) {

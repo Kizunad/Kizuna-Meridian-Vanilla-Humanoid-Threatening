@@ -28,6 +28,7 @@ import dev.kizuna.meridian.technique.server.TechniqueHeldItems;
 import dev.kizuna.meridian.technique.server.TechniqueInfusions;
 import dev.kizuna.meridian.technique.server.TechniqueRegistry;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
+import dev.kizuna.meridian.technique.server.TechniqueService;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -226,16 +227,23 @@ final class HumanoidRepertoires {
                 .collect(Collectors.toMap(entry -> entry.known().getTechnique(), Ready::binding));
         var availability = new TechniqueSelector.Availability(bindings, bindings.keySet(),
                 source.progress().getCooldownsMap());
-        Set<TechniqueSelector.CombatFact> facts = opponent.map(target -> facts(mob, target.entity()))
+        Set<TechniqueSelector.CombatFact> facts = opponent.map(target -> facts(mob, target))
                 .orElse(Set.of());
         var ranged = source.target().map(target -> HumanoidWayfarerFacts.context(mob, target));
         var combat = new TechniqueSelector.CombatContext(facts, source.progress(), ranged);
         return new TechniqueSelector.Context(source.registry(), situation, availability, combat);
     }
 
-    private static Set<TechniqueSelector.CombatFact> facts(Mob mob, LivingEntity target) {
-        // 举盾、被围、受击、被追、身后、腾空与逃跑直接读当前世界事实。
+    static Set<TechniqueSelector.CombatFact> facts(Mob mob, HumanoidOpponent opponent) {
+        // 举盾、被围、受击、被追、身后、腾空与逃跑直接读当前世界事实；对方在起手读它的施放预报，倒地问 HumanoidTargets。
+        LivingEntity target = opponent.entity();
         var facts = EnumSet.noneOf(TechniqueSelector.CombatFact.class);
+        if (opponent.observation().flatMap(TechniqueService.Observation::cast).isPresent()) {
+            facts.add(TechniqueSelector.CombatFact.TARGET_CASTING);
+        }
+        if (HumanoidTargets.downed(target)) {
+            facts.add(TechniqueSelector.CombatFact.TARGET_DOWNED);
+        }
         if (target.isBlocking()) {
             facts.add(TechniqueSelector.CombatFact.TARGET_SHIELDING);
         }

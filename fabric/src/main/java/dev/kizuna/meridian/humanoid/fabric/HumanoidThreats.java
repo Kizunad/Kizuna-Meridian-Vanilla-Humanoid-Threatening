@@ -198,6 +198,9 @@ final class HumanoidThreats {
             var brain = villager.getBrain();
             brain.getMemory(MemoryModuleType.NEAREST_HOSTILE).ifPresent(candidates::add);
             brain.getMemory(MemoryModuleType.HURT_BY_ENTITY).ifPresent(candidates::add);
+            if (HumanoidDuties.guardsVillage(villager)) {
+                candidates.addAll(HumanoidGuards.intruders(villager));
+            }
         }
         return candidates;
     }

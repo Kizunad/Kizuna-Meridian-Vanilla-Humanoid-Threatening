@@ -28,6 +28,11 @@ public final class HumanoidVillagerAdapter {
         // 不指挥时原样走原版大脑；接手的那一刻停掉原版任务并忘掉日常的走路与交互记忆。
         if (!HumanoidBrain.directing(villager)) {
             directed.remove(villager);
+            if (HumanoidGuards.posted(world, villager)) {
+                // 守村的村民在村子遭袭击、手上没有对手时，到钟边守着，不跑原版的躲藏。
+                HumanoidGuards.hold(brain, world, villager);
+                return;
+            }
             brain.tick(world, villager);
             return;
         }
