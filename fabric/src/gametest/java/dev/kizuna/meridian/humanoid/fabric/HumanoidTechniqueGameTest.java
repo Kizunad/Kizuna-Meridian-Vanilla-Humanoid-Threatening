@@ -24,6 +24,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueRefe
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.Unit;
 import dev.kizuna.meridian.technique.server.TechniqueCastEndReason;
 import dev.kizuna.meridian.technique.server.TechniqueCastEnded;
+import dev.kizuna.meridian.technique.server.TechniqueCastTimelines;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueService;
@@ -81,6 +82,8 @@ public final class HumanoidTechniqueGameTest {
     private static final int EXHAUSTION_RETREAT_WAIT_TICKS = 80;
     private static final int CLEAVE_HIT_TICKS = 32;
     private static final int FOLLOW_UP_TICKS = 64;
+    /** 承接窗口打开以后最多这么多 tick 就该接上：比例行决策的间隔短得多。 */
+    private static final int FOLLOW_UP_PROMPT_TICKS = 3;
     private static final int RECOVERY_TICKS = 125;
     private static final int TEST_TIMEOUT = 220;
     private static final int UPPER_COUNT = 3;
@@ -495,6 +498,39 @@ public final class HumanoidTechniqueGameTest {
             context.assertTrue(!HumanoidTechniqueHost.isCasting(mob), "承接后打断残留施放状态");
             HumanoidTechniqueHost.removed(mob);
             context.succeed();
+        });
+    }
+
+    @GameTest(maxTicks = TEST_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void brainTakesTheFollowUpWhenItsWindowOpens(GameTestHelper context) {
+        // 劈门后面能接万门一斩：承接窗口一开，大脑就补一次决策把它接上，不等十 tick 一次的例行节拍；
+        // 自己还在施放、对手没在出招时，例行决策照旧不动。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        TechniqueFabric.service().learn(mob.getUUID(), PREFIX + "lower");
+        mob.setTarget(target);
+        start(context, mob, "cleave", target);
+        mob.setNoAi(false /* aiDisabled */);
+        var body = body(mob);
+        long now = body.settledAt().elapsedMillis();
+        var cleave = progress(mob).getActiveCast();
+        long opens = TechniqueCastTimelines.status(TechniqueFabric.service().registry(), progress(mob), now)
+                .getFollowUpsList().stream()
+                .filter(hint -> hint.getTechniqueId().equals(PREFIX + "finale"))
+                .mapToLong(hint -> cleave.getStartedMillis() + hint.getOpenMillis())
+                .findFirst().orElseThrow();
+        long untilOpen = (opens - now) / MILLIS_PER_TICK;
+        context.runAfterDelay(untilOpen - 1, () -> {
+            context.assertTrue(progress(mob).getActiveCast().getRequest().getCastId()
+                    .equals(cleave.getRequest().getCastId()), "窗口还没开，劈门就被换掉了");
+            context.runAfterDelay(1 + FOLLOW_UP_PROMPT_TICKS, () -> {
+                var active = progress(mob).getActiveCast();
+                context.assertTrue(active.getRequest().getTechnique().equals(reference("finale")),
+                        "承接窗口打开 " + FOLLOW_UP_PROMPT_TICKS + " tick 以后还没接上万门一斩：" + active.getRequest());
+                mob.setNoAi(true /* aiDisabled */);
+                HumanoidTechniqueHost.removed(mob);
+                context.succeed();
+            });
         });
     }
 

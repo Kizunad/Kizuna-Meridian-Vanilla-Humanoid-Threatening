@@ -15,7 +15,9 @@ import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeapAccess;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueLeaps;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
+import dev.kizuna.meridian.technique.server.TechniqueCastTimelines;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
 import dev.kizuna.meridian.technique.server.TechniqueService;
 import dev.kizuna.meridian.technique.server.TechniqueState;
@@ -29,6 +31,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -98,12 +101,17 @@ public final class HumanoidBrain {
         if (checkCastPlan(mob, mind)) {
             return;
         }
-        if (((TechniqueLeapAccess) mob).meridian$getLeap() != null || !decisionDue(mob, mind)) {
+        if (((TechniqueLeapAccess) mob).meridian$getLeap() != null) {
+            return;
+        }
+        // 正在放的式后面有能接的式时，承接窗口一开就补一次决策：窗口常常只有半秒，固定节拍会整个错过。
+        boolean followUp = followUpOpened(mob, mind);
+        if (!followUp && !decisionDue(mob, mind)) {
             return;
         }
         mind.clearDecisionWaits();
         try {
-            decide(mob, mind);
+            decide(mob, mind, followUp);
         } catch (RuntimeException failure) {
             mind.release();
             HumanoidFabric.report(mob, failure);
@@ -124,6 +132,15 @@ public final class HumanoidBrain {
         return mind.awaitingStaggerEnd() && TechniqueFabric.service().staggerRemainingMillis(mob.getUUID()) == 0;
     }
 
+    private static boolean followUpOpened(Mob mob, HumanoidMind mind) {
+        // 只在等着承接窗口时才读身体时钟；时钟答不出就留给例行节拍。
+        if (!mind.awaitingFollowUp()) {
+            return false;
+        }
+        var clock = HumanoidTechniqueHost.clockMillis(mob);
+        return clock.isPresent() && mind.takeFollowUp(clock.getAsLong());
+    }
+
     private static Optional<LivingEntity> threat(Mob mob, HumanoidMind mind) {
         // 被魅惑的只打施术者指定的对手；招敌派来的只盯那名玩家，撤走的谁也不打；其余综合打分选。
         if (HumanoidCharmController.controlled(mob)) {
@@ -135,8 +152,9 @@ public final class HumanoidBrain {
         return HumanoidThreats.choose(mob, config.threat(), mind.opponent());
     }
 
-    private static void decide(Mob mob, HumanoidMind mind) {
+    private static void decide(Mob mob, HumanoidMind mind, boolean followUp) {
         // 女巫先处理行药诀；其他生物再找威胁，无威胁路径只查已有会话的恢复式。
+        // followUp：这次是承接窗口刚打开补的决策，自己还在施放也照常选式。
         if (mob instanceof Witch witch && HumanoidWitchAi.decide(witch)) {
             mind.release();
             return;
@@ -149,11 +167,31 @@ public final class HumanoidBrain {
         mind.engage(threat.get());
         HumanoidNotice.keepEngaged(mob, threat.get());
         var opponent = new HumanoidOpponent(threat.get(), observe(threat.get()));
-        if (HumanoidTechniqueHost.hasActiveCast(mob) && opponent.cast().isEmpty()
-                && !HumanoidTechniqueHost.castingWayfarer(mob)) {
+        boolean casting = HumanoidTechniqueHost.hasActiveCast(mob);
+        if (!casting) {
+            mind.castIdle();
+        } else if (!followUp && !mind.followUpExamined()) {
+            mind.followUpExamined(followUpOpening(body(mob)));
+        }
+        if (casting && !followUp && opponent.cast().isEmpty() && !HumanoidTechniqueHost.castingWayfarer(mob)) {
             return;
         }
         fight(mob, mind, opponent);
+    }
+
+    private static OptionalLong followUpOpening(BodySnapshot body) {
+        // 正在放的这一式后面，自己会的式里最早什么时候（身体时钟）能接上；没有能接的、或者窗口已经开过了，为空。
+        TechniqueProgress progress = TechniqueState.read(body);
+        if (!progress.hasActiveCast()) {
+            return OptionalLong.empty();
+        }
+        long now = body.settledAt().elapsedMillis();
+        long started = progress.getActiveCast().getStartedMillis();
+        return TechniqueCastTimelines.status(TechniqueFabric.service().registry(), progress, now)
+                .getFollowUpsList().stream()
+                .mapToLong(hint -> started + hint.getOpenMillis())
+                .filter(opens -> opens > now)
+                .min();
     }
 
     private static void fight(Mob mob, HumanoidMind mind, HumanoidOpponent opponent) {

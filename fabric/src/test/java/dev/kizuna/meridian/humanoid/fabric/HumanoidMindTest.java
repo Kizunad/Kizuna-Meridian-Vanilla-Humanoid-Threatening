@@ -5,12 +5,15 @@ import dev.kizuna.meridian.humanoid.server.HumanoidAssessment.Stance;
 import net.minecraft.world.phys.Vec3;
 import org.junit.Test;
 
+import java.util.OptionalLong;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /** 大脑目标切换、脱离和释放时清理定时施放计划。 */
 public final class HumanoidMindTest {
+    private static final long FOLLOW_UP_OPENS = 4200;
     private static final long FLIGHT_MILLIS = 400;
     private static final long FIRST_HIT_MILLIS = 900;
     private static final long DUE_MILLIS = 2700;
@@ -101,5 +104,24 @@ public final class HumanoidMindTest {
     private static HumanoidMind.CastPlan plan() {
         return new HumanoidMind.CastPlan("test:strike", null, Vec3.ZERO, FLIGHT_MILLIS,
                 FIRST_HIT_MILLIS, DUE_MILLIS, EXPIRES_MILLIS, "测试计划");
+    }
+
+    @Test
+    public void followUpWindowIsReportedOnceAndSurvivesRoutineDecisions() {
+        // 看过正在放的式：后面有能接的，窗口打开那一刻报一次；之前的例行决策不把它冲掉；报过以后要重新看新的一式。
+        // 后面没有能接的，看过以后既不等也不再读身体，直到这一式放完。
+        HumanoidMind mind = new HumanoidMind();
+        assertFalse(mind.followUpExamined());
+        mind.followUpExamined(OptionalLong.of(FOLLOW_UP_OPENS));
+        assertTrue(mind.followUpExamined() && mind.awaitingFollowUp());
+        mind.clearDecisionWaits();
+        assertFalse(mind.takeFollowUp(FOLLOW_UP_OPENS - 1));
+        assertTrue(mind.takeFollowUp(FOLLOW_UP_OPENS));
+        assertFalse(mind.awaitingFollowUp() || mind.followUpExamined());
+        mind.followUpExamined(OptionalLong.empty());
+        assertTrue(mind.followUpExamined());
+        assertFalse(mind.awaitingFollowUp());
+        mind.castIdle();
+        assertFalse(mind.followUpExamined());
     }
 }

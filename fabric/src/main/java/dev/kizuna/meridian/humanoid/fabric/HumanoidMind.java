@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -14,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
 final class HumanoidMind {
     static final int LOG_CAPACITY = 32;
     private static final double MILLIS_PER_SECOND = 1000;
+    private static final long NO_FOLLOW_UP = Long.MAX_VALUE;
     private final ArrayDeque<Logged> log = new ArrayDeque<>();
     private final Map<String, Failure> failures = new HashMap<>();
     private Stance stance = Stance.ENGAGE;
@@ -26,6 +28,10 @@ final class HumanoidMind {
     private boolean cornered;
     private boolean awaitingStaggerEnd;
     private boolean contactPending;
+    /** 正在放的这一式，自己会的式里最早到这个身体时刻能接上；没有能接的时候是 NO_FOLLOW_UP。 */
+    private long followUpOpensMillis = NO_FOLLOW_UP;
+    /** 正在放的这一式后面能接什么已经看过了：一式只读一次身体。 */
+    private boolean followUpExamined;
     private boolean pathed;
     private int pathedTick;
     private HumanoidPressure.Sighting sighting;
@@ -89,8 +95,38 @@ final class HumanoidMind {
         return contactPending;
     }
 
+    boolean followUpExamined() {
+        return followUpExamined;
+    }
+
+    void followUpExamined(OptionalLong opensMillis) {
+        // 正在放的这一式看过了：后面有能接的式就记下承接窗口打开的身体时刻，到时补一次决策。
+        followUpExamined = true;
+        followUpOpensMillis = opensMillis.orElse(NO_FOLLOW_UP);
+    }
+
+    void castIdle() {
+        // 没有在施放：下一式放出来再重新看。
+        followUpExamined = false;
+        followUpOpensMillis = NO_FOLLOW_UP;
+    }
+
+    boolean awaitingFollowUp() {
+        return followUpOpensMillis != NO_FOLLOW_UP;
+    }
+
+    boolean takeFollowUp(long clockMillis) {
+        // 身体时钟走到了承接窗口打开的时刻：只报这一次。接上以后是新的一式，要重新看它后面还能接什么。
+        if (clockMillis < followUpOpensMillis) {
+            return false;
+        }
+        castIdle();
+        return true;
+    }
+
     void clearDecisionWaits() {
         // 每次决策都重新判断；这次还被僵直挡住时由施放入口再登记，接敌补决策只补这一次。
+        // 等承接窗口的那一条不在这里清：窗口没开以前的例行决策不该把它冲掉。
         awaitingStaggerEnd = false;
         contactPending = false;
     }
