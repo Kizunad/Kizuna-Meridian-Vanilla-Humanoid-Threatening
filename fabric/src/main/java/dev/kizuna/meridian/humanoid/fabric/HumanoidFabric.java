@@ -49,6 +49,7 @@ public final class HumanoidFabric implements ModInitializer {
     private static final SimpleCommandExceptionType BODY_NOT_CREATED =
             new SimpleCommandExceptionType(Component.literal("目标尚未创建身体"));
     private static MinecraftServer activeServer;
+    private static boolean stopping;
     private static HumanoidConfig config;
     private static AddonRegistry content;
     private static QiVariantRegistry variants;
@@ -82,6 +83,7 @@ public final class HumanoidFabric implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(HumanoidFabric::startServer);
         ServerLifecycleEvents.AFTER_SAVE.register(HumanoidFabric::saveWorld);
         ServerTickEvents.END_SERVER_TICK.register(HumanoidFabric::tick);
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> stopping(true));
         ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, level) -> onEntityUnloaded(entity));
         registerCommands();
@@ -90,6 +92,7 @@ public final class HumanoidFabric implements ModInitializer {
     private static void startServer(MinecraftServer server) {
         // 世界释放请求从持久化状态恢复，无法恢复时拒绝已认领实体的健康请求。
         activeServer = server;
+        stopping = false;
         try {
             Path file = stateFile(server);
             if (Files.exists(file)) {
@@ -151,6 +154,16 @@ public final class HumanoidFabric implements ModInitializer {
     static boolean isReady() {
         // 世界存在且释放账本、内容和环境入口都已装配时才允许健康附属查询。
         return activeServer != null && worldState != null && generator != null && environment != null;
+    }
+
+    static boolean isStopping() {
+        // 停服开始到世界关完之间：功法服务已经取消全部施放并关闭，世界还在存盘、实体还在卸载。
+        return stopping;
+    }
+
+    static void stopping(boolean value) {
+        // 停服事件和 GameTest 用；开服时复位。
+        stopping = value;
     }
 
     static MinecraftServer server() {

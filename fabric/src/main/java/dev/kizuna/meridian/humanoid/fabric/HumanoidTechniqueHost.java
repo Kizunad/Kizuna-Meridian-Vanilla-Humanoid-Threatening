@@ -266,7 +266,9 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         HumanoidBrain.forget(entity.getUUID());
         if (session != null) {
             try {
-                if (HumanoidFabric.isReady()) {
+                // 停服开始时功法服务已经逐个取消施放、写回身体并关闭，之后世界才存盘、实体才卸载：
+                // 这时再找它恢复只会抛「功法服务不可用」，每只生物一条报错。只放掉会话；身体随实体存档，万一有残留下次绑定时照旧清。
+                if (HumanoidFabric.isReady() && !HumanoidFabric.isStopping()) {
                     recover(entity, session);
                 }
             } finally {

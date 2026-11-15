@@ -154,6 +154,29 @@ public final class HumanoidTechniqueGameTest {
         context.succeed();
     }
 
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void unloadAfterStopBeginsLeavesTechniqueServiceAlone(GameTestHelper context) {
+        // 停服开始以后功法服务已经关了：这时卸载出招中的类人生物只放掉会话，不再找功法服务恢复
+        // （原来每只生物抛一条「功法服务不可用」）。没在停服时卸载照旧把残留施放清掉。
+        Vindicator mob = prepared(context);
+        mob.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+        start(context, mob, "knock", target(context));
+        String castId = progress(mob).getActiveCast().getRequest().getCastId();
+        HumanoidFabric.stopping(true);
+        try {
+            HumanoidTechniqueHost.removed(mob);
+        } finally {
+            HumanoidFabric.stopping(false);
+        }
+        context.assertTrue(!HumanoidTechniqueHost.hasSession(mob), "停服中卸载没有放掉会话");
+        context.assertTrue(progress(mob).getActiveCast().getRequest().getCastId().equals(castId),
+                "停服中卸载还是去动了身体上的施放");
+        HumanoidTechniqueHost.prepare(mob);
+        context.assertTrue(!progress(mob).hasActiveCast(), "重新绑定没有清掉上次残留的施放");
+        HumanoidTechniqueHost.removed(mob);
+        context.succeed();
+    }
+
     private static void runDecisions(Vindicator mob, GoalSelector goals, GoalSelector targets) {
         // 连续整周期覆盖任意实体相位，同步执行不混入世界里的原版 Goal。
         int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
