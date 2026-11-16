@@ -66,6 +66,8 @@ assault_stand_off = 1.5        # 突击落点在目标身前的距离（格）
 failure_limit = 2              # 同一式连续施放失败这么多次后暂停尝试
 failure_block_millis = 5000    # 暂停时长；冷却更长时以冷却为准
 cornered_stand_distance = 2.0  # 会防守腿法却没退路时，对手远于此就迎上去，进了此距离就站定等它进招（格）
+armored_chest_armor = 6        # 对手胸甲的护甲值不低于此值算「甲厚」，会透劲的式按这条加权；
+                               # 铁胸甲 6，钻石、下界合金 8，皮 3，锁链、金 5
 
 # 学卷表：每个物种按出生档位（mortal 凡人、wandering_qi 游炁、true_qi 真炁）写明学哪几卷与概率；
 # 档位每档写全，不从低档继承；未写的档不学卷，默认各物种都不写 mortal，凡人一卷不学。

@@ -244,6 +244,9 @@ final class HumanoidRepertoires {
         if (HumanoidTargets.downed(target)) {
             facts.add(TechniqueSelector.CombatFact.TARGET_DOWNED);
         }
+        if (HumanoidTargets.armored(target)) {
+            facts.add(TechniqueSelector.CombatFact.TARGET_ARMORED);
+        }
         if (target.isBlocking()) {
             facts.add(TechniqueSelector.CombatFact.TARGET_SHIELDING);
         }

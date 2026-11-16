@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.authlib.GameProfile;
+import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastPhase;
@@ -10,6 +11,7 @@ import dev.kizuna.meridian.technique.server.TechniqueSelector.CombatFact;
 import dev.kizuna.meridian.technique.server.TechniqueService.Stagger;
 import dev.kizuna.meridian.technique.server.TechniqueService.StaggerKind;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +25,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.gossip.GossipType;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
@@ -31,6 +34,9 @@ import net.minecraft.world.entity.animal.cow.Cow;
 import net.minecraft.world.entity.monster.illager.Vindicator;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.raid.Raid;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
@@ -58,6 +64,7 @@ public final class HumanoidGuardGameTest {
     private static final double TOO_CLOSE = 10;
     private static final double RADIUS_SLACK = 0.5;
     private static final double RAIDER_DISTANCE = 13;
+    private static final double GOLDEN_CHEST_ARMOR = 5;
 
     static {
         // 别的附属自己管着的「倒地」要登记进来大脑才看得见；这里登记一种测试用的。
@@ -195,6 +202,48 @@ public final class HumanoidGuardGameTest {
         target.discard();
         cow.discard();
         context.succeed();
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void opponentInAnIronChestplateOrBetterIsSeenAsArmored(GameTestHelper context) {
+        // 对手胸甲到了铁胸甲那一档，大脑选式时看得见「甲厚」；光着、皮甲、金甲都不算，只穿铁头盔也不算。
+        Villager self = mob(context, EntityTypes.VILLAGER, HumanoidTier.TRUE_QI,
+                new BlockPos(2, 2, 2), true /* idle */);
+        Vindicator target = mob(context, EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI,
+                new BlockPos(4, 2, 2), true /* idle */);
+        context.assertTrue(noneOf(facts(self, target), CombatFact.TARGET_ARMORED), "没穿甲就算甲厚了");
+        for (Item thin : List.of(Items.LEATHER_CHESTPLATE, Items.GOLDEN_CHESTPLATE)) {
+            target.setItemSlot(EquipmentSlot.CHEST, new ItemStack(thin));
+            context.assertTrue(noneOf(facts(self, target), CombatFact.TARGET_ARMORED), thin + " 不该算甲厚");
+        }
+        target.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
+        target.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        context.assertTrue(noneOf(facts(self, target), CombatFact.TARGET_ARMORED), "只戴铁头盔不该算甲厚");
+        for (Item thick : List.of(Items.IRON_CHESTPLATE, Items.DIAMOND_CHESTPLATE)) {
+            target.setItemSlot(EquipmentSlot.CHEST, new ItemStack(thick));
+            context.assertTrue(facts(self, target).contains(CombatFact.TARGET_ARMORED), thick + " 应当算甲厚");
+        }
+        // 门槛读的是大脑配置：调到 5，金胸甲（5 点）也算；用完换回原来的配置。
+        target.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.GOLDEN_CHESTPLATE));
+        HumanoidBrainConfig original = HumanoidBrain.config();
+        try {
+            HumanoidBrain.configure(armoredAt(original, GOLDEN_CHEST_ARMOR));
+            context.assertTrue(facts(self, target).contains(CombatFact.TARGET_ARMORED), "门槛调到 5，金胸甲应当算甲厚");
+        } finally {
+            HumanoidBrain.configure(original);
+        }
+        self.discard();
+        target.discard();
+        context.succeed();
+    }
+
+    private static HumanoidBrainConfig armoredAt(HumanoidBrainConfig config, double chestArmor) {
+        // 只换「甲厚」的门槛，别的照旧。
+        var response = config.response();
+        return new HumanoidBrainConfig(config.schedule(), config.threat(), config.assessment(),
+                new HumanoidBrainConfig.ResponseRules(response.tactics(), response.assaultStandOff(),
+                        response.failureLimit(), response.failureBlockMillis(), chestArmor),
+                config.volumes(), config.concurrency());
     }
 
     private static Set<CombatFact> facts(Mob self, Mob target) {

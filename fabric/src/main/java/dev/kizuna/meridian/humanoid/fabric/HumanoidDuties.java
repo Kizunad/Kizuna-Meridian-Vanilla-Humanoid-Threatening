@@ -52,13 +52,24 @@ public final class HumanoidDuties {
      * 身体这一刻读不到时返回 false，调用方下一 tick 再来。
      */
     public static boolean ensureOpened(LivingEntity entity, String meridianTag) {
+        return ensureOpened(entity, meridianTag, 1 /* atLeast */);
+    }
+
+    /**
+     * 保底开到 {@code atLeast} 条：带这个标签的经脉里开了的不够这个数，就按构型里的先后把没开的补开，
+     * 补到够数或全开为止；已经够数就不动。其余和 {@link #ensureOpened(LivingEntity, String)} 相同。
+     */
+    public static boolean ensureOpened(LivingEntity entity, String meridianTag, int atLeast) {
         Optional<HumanoidTier> tier = HumanoidTiers.of(entity);
         if (tier.isEmpty()) {
             return false;
         }
         if (tier.get() != HumanoidTier.MORTAL) {
-            HumanoidTechniqueHost.prepare(entity).body().openOne(meridianTag,
-                    HumanoidFabric.config().openedLumenGain());
+            HumanoidBodyState body = HumanoidTechniqueHost.prepare(entity).body();
+            double gain = HumanoidFabric.config().openedLumenGain();
+            while (body.openOne(meridianTag, atLeast, gain)) {
+                // 一次开一条，每条各是一笔身体事务；够数或没有可开的就停。
+            }
         }
         return true;
     }

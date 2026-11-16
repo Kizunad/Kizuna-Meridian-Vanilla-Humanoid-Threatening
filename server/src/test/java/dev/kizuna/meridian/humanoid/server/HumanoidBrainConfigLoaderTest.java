@@ -39,6 +39,9 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double DEFAULT_STAND_DISTANCE = 2;
     private static final double CUSTOM_STAND_DISTANCE = 3;
     private static final String STAND_DISTANCE_LINE = "cornered_stand_distance = 2.0";
+    private static final double DEFAULT_ARMORED_CHEST = 6;
+    private static final double CUSTOM_ARMORED_CHEST = 8;
+    private static final String ARMORED_CHEST_LINE = "armored_chest_armor = 6";
     private static final double DEFAULT_UNPRESSED_SECONDS = 5;
     private static final double CUSTOM_UNPRESSED_SECONDS = 8;
     private static final String UNPRESSED_LINE = "return_unpressed_seconds = 5.0";
@@ -130,6 +133,27 @@ public class HumanoidBrainConfigLoaderTest {
         String custom = replace(STAND_DISTANCE_LINE, "cornered_stand_distance = " + CUSTOM_STAND_DISTANCE);
         var customTactics = HumanoidBrainConfigLoader.parse(custom).response().tactics();
         assertEquals(CUSTOM_STAND_DISTANCE, customTactics.corneredStandDistance(), TOLERANCE);
+    }
+
+    @Test
+    public void armoredChestThresholdComesFromTheFileAndOldFilesRunOnDefault() {
+        // 「甲厚」的门槛默认是铁胸甲的 6 点；旧导出文件没有这个键时按默认值运行并列入缺键清单；
+        // 写了就用写的值，零和负数在加载时拒绝。
+        assertEquals(DEFAULT_ARMORED_CHEST, HumanoidBrainConfigLoader.defaults().response().armoredChestArmor(),
+                TOLERANCE);
+        String old = replace(ARMORED_CHEST_LINE, "");
+        assertEquals(DEFAULT_ARMORED_CHEST, HumanoidBrainConfigLoader.parse(old).response().armoredChestArmor(),
+                TOLERANCE);
+        assertEquals(List.of("response.armored_chest_armor"), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        String custom = replace(ARMORED_CHEST_LINE, "armored_chest_armor = " + CUSTOM_ARMORED_CHEST);
+        assertEquals(CUSTOM_ARMORED_CHEST, HumanoidBrainConfigLoader.parse(custom).response().armoredChestArmor(),
+                TOLERANCE);
+        for (String bad : List.of("0", "-6")) {
+            String text = replace(ARMORED_CHEST_LINE, "armored_chest_armor = " + bad);
+            var failure = assertThrows(bad, IllegalArgumentException.class,
+                    () -> HumanoidBrainConfigLoader.parse(text));
+            assertTrue(bad, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
+        }
     }
 
     @Test

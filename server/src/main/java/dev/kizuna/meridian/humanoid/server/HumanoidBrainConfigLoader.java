@@ -22,6 +22,7 @@ public final class HumanoidBrainConfigLoader {
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
+    private static final String ARMORED_CHEST_ARMOR = "armored_chest_armor";
     private static final String RETURN_UNPRESSED_SECONDS = "return_unpressed_seconds";
     private static final String NOTICE_DISTANCE = "notice_distance";
     /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
@@ -194,10 +195,10 @@ public final class HumanoidBrainConfigLoader {
     }
 
     private static HumanoidBrainConfig.ResponseRules response(TomlTable table, double safeDistance) {
-        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次，站定距离为正。
+        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次，站定距离和甲厚门槛为正。
         TOML.checkKeys(table, Set.of("reaction_window_millis", "interrupt_margin_millis", "absorb_own_hit_millis",
                 "absorb_dose_ratio", "dodge_margin_millis", "assault_stand_off", "failure_limit",
-                "failure_block_millis", CORNERED_STAND_DISTANCE), "response.");
+                "failure_block_millis", CORNERED_STAND_DISTANCE, ARMORED_CHEST_ARMOR), "response.");
         var reaction = new TacticRules.Reaction(millis(table, "reaction_window_millis"),
                 millis(table, "interrupt_margin_millis"),
                 millis(table, "absorb_own_hit_millis"),
@@ -207,7 +208,16 @@ public final class HumanoidBrainConfigLoader {
         return new HumanoidBrainConfig.ResponseRules(tactics,
                 positive(table, "assault_stand_off", "response"),
                 TOML.integer(table, "failure_limit", "response.failure_limit"),
-                millis(table, "failure_block_millis"));
+                millis(table, "failure_block_millis"),
+                positive(defaulted(table, ARMORED_CHEST_ARMOR), ARMORED_CHEST_ARMOR, "response"));
+    }
+
+    private static TomlTable defaulted(TomlTable table, String key) {
+        // [response] 里后加的键在旧导出文件里没有：缺失时读 JAR 默认资源的同名键，load 启动时另行提示。
+        if (table.contains(key)) {
+            return table;
+        }
+        return TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "response", "response");
     }
 
     private static double returnUnpressedSeconds(TomlTable table) {

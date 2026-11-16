@@ -20,9 +20,9 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
         }
     }
 
-    /** 战术阈值，以及突击落点离目标的距离和同一式连续施放失败后的屏蔽规则。 */
+    /** 战术阈值，以及突击落点离目标的距离、同一式连续施放失败后的屏蔽规则、对手胸甲护甲值到多少算「甲厚」。 */
     public record ResponseRules(TacticRules tactics, double assaultStandOff, int failureLimit,
-                                long failureBlockMillis) { }
+                                long failureBlockMillis, double armoredChestArmor) { }
 
     /** 双通道策略：准备式保持跃步带的概率，以及调息时是否继续沿退路移动。 */
     public record ConcurrencyRules(double holdRangeProbability, boolean allowRecoveryMovement) {

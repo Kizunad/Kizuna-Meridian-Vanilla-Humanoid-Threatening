@@ -287,10 +287,16 @@ public final class HumanoidBodyState {
     }
 
     boolean openOne(String meridianTag, double addedVolume) {
-        // 带这个标签的经脉里已经有开了的就不动；一条都没开，就按构型里的先后开第一条，返回 true。
+        // 带这个标签的经脉一条都没开时开第一条。
+        return openOne(meridianTag, 1 /* atLeast */, addedVolume);
+    }
+
+    boolean openOne(String meridianTag, int atLeast, double addedVolume) {
+        // 带这个标签的经脉里已经开了 atLeast 条就不动；不够，就按构型里的先后开第一条没开的，返回 true。
         // 走 Framework 可信活动里的经脉完成项，和正常开脉完成是同一条路：扩内腔体积、标记已开。
         BodyMessages.BodySnapshot body = snapshot();
         String first = null;
+        int opened = 0;
         for (int index = 0; index < body.getMeridianStatesCount(); index++) {
             BodyMessages.MeridianDefinition meridian = body.getStructure().getMeridians(index);
             if (!meridian.getTagsList().contains(meridianTag)) {
@@ -298,11 +304,12 @@ public final class HumanoidBodyState {
             }
             var stage = body.getMeridianStates(index).getOpening().getStage();
             if (stage == BodyMessages.MeridianOpeningStage.OPENED) {
-                return false;
+                opened++;
+            } else if (first == null) {
+                first = meridian.getId();
             }
-            first = first == null ? meridian.getId() : first;
         }
-        if (first == null) {
+        if (first == null || opened >= atLeast) {
             return false;
         }
         var completion = ActivityMessages.CompleteMeridian.newBuilder().setMeridianId(first).setAddedVolume(addedVolume);
