@@ -70,7 +70,8 @@ public final class HumanoidEvokerGameTest {
     private static final String EARTH = "meridian:earth";
     private static final String PREPARE_WOLOLO = "minecraft:entity.evoker.prepare_wololo";
     private static final String ORGAN_DAMAGE = "meridian_humanoid_test:organ";
-    private static final String HEART = "heart";
+    private static final String SPLEEN = "spleen";
+    private static final String EARTH_PREFIX = PREFIX + "earth_";
     private static final String SEEDED_CAST = "gametest-seeded";
     private static final long WORLD_SEED = 987654321L;
     private static final int SEED = 0;
@@ -213,17 +214,18 @@ public final class HumanoidEvokerGameTest {
     }
 
     @GameTest(maxTicks = TIMEOUT, environment = SPELLS_BATCH, structure = STRUCTURE)
-    public void destroyedHeartFallsBackToVanillaSpells(GameTestHelper context) {
-        // 本脏：心 HP 打到 0 的火唤魔者绑不上灼火，不放；照样唤尖牙、恼鬼，命中都不带附伤。
-        Duel duel = Duel.start(context, "heart", HumanoidTier.TRUE_QI, FIRE, FAR);
-        destroyOrgan(context, duel.evoker, HEART);
+    public void destroyedOwnOrganFallsBackToVanillaSpells(GameTestHelper context) {
+        // 本脏：脾 HP 打到 0 的土唤魔者绑不上本行的式（震土、厚土），不放；照样唤尖牙、恼鬼，命中都不带附伤。
+        // 用土行和脾来验：心归零即死，火唤魔者的本脏毁了人就没了，测不到「毁了本脏退回原版」。
+        Duel duel = Duel.start(context, "spleen", HumanoidTier.TRUE_QI, EARTH, FAR);
+        destroyOrgan(context, duel.evoker, SPLEEN);
         duel.observe(DUEL_TICKS, () -> duel.struckBy(EvokerFangs.class) && duel.struckBy(Vex.class), () -> {
-            context.assertTrue(duel.casts.stream().noneMatch(cast -> cast.technique().equals(FIRE_BURN)),
-                    "心损毁后仍放了灼火：" + duel.casts);
+            context.assertTrue(duel.casts.stream().noneMatch(cast -> cast.technique().startsWith(EARTH_PREFIX)),
+                    "脾损毁后仍放了土行的式：" + duel.casts);
             context.assertTrue(duel.struckBy(EvokerFangs.class) && duel.struckBy(Vex.class),
-                    "心损毁后没照原版唤尖牙、恼鬼：" + duel.describeHits());
+                    "脾损毁后没照原版唤尖牙、恼鬼：" + duel.describeHits());
             context.assertTrue(duel.hits(hit -> isInfusion(hit.source())).isEmpty(),
-                    "心损毁后命中仍带附伤：" + duel.describeHits());
+                    "脾损毁后命中仍带附伤：" + duel.describeHits());
             duel.finish();
         });
     }

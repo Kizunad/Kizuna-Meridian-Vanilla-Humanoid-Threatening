@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /** 物种的身体死亡规则：按 Human 人体规则裁定，或永不进入死态。 */
 public enum HumanoidDeathRule {
-    /** 部位总 HP 低于两成或头部归零即死亡，与原版生人相同。 */
+    /** 部位总 HP 低于两成，或头、颈、胸任一个归零，或心归零即死亡，与玩家相同（规则在 Human 的 HumanDamage）。 */
     HUMAN,
     /** 部位可以全部归零，身体始终不判死，供训练假人观察累计伤势。 */
     NEVER;

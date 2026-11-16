@@ -58,7 +58,7 @@ foot_opening_weight = 1.0
 |---|---|---|
 | `template` | 是 | 只接受 `human:adult` |
 | `default_tier` | 是 | `mortal`：游炁境界，一条经脉都不开。<br>`wandering_qi` / `true_qi`：与原版生人相同 |
-| `death_rule` | 否 | `human`：部位总 HP 低于两成或头部归零即死亡，与原版生人相同。<br>`never`：损伤照常分配，只去掉致死结论，部位可以全部归零 |
+| `death_rule` | 否 | `human`：部位总 HP 低于两成，或头、颈、胸任一个归零，或心归零即死亡，与玩家相同。<br>`never`：损伤照常分配，只去掉致死结论，部位可以全部归零 |
 | `brain` | 否 | `true`：由类人大脑接管。<br>`false`：大脑完全不接管，不决策、不占原版控制、不改恐慌与逃跑 |
 | `profile` | 是 | 出生画像，字段与 `meridian-humanoid.toml` 中 `[species.*]` 相同 |
 
