@@ -14,6 +14,7 @@ import static org.junit.Assert.assertTrue;
 /** 大脑目标切换、脱离和释放时清理定时施放计划。 */
 public final class HumanoidMindTest {
     private static final long FOLLOW_UP_OPENS = 4200;
+    private static final double STRIKE_DISTANCE = 2.0;
     private static final long FLIGHT_MILLIS = 400;
     private static final long FIRST_HIT_MILLIS = 900;
     private static final long DUE_MILLIS = 2700;
@@ -123,5 +124,19 @@ public final class HumanoidMindTest {
         assertFalse(mind.awaitingFollowUp());
         mind.castIdle();
         assertFalse(mind.followUpExamined());
+    }
+
+    @Test
+    public void opponentComingWithinStrikeDistanceIsReportedOnceAndResetByTheNextDecision() {
+        // 上次决策时对手在起手距离外：它进来报一次；每次决策都重新登记，没登记就不报。
+        HumanoidMind mind = new HumanoidMind();
+        assertFalse(mind.awaitingStrikeDistance());
+        mind.awaitStrikeDistance(STRIKE_DISTANCE);
+        assertFalse(mind.takeStrikeDistance(STRIKE_DISTANCE + HALF_SECOND));
+        assertTrue(mind.takeStrikeDistance(STRIKE_DISTANCE));
+        assertFalse(mind.awaitingStrikeDistance());
+        mind.awaitStrikeDistance(STRIKE_DISTANCE);
+        mind.clearDecisionWaits();
+        assertFalse(mind.awaitingStrikeDistance());
     }
 }

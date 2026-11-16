@@ -23,6 +23,8 @@ public final class HumanoidBrainConfigLoader {
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
     private static final String ARMORED_CHEST_ARMOR = "armored_chest_armor";
+    private static final String STRIKE_START_DISTANCE = "strike_start_distance";
+    private static final String KICK_START_DISTANCE = "kick_start_distance";
     private static final String RETURN_UNPRESSED_SECONDS = "return_unpressed_seconds";
     private static final String NOTICE_DISTANCE = "notice_distance";
     private static final String VILLAGER = "villager";
@@ -211,16 +213,19 @@ public final class HumanoidBrainConfigLoader {
     }
 
     private static HumanoidBrainConfig.ResponseRules response(TomlTable table, double safeDistance) {
-        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次，站定距离和甲厚门槛为正。
+        // 毫秒为非负整数，剂量比为 [0, 1]，失败次数至少一次，站定距离、起手距离和甲厚门槛为正。
         TOML.checkKeys(table, Set.of("reaction_window_millis", "interrupt_margin_millis", "absorb_own_hit_millis",
                 "absorb_dose_ratio", "dodge_margin_millis", "assault_stand_off", "failure_limit",
-                "failure_block_millis", CORNERED_STAND_DISTANCE, ARMORED_CHEST_ARMOR), "response.");
+                "failure_block_millis", CORNERED_STAND_DISTANCE, ARMORED_CHEST_ARMOR, STRIKE_START_DISTANCE,
+                KICK_START_DISTANCE), "response.");
         var reaction = new TacticRules.Reaction(millis(table, "reaction_window_millis"),
                 millis(table, "interrupt_margin_millis"),
                 millis(table, "absorb_own_hit_millis"),
                 ratio(table, "absorb_dose_ratio", "response"),
                 millis(table, "dodge_margin_millis"));
-        var tactics = new TacticRules(reaction, safeDistance, corneredStandDistance(table));
+        var tactics = new TacticRules(reaction, safeDistance, corneredStandDistance(table),
+                positive(defaulted(table, STRIKE_START_DISTANCE), STRIKE_START_DISTANCE, "response"),
+                positive(defaulted(table, KICK_START_DISTANCE), KICK_START_DISTANCE, "response"));
         return new HumanoidBrainConfig.ResponseRules(tactics,
                 positive(table, "assault_stand_off", "response"),
                 TOML.integer(table, "failure_limit", "response.failure_limit"),

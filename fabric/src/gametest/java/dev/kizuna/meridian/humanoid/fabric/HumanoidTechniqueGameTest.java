@@ -1,6 +1,8 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.humanoid.server.TacticRules;
+import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
@@ -55,6 +57,7 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.Vec3;
 import dev.kizuna.playeranimation.mobs.MobAnimationServer;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +69,11 @@ import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_
 /** 正式功法目录、身体宿主和类人大脑的完整装配回归；破门用例的批次只发破门卷。 */
 public final class HumanoidTechniqueGameTest {
     private static final String TECHNIQUE_BATCH = "meridian_humanoid_test:technique";
+    private static final double DEFAULT_STRIKE_START = 2.0;
+    private static final double OUTSIDE_STRIKE_DISTANCE = 3.0;
+    private static final double INSIDE_STRIKE_DISTANCE = 1.9;
+    private static final double KNOCK_CATALOG_REACH = 3.0;
+    private static final double BEYOND_CATALOG_REACH = 3.5;
     private static final String DOOR_ALLOW_BATCH = "meridian_humanoid_test:door_allow";
     private static final String DOOR_DENY_BATCH = "meridian_humanoid_test:door_deny";
     private static final int ORIGIN = 2;
@@ -176,6 +184,74 @@ public final class HumanoidTechniqueGameTest {
                 "停服中卸载还是去动了身体上的施放");
         HumanoidTechniqueHost.prepare(mob);
         context.assertTrue(!progress(mob).hasActiveCast(), "重新绑定没有清掉上次残留的施放");
+        HumanoidTechniqueHost.removed(mob);
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void closeStrikesStartWithinConfiguredDistance(GameTestHelper context) {
+        // 目录里叩门的判定距离是三格，生物隔三格起手看着是隔空打人：默认配置下走到两格以内才起手；
+        // 配置放宽到目录以上就照目录。判定距离本身和玩家都不经这里。
+        Vindicator mob = prepared(context);
+        mob.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+        HumanoidBrainConfig config = HumanoidBrain.config();
+        TacticRules tactics = config.response().tactics();
+        context.assertTrue(tactics.strikeStartDistance() == DEFAULT_STRIKE_START, "默认起手距离不是两格");
+        context.assertTrue(startDistance(mob, "knock") == DEFAULT_STRIKE_START,
+                "默认配置下叩门的起手距离不是两格：" + startDistance(mob, "knock"));
+        var relaxed = new TacticRules(tactics.reaction(), tactics.safeDistance(), tactics.corneredStandDistance(),
+                BEYOND_CATALOG_REACH, tactics.kickStartDistance());
+        var response = new HumanoidBrainConfig.ResponseRules(relaxed, config.response().assaultStandOff(),
+                config.response().failureLimit(), config.response().failureBlockMillis(),
+                config.response().armoredChestArmor());
+        HumanoidBrain.configure(new HumanoidBrainConfig(config.schedule(), config.threat(), config.assessment(),
+                response, config.volumes(), config.concurrency()));
+        try {
+            context.assertTrue(startDistance(mob, "knock") == KNOCK_CATALOG_REACH,
+                    "配置放宽后叩门没有照目录的三格：" + startDistance(mob, "knock"));
+        } finally {
+            HumanoidBrain.configure(config);
+        }
+        HumanoidTechniqueHost.removed(mob);
+        context.succeed();
+    }
+
+    private static double startDistance(Vindicator mob, String name) {
+        // 大脑决策读的同一份候选：这一式生物走到多近才起手。
+        return HumanoidRepertoires.read(mob, body(mob), Optional.empty(), technique -> false)
+                .repertoire().strikes().stream()
+                .filter(strike -> strike.technique().equals(PREFIX + name))
+                .findFirst().orElseThrow().reach();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void brainDecidesTheMomentTheOpponentComesWithinStrikeDistance(GameTestHelper context) {
+        // 对手还在起手距离外时的决策是接近；它一进起手距离，大脑不等十 tick 一次的例行节拍，当 tick 就再决策。
+        // 等节拍的话两边对着走常常已经贴脸，原版近战抢在打击式前面。
+        Vindicator mob = prepared(context);
+        LivingEntity target = target(context);
+        mob.setNoAi(false /* aiDisabled */);
+        var goals = new GoalSelector();
+        var targets = new GoalSelector();
+        target.snapTo(mob.getX(), mob.getY(), mob.getZ() + OUTSIDE_STRIKE_DISTANCE);
+        // 先空走一步让大脑接上手，再给目标：认出对手的下一个 tick 补一次决策。
+        stepBrain(mob, goals, targets);
+        mob.setTarget(target);
+        stepBrain(mob, goals, targets);
+        int contacted = HumanoidBrain.decisions(mob.getUUID()).size();
+        context.assertTrue(contacted == CONTACT_DECISIONS && !progress(mob).hasActiveCast(),
+                "对手在起手距离外，应当只做一次接近的决策：" + contacted);
+        // 把实体年龄拨到刚过例行节拍：接下来两个 tick 都不在节拍上。
+        int interval = HumanoidBrain.config().schedule().decisionIntervalTicks();
+        mob.tickCount += interval - Math.floorMod(mob.tickCount + mob.getId(), interval);
+        stepBrain(mob, goals, targets);
+        context.assertTrue(HumanoidBrain.decisions(mob.getUUID()).size() == contacted, "对手没动、不在节拍上却决策了");
+        target.snapTo(mob.getX(), mob.getY(), mob.getZ() + INSIDE_STRIKE_DISTANCE);
+        stepBrain(mob, goals, targets);
+        context.assertTrue(HumanoidBrain.decisions(mob.getUUID()).size() == contacted + 1,
+                "对手进了起手距离，没有当 tick 补决策");
+        context.assertTrue(progress(mob).hasActiveCast(), "对手进了起手距离，补的那次决策没有起手");
+        mob.setNoAi(true /* aiDisabled */);
         HumanoidTechniqueHost.removed(mob);
         context.succeed();
     }

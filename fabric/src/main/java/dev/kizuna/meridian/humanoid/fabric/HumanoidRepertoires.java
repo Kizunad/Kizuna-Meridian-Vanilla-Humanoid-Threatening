@@ -86,8 +86,13 @@ final class HumanoidRepertoires {
         }
     }
 
-    /** 一式最早打到人的那一下：时刻、够得着的距离；正好是兵器打击时带上打击形状。 */
-    record FirstStrike(long millis, double distance, Optional<TechniqueForecasts.FirstStrike> weapon) { }
+    /**
+     * 一式最早打到人的那一下：时刻、够得着的距离、怎么打的；正好是兵器打击时带上打击形状。
+     */
+    record FirstStrike(long millis, double distance, Kind kind, Optional<TechniqueForecasts.FirstStrike> weapon) { }
+
+    /** 最早那一下怎么打：CLOSE 是兵器、拳掌、擒拿，要站到近处；KICK 是腿，比手够得远；RANGED 是射出去的。 */
+    enum Kind { CLOSE, KICK, RANGED }
 
     private HumanoidRepertoires() {
         // 每次决策重新读身体，不缓存绑定。
@@ -380,17 +385,39 @@ final class HumanoidRepertoires {
             long stagger = interruptible.flatMap(target -> first.weapon()
                     .map(weapon -> staggerMillis(source, entry, weapon, target))).orElse(0L);
             result.add(new Repertoire.Strike(entry.definition().getId(), first.millis(),
-                    first.distance(), stagger));
+                    startDistance(first), stagger));
         }
         return result;
+    }
+
+    private static double startDistance(FirstStrike first) {
+        // 目录里近身式的判定距离和玩家近战一样是三格上下，生物隔这么远起手，看着是隔空打中人。
+        // 生物走到配置的距离以内才起手，腿法的距离比兵器拳掌远一点；判定距离本身不动，远射的式照目录。
+        var tactics = HumanoidBrain.config().response().tactics();
+        return switch (first.kind()) {
+            case RANGED -> first.distance();
+            case KICK -> Math.min(first.distance(), tactics.kickStartDistance());
+            case CLOSE -> Math.min(first.distance(), tactics.strikeStartDistance());
+        };
     }
 
     static Optional<FirstStrike> firstStrike(TechniqueDefinition definition) {
         // 会不会打人、多远够得着由功法库统一算（兵器、腿、拳掌、擒、投射物）；
         // 最早那一下正好是兵器打击时带上打击形状，估僵直用。
         return TechniqueForecasts.firstHit(definition)
-                .map(hit -> new FirstStrike(hit.millis(), hit.reach(), TechniqueForecasts.firstStrike(definition)
-                        .filter(weapon -> weapon.millis() == hit.millis())));
+                .map(hit -> new FirstStrike(hit.millis(), hit.reach(), kind(definition, hit),
+                        TechniqueForecasts.firstStrike(definition)
+                                .filter(weapon -> weapon.millis() == hit.millis())));
+    }
+
+    private static Kind kind(TechniqueDefinition definition, TechniqueForecasts.FirstHit hit) {
+        // 最早那一刻有腿的打击就算腿法。
+        if (!hit.close()) {
+            return Kind.RANGED;
+        }
+        boolean kick = definition.getEffectsList().stream()
+                .anyMatch(effect -> effect.hasLegStrike() && effect.getAtMillis() == hit.millis());
+        return kick ? Kind.KICK : Kind.CLOSE;
     }
 
     private static long staggerMillis(Source source, Ready entry, TechniqueForecasts.FirstStrike first,

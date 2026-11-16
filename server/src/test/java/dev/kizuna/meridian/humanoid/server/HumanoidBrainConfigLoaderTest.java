@@ -158,6 +158,34 @@ public class HumanoidBrainConfigLoaderTest {
     }
 
     @Test
+    public void oldFileWithoutStrikeStartDistanceRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有近身起手距离：按默认两格运行并列入缺键清单；写了就用写的值，零或负数拒绝。
+        String line = "strike_start_distance = 2.0";
+        String old = replace(line, "");
+        assertEquals(2.0, HumanoidBrainConfigLoader.parse(old).response().tactics().strikeStartDistance(), TOLERANCE);
+        assertEquals(List.of("response.strike_start_distance"), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        String custom = replace(line, "strike_start_distance = 3.0");
+        assertEquals(3.0, HumanoidBrainConfigLoader.parse(custom).response().tactics().strikeStartDistance(),
+                TOLERANCE);
+        assertThrows(RuntimeException.class,
+                () -> HumanoidBrainConfigLoader.parse(replace(line, "strike_start_distance = 0")));
+    }
+
+    @Test
+    public void oldFileWithoutKickStartDistanceRunsOnDefaultAndIsReported() {
+        // 旧导出文件没有腿法起脚距离：按默认三格运行并列入缺键清单；写了就用写的值，零或负数拒绝。
+        String line = "kick_start_distance = 3.0";
+        String old = replace(line, "");
+        assertEquals(3.0, HumanoidBrainConfigLoader.parse(old).response().tactics().kickStartDistance(), TOLERANCE);
+        assertEquals(List.of("response.kick_start_distance"), HumanoidBrainConfigLoader.missingDefaultKeys(old));
+        String custom = replace(line, "kick_start_distance = 2.5");
+        assertEquals(2.5, HumanoidBrainConfigLoader.parse(custom).response().tactics().kickStartDistance(),
+                TOLERANCE);
+        assertThrows(RuntimeException.class,
+                () -> HumanoidBrainConfigLoader.parse(replace(line, "kick_start_distance = 0")));
+    }
+
+    @Test
     public void oldFileWithoutUnpressedSecondsRunsOnDefaultAndIsReported() {
         // 旧导出文件没有「没被逼多少秒算拉开」：按默认值运行并列入缺键清单；写了就用写的值，零和负数在加载时拒绝。
         String old = replace(UNPRESSED_LINE, "");

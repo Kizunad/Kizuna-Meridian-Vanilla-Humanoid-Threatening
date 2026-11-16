@@ -16,6 +16,7 @@ final class HumanoidMind {
     static final int LOG_CAPACITY = 32;
     private static final double MILLIS_PER_SECOND = 1000;
     private static final long NO_FOLLOW_UP = Long.MAX_VALUE;
+    private static final double NO_STRIKE_DISTANCE = -1;
     private final ArrayDeque<Logged> log = new ArrayDeque<>();
     private final Map<String, Failure> failures = new HashMap<>();
     private Stance stance = Stance.ENGAGE;
@@ -32,6 +33,8 @@ final class HumanoidMind {
     private long followUpOpensMillis = NO_FOLLOW_UP;
     /** 正在放的这一式后面能接什么已经看过了：一式只读一次身体。 */
     private boolean followUpExamined;
+    /** 上次决策时对手还在所有打击式的起手距离外：它进到这个距离以内就补一次决策；没在等的时候是 NO_STRIKE_DISTANCE。 */
+    private double strikeDistance = NO_STRIKE_DISTANCE;
     private boolean pathed;
     private int pathedTick;
     private HumanoidPressure.Sighting sighting;
@@ -129,6 +132,26 @@ final class HumanoidMind {
         // 等承接窗口的那一条不在这里清：窗口没开以前的例行决策不该把它冲掉。
         awaitingStaggerEnd = false;
         contactPending = false;
+        strikeDistance = NO_STRIKE_DISTANCE;
+    }
+
+    void awaitStrikeDistance(double distance) {
+        // 这次决策时对手还在够得着的距离外：它一进这个距离就补一次决策。
+        // 例行节拍十 tick 一次，两边对着走的时候一个节拍能走过一格多，等节拍的话常常已经贴脸，原版近战先打出去了。
+        strikeDistance = distance;
+    }
+
+    boolean awaitingStrikeDistance() {
+        return strikeDistance != NO_STRIKE_DISTANCE;
+    }
+
+    boolean takeStrikeDistance(double current) {
+        // 对手进了起手距离：只报这一次。
+        if (current > strikeDistance) {
+            return false;
+        }
+        strikeDistance = NO_STRIKE_DISTANCE;
+        return true;
     }
 
     /** 一条决策记录：世界 tick、当时的对手与决策。 */

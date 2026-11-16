@@ -107,7 +107,7 @@ public final class HumanoidBrain {
         }
         // 正在放的式后面有能接的式时，承接窗口一开就补一次决策：窗口常常只有半秒，固定节拍会整个错过。
         boolean followUp = followUpOpened(mob, mind);
-        if (!followUp && !decisionDue(mob, mind)) {
+        if (!followUp && !decisionDue(mob, mind) && !opponentInStrikeDistance(mob, mind)) {
             return;
         }
         mind.clearDecisionWaits();
@@ -131,6 +131,16 @@ public final class HumanoidBrain {
             return true;
         }
         return mind.awaitingStaggerEnd() && TechniqueFabric.service().staggerRemainingMillis(mob.getUUID()) == 0;
+    }
+
+    private static boolean opponentInStrikeDistance(Mob mob, HumanoidMind mind) {
+        // 上次决策时对手还在起手距离外：它进来的那个 tick 就再决策一次，打击式在配置的距离上起手，不等贴脸。
+        if (!mind.awaitingStrikeDistance()) {
+            return false;
+        }
+        return mind.opponent().filter(LivingEntity::isAlive)
+                .filter(opponent -> mind.takeStrikeDistance(HumanoidMotion.distance(mob, opponent)))
+                .isPresent();
     }
 
     private static boolean followUpOpened(Mob mob, HumanoidMind mind) {
@@ -206,6 +216,9 @@ public final class HumanoidBrain {
                 TechniqueFabric.service().registry());
         HumanoidThreatScores.seen(opponent.entity(), other);
         double distance = HumanoidMotion.distance(mob, opponent.entity());
+        readout.repertoire().strikes().stream().mapToDouble(Repertoire.Strike::reach).max().stream()
+                .filter(farthest -> distance > farthest)
+                .forEach(mind::awaitStrikeDistance);
         var separation = new HumanoidAssessment.Separation(distance, unpressedSeconds(mob, mind, opponent, now));
         HumanoidAssessment.Stance stance = assess(mob, mind, self, other, separation, readout);
         if (stance == HumanoidAssessment.Stance.RETREAT && mob instanceof Villager villager
