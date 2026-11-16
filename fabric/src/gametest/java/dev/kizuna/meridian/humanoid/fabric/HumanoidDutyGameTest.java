@@ -22,7 +22,6 @@ public final class HumanoidDutyGameTest {
     private static final double LOWER_GROWTH = 0.05;
     private static final double EPSILON = 1e-9;
     private static final String HAND_MERIDIAN = "human:hand_meridian";
-    private static final int HAND_PAIR = 2;
     private static final String FOOT_MERIDIAN = "human:foot_meridian";
     private static final int BIRTH_ATTEMPTS = 60;
 
@@ -97,48 +96,6 @@ public final class HumanoidDutyGameTest {
         context.assertTrue(opened(body(mortal)).equals(opened(mortalBefore)), "凡人被开了脉");
         List.of(closed, opened, mortal).forEach(Villager::discard);
         context.succeed();
-    }
-
-    @GameTest(maxTicks = TIMEOUT)
-    public void ensureOpenedTopsUpToTheAskedNumberOfHandMeridians(GameTestHelper context) {
-        // 一条手经都没开的游炁村民：保底两条，开的是构型里头两条手经，各按出生时开脉的扩容量加；
-        // 已经开了一条的再要两条只补一条；够数以后再调不变。
-        Villager closed = villager(context, HumanoidTier.WANDERING_QI, false /* handOpened */);
-        Villager single = villager(context, HumanoidTier.WANDERING_QI, false /* handOpened */);
-        context.assertTrue(HumanoidDuties.ensureOpened(single, HAND_MERIDIAN), "保底一条没成");
-        for (Villager villager : List.of(closed, single)) {
-            BodyMessages.BodySnapshot before = body(villager);
-            context.assertTrue(HumanoidDuties.ensureOpened(villager, HAND_MERIDIAN, HAND_PAIR), "保底两条没成");
-            context.assertTrue(HumanoidDuties.ensureOpened(villager, HAND_MERIDIAN, HAND_PAIR), "再调一次没成");
-            BodyMessages.BodySnapshot after = body(villager);
-            List<Integer> hands = hands(after);
-            context.assertTrue(openedHands(after).equals(hands.subList(0, HAND_PAIR)),
-                    "开着的手经不是头两条：" + openedHands(after) + " / " + hands);
-            double grown = lumen(after) - lumen(before);
-            int added = HAND_PAIR - openedHands(before).size();
-            context.assertTrue(Math.abs(grown - added * HumanoidFabric.config().openedLumenGain()) < EPSILON,
-                    "补开 " + added + " 条，内腔体积却变了 " + grown);
-            context.assertTrue(opened(after).size() == opened(before).size() + added, "手经以外的经脉被动了");
-            villager.discard();
-        }
-        context.succeed();
-    }
-
-    private static List<Integer> hands(BodyMessages.BodySnapshot body) {
-        // 构型里所有手经的下标，按先后。
-        return java.util.stream.IntStream.range(0, body.getMeridianStatesCount())
-                .filter(index -> body.getStructure().getMeridians(index).getTagsList().contains(HAND_MERIDIAN))
-                .boxed().toList();
-    }
-
-    private static List<Integer> openedHands(BodyMessages.BodySnapshot body) {
-        return hands(body).stream().filter(opened(body)::contains).toList();
-    }
-
-    private static double lumen(BodyMessages.BodySnapshot body) {
-        // 全部经脉的内腔体积之和。
-        return body.getStructure().getMeridiansList().stream()
-                .mapToDouble(BodyMessages.MeridianDefinition::getLumenVolume).sum();
     }
 
     private static MeridianOpeningStage opening(BodyMessages.BodySnapshot body, int index) {

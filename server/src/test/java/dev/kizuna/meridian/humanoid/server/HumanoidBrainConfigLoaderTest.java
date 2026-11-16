@@ -43,6 +43,7 @@ public class HumanoidBrainConfigLoaderTest {
     private static final double CUSTOM_ARMORED_CHEST = 8;
     private static final String ARMORED_CHEST_LINE = "armored_chest_armor = 6";
     private static final double DEFAULT_UNPRESSED_SECONDS = 5;
+    private static final double CUSTOM_SORTIE_DISTANCE = 24;
     private static final double CUSTOM_UNPRESSED_SECONDS = 8;
     private static final String UNPRESSED_LINE = "return_unpressed_seconds = 5.0";
     private static final String PILLAGER = "minecraft:pillager";
@@ -217,6 +218,35 @@ public class HumanoidBrainConfigLoaderTest {
         assertTrue(missing.toString(), missing.contains(Toml.joinKeyPath(List.of("threat", "score", "distance"))));
         assertTrue(missing.toString(), missing.contains(
                 Toml.joinKeyPath(List.of("threat", "score", "species", PILLAGER, "distance"))));
+    }
+
+    @Test
+    public void villagerSortieDefaultsOldFilesAndInvalidValues() {
+        // 默认出击距离 16 格、5 秒再评估、人数权重 1。旧导出文件整节没有：按 JAR 默认运行，缺的键列入启动提示。
+        // 距离和间隔必须为正，权重不能为负（0 可以，就是不看人数），未知键拒绝。
+        var rules = HumanoidBrainConfigLoader.defaults().villager();
+        assertEquals(HumanoidBrainConfig.VillagerRules.DEFAULTS, rules);
+        String old = DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("# 村民主动出击"))
+                + DEFAULT_TEXT.substring(DEFAULT_TEXT.indexOf("[response]"));
+        assertEquals(rules, HumanoidBrainConfigLoader.parse(old).villager());
+        var missing = HumanoidBrainConfigLoader.missingDefaultKeys(old);
+        assertTrue(missing.toString(), missing.contains(Toml.joinKeyPath(List.of("villager", "sortie_distance"))));
+        String custom = replace("sortie_distance = 16 ", "sortie_distance = " + CUSTOM_SORTIE_DISTANCE + " ");
+        custom = custom.replace("outnumbered_weight = 1.0 ", "outnumbered_weight = 0 ");
+        var customRules = HumanoidBrainConfigLoader.parse(custom).villager();
+        assertEquals(CUSTOM_SORTIE_DISTANCE, customRules.sortieDistance(), TOLERANCE);
+        assertEquals(0, customRules.outnumberedWeight(), TOLERANCE);
+        var invalid = Map.of(
+                "距离为 0", replace("sortie_distance = 16 ", "sortie_distance = 0 "),
+                "间隔为负", replace("sortie_reconsider_seconds = 5 ", "sortie_reconsider_seconds = -1 "),
+                "权重为负", replace("outnumbered_weight = 1.0 ", "outnumbered_weight = -0.5 "),
+                "未知键", replace("[villager]\n", "[villager]\nbravery = 1\n"),
+                "缺键", replace("sortie_distance = 16 ", "# sortie_distance = 16 "));
+        invalid.forEach((label, text) -> {
+            var failure = assertThrows(label, IllegalArgumentException.class,
+                    () -> HumanoidBrainConfigLoader.parse(text));
+            assertTrue(label, failure.getMessage().startsWith(HumanoidErrors.BRAIN));
+        });
     }
 
     @Test

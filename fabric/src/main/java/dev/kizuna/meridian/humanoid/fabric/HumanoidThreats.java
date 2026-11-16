@@ -175,34 +175,41 @@ final class HumanoidThreats {
     }
 
     private static List<LivingEntity> candidates(Mob mob, Optional<LivingEntity> previous) {
-        // 我的目标、上次的对手、攻击我的、以我为目标的、受击记忆，以及村民的敌对与受击记忆。
-        // 原版受击记忆不分敌我；记着的同伴是误伤，和登记攻击者时一样不算，同伴真以我为目标时由反查表取到。
+        // 上次的对手、我的目标、已经冲着我来的，以及村民看得见的出击对象。
         var candidates = new ArrayList<LivingEntity>();
         previous.ifPresent(candidates::add);
         addIfPresent(candidates, mob.getTarget());
+        candidates.addAll(pressers(mob));
+        if (mob instanceof Villager villager) {
+            candidates.addAll(HumanoidSorties.candidates(villager, HumanoidBrain.config().villager()));
+        }
+        return candidates;
+    }
+
+    static List<LivingEntity> pressers(Mob mob) {
+        // 已经冲着我来的：攻击我的、以我为目标的、受击记忆，以及村民的敌对与受击记忆。
+        // 原版受击记忆不分敌我；记着的同伴是误伤，和登记攻击者时一样不算，同伴真以我为目标时由反查表取到。
+        var pressers = new ArrayList<LivingEntity>();
         LivingEntity attacker = mob.getLastHurtByMob();
         if (attacker != null && !allied(mob, attacker)) {
-            candidates.add(attacker);
+            pressers.add(attacker);
         }
         var hunters = targetedBy.get(mob);
         if (hunters != null) {
-            hunters.stream().filter(hunter -> hunter.getTarget() == mob).forEach(candidates::add);
+            hunters.stream().filter(hunter -> hunter.getTarget() == mob).forEach(pressers::add);
         }
         var remembered = attackers.get(mob);
         if (remembered != null) {
             long now = mob.level().getGameTime();
             remembered.values().removeIf(hostility -> hostility.expiry() < now);
-            candidates.addAll(remembered.keySet());
+            pressers.addAll(remembered.keySet());
         }
         if (mob instanceof Villager villager) {
             var brain = villager.getBrain();
-            brain.getMemory(MemoryModuleType.NEAREST_HOSTILE).ifPresent(candidates::add);
-            brain.getMemory(MemoryModuleType.HURT_BY_ENTITY).ifPresent(candidates::add);
-            if (HumanoidDuties.guardsVillage(villager)) {
-                candidates.addAll(HumanoidGuards.intruders(villager));
-            }
+            brain.getMemory(MemoryModuleType.NEAREST_HOSTILE).ifPresent(pressers::add);
+            brain.getMemory(MemoryModuleType.HURT_BY_ENTITY).ifPresent(pressers::add);
         }
-        return candidates;
+        return pressers;
     }
 
     private static void addIfPresent(List<LivingEntity> candidates, LivingEntity candidate) {
@@ -290,5 +297,6 @@ final class HumanoidThreats {
         targetedBy.clear();
         attackers.clear();
         HumanoidThreatScores.clear();
+        HumanoidSorties.clear();
     }
 }

@@ -1,35 +1,29 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.fabric.mixin.BrainHumanoidInvoker;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
 import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.raid.Raid;
-import net.minecraft.world.entity.raid.Raider;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 「守村」职守的两件事：谁算闯进来的（给选敌加来源），以及村子遭袭击、手上又没有对手时到钟边守着。
+ * 「守村」职守：村子遭袭击、手上又没有对手时到钟边守着。谁算敌意对象由村民共用的出击来源认
+ * （{@link HumanoidSorties}），带着守村的只多一条：见了不放过。
  *
  * <p>僵尸围城原版没有可查的状态，这里只认袭击；围城时的僵尸照旧由村民的敌对记忆带进选敌。</p>
  */
 final class HumanoidGuards {
-    /** 守在钟边多少格以内；也是主动认闯入者的半径。 */
+    /** 守在钟边多少格以内。 */
     static final double POST_RADIUS = 16;
-    /** 村里声望到这个数及以下的玩家，守村的见了就动手；和铁傀儡的门槛相同。 */
-    static final int HOSTILE_REPUTATION = -100;
     private static final double WALK_SPEED = 0.6;
     private static final int REPATH_TICKS = 20;
     private static final int STEP_BLOCKS = 10;
@@ -39,16 +33,6 @@ final class HumanoidGuards {
 
     private HumanoidGuards() {
         // 只记哪些村民正守在钟边，实体卸载后弱引用自然释放。
-    }
-
-    static List<LivingEntity> intruders(Villager guard) {
-        // 身边声望极差的玩家，和正在袭击里的队伍成员；看不看得见、放不放下由选敌统一筛。
-        var box = guard.getBoundingBox().inflate(POST_RADIUS);
-        List<LivingEntity> found = new ArrayList<>();
-        found.addAll(guard.level().getEntitiesOfClass(Player.class, box,
-                player -> guard.getPlayerReputation(player) <= HOSTILE_REPUTATION));
-        found.addAll(guard.level().getEntitiesOfClass(Raider.class, box, Raider::hasActiveRaid));
-        return found;
     }
 
     static boolean posted(ServerLevel world, Villager villager) {

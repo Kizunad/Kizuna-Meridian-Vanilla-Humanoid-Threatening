@@ -40,6 +40,10 @@ public final class HumanoidVillagerAdapter {
         invoker.meridian$tickMemories();
         invoker.meridian$tickSensors(world, villager);
         if (directed.add(villager)) {
+            // 睡着的先叫醒：大脑接手以后原版的起床任务不再跑。
+            if (villager.isSleeping()) {
+                villager.stopSleeping();
+            }
             brain.stopAll(world, villager);
             ROUTINE_MEMORIES.forEach(brain::eraseMemory);
         }

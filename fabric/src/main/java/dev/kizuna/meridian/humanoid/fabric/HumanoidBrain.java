@@ -41,6 +41,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.phys.Vec3;
 
@@ -206,14 +207,12 @@ public final class HumanoidBrain {
         HumanoidThreatScores.seen(opponent.entity(), other);
         double distance = HumanoidMotion.distance(mob, opponent.entity());
         var separation = new HumanoidAssessment.Separation(distance, unpressedSeconds(mob, mind, opponent, now));
-        var assessed = HumanoidDuties.standsGround(mob)
-                ? HumanoidAssessment.standing(self, config.assessment())
-                : HumanoidAssessment.stance(self, other, mind.stance(), separation, config.assessment());
-        HumanoidAssessment.Stance stance;
-        if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
-            stance = HumanoidAssessment.Stance.RETREAT;
-        } else {
-            stance = assessed;
+        HumanoidAssessment.Stance stance = assess(mob, mind, self, other, separation, readout);
+        if (stance == HumanoidAssessment.Stance.RETREAT && mob instanceof Villager villager
+                && HumanoidSorties.overlooks(villager, opponent.entity(), config.villager())) {
+            // 村民评估不划算、对方又还没冲着他来：当没看见，照没有威胁那样过。
+            idle(mob, mind);
+            return;
         }
         var incoming = HumanoidStrikeEstimates.incoming(mob, body, opponent);
         var circumstances = combatCircumstances(mob, mind, stance, self);
@@ -233,6 +232,23 @@ public final class HumanoidBrain {
         HumanoidActions.execute(new HumanoidActions.Turn(mob, mind, body, readout, Optional.of(opponent)),
                 decision);
         scheduleCastPlan(mob, mind, readout, opponent);
+    }
+
+    private static HumanoidAssessment.Stance assess(Mob mob, HumanoidMind mind, Fighter self, Fighter other,
+                                                    HumanoidAssessment.Separation separation,
+                                                    HumanoidRepertoires.Readout readout) {
+        // 行商该撤就撤；「不退」的不比战力；其余比战力，村民再减掉人数上的劣势。
+        if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
+            return HumanoidAssessment.Stance.RETREAT;
+        }
+        if (HumanoidDuties.standsGround(mob)) {
+            return HumanoidAssessment.standing(self, config.assessment());
+        }
+        double handicap = 0;
+        if (mob instanceof Villager villager) {
+            handicap = HumanoidSorties.handicap(villager, config);
+        }
+        return HumanoidAssessment.stance(self, other, mind.stance(), separation, config.assessment(), handicap);
     }
 
     private static double unpressedSeconds(Mob mob, HumanoidMind mind, HumanoidOpponent opponent, long now) {

@@ -4,7 +4,8 @@ import java.util.Map;
 
 /** 类人大脑配置：决策节奏、敌意记忆、威胁评估、应对阈值与学卷表。 */
 public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,
-                                  ResponseRules response, VolumeTable volumes, ConcurrencyRules concurrency) {
+                                  ResponseRules response, VolumeTable volumes, ConcurrencyRules concurrency,
+                                  VillagerRules villager) {
     /** 决策是否逐条写日志。 */
     public enum DecisionLog { QUIET, VERBOSE }
 
@@ -57,9 +58,30 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
         }
     }
 
+    /** 村民主动出击：多远以内看得见的敌意对象才评估、评估不划算后隔多久再评估、对方每多一个从战力差里减多少。 */
+    public record VillagerRules(double sortieDistance, double sortieReconsiderSeconds, double outnumberedWeight) {
+        private static final double DEFAULT_SORTIE_DISTANCE = 16;
+        private static final double DEFAULT_RECONSIDER_SECONDS = 5;
+        public static final VillagerRules DEFAULTS = new VillagerRules(
+                DEFAULT_SORTIE_DISTANCE, DEFAULT_RECONSIDER_SECONDS, 1 /* outnumberedWeight */);
+
+        public VillagerRules {
+            // 距离和间隔为正、权重不为负由配置加载器校验；直接构造时同样拒绝。
+            if (!(sortieDistance > 0) || !(sortieReconsiderSeconds > 0) || !(outnumberedWeight >= 0)) {
+                throw new IllegalArgumentException("出击距离和再评估间隔必须为正，人数权重不能为负");
+            }
+        }
+    }
+
     public HumanoidBrainConfig withVolumes(VolumeTable next) {
         // 其余各节不动，只换学卷表。
-        return new HumanoidBrainConfig(schedule, threat, assessment, response, next, concurrency);
+        return new HumanoidBrainConfig(schedule, threat, assessment, response, next, concurrency, villager);
+    }
+
+    public HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,
+                               ResponseRules response, VolumeTable volumes, ConcurrencyRules concurrency) {
+        // 旧的测试与宿主构造入口沿用村民出击的默认数值。
+        this(schedule, threat, assessment, response, volumes, concurrency, VillagerRules.DEFAULTS);
     }
 
     public HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,

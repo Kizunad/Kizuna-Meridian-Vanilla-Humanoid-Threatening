@@ -14,14 +14,26 @@ public final class HumanoidAssessment {
 
     public static Stance stance(Fighter self, Fighter opponent, Stance previous, Separation separation,
                                 AssessmentRules rules) {
+        // 只比一对一的战力，不看人数。
+        return stance(self, opponent, previous, separation, rules, 0 /* handicap */);
+    }
+
+    public static double outnumbered(int enemies, int allies, double weight) {
+        // 人数上的劣势：对方每多一个、扣掉我方帮手以后还多出来的，各算一份权重；不多就是 0。
+        return weight * Math.max(0, enemies - 1 - allies);
+    }
+
+    public static Stance stance(Fighter self, Fighter opponent, Stance previous, Separation separation,
+                                AssessmentRules rules, double handicap) {
         // 重伤、双臂虚脱、没有进攻手段一律撤退；撤退中的一方恢复并拉开以后才重新比较战力。
+        // handicap 是人数上的劣势，从战力差里减掉。
         if (mustRetreat(self, rules.retreat()) || !offensive(self)) {
             return Stance.RETREAT;
         }
         if (previous == Stance.RETREAT && !recovered(self, separation, rules.recovery())) {
             return Stance.RETREAT;
         }
-        double margin = power(self, rules) - power(opponent, rules);
+        double margin = power(self, rules) - power(opponent, rules) - handicap;
         if (margin >= rules.engageMargin()) {
             return Stance.ENGAGE;
         }

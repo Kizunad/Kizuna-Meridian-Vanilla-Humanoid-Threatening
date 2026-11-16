@@ -27,6 +27,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -248,12 +249,14 @@ public final class HumanoidBrainGameTest {
 
     @GameTest(maxTicks = SHORT_TIMEOUT, environment = LIGHT_STEP_BATCH, structure = RETREAT_STRUCTURE)
     public void retreatingVillagerLightStepsAndLeapsAway(GameTestHelper context) {
-        // 只会基础三卷的游炁村民撤退时先放轻步，再背向跃步拉开。
+        // 游炁村民被打不过的对手盯上，撤退时先放轻步，再背向跃步拉开。
+        // 对手要明摆着比他强（真炁、拿着铁斧）：装了袖手拳的村民会拳，对上空手的游炁卫道士是迎上去打的，不撤。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.WANDERING_QI, "light-step",
                 RETREAT_SUBJECT);
-        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.WANDERING_QI, "light-step-hunter",
+        Vindicator hunter = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "light-step-hunter",
                 RETREAT_MIDDLE);
+        hunter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
         hunter.setNoAi(true /* aiDisabled */);
         hunter.setTarget(villager);
         var watch = new Watch(villager);
@@ -619,6 +622,10 @@ public final class HumanoidBrainGameTest {
             Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
             for (Vindicator fighter : List.of(first, second)) {
                 fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
+                // 颈、胸归零即死以后，光着身子的两个人常常两秒多就被原版的斧子砍中颈部分出胜负，
+                // 打击式还没来得及落到人身上，这一局就什么也验不到。戴上铁盔、铁胸甲（盔同时护着颈），让对决打得够久。
+                fighter.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+                fighter.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.IRON_CHESTPLATE));
             }
             arena.later(DUEL_OPENING_TICKS, () -> duel(context, arena, first, second));
         });

@@ -25,7 +25,7 @@ Threatening 内置七种原版生人。其他模组可以在初始化时登记�
 | `HumanoidSpawns`（fabric） | `static void registerPlacement(HumanoidSpecies, Placement)` | 登记物种的 `/meridian humanoid spawn` 放置钩子；钩子创建实体、调用 `birth` 后加入世界并返回实体，内置物种与重复登记被拒绝 |
 | `HumanoidTier`（server） | `MORTAL` / `WANDERING_QI` / `TRUE_QI`，`static HumanoidTier of(BodySnapshot)` | 出生档位，可从身体快照读回 |
 | `HumanoidTiers`（fabric） | `static Optional<HumanoidTier> of(LivingEntity)` | 查一个在世界里的生人是哪一档；身体还没出生的按需出生。不是已认领的生人、世界没接好、区域服务这一刻不可用时为空，下一 tick 再问 |
-| `HumanoidDuties`（fabric） | `standGround(LivingEntity, boolean)`、`standsGround(LivingEntity)`、`guardVillage(LivingEntity, boolean)`、`guardsVillage(LivingEntity)`、`trainArms(LivingEntity, double, double)`、`ensureOpened(LivingEntity, String)`、`ensureOpened(LivingEntity, String, int)` | 给生人挂、撤「职守」：不退；守村（多认声望极差的玩家和袭击队伍，遭袭击时到钟边守着）；任职时把两臂肌肉的训练成长抬到给定值；某类经脉一条都没开时保底开一条，或保底开到给定条数。见计划文档「职守」 |
+| `HumanoidDuties`（fabric） | `standGround(LivingEntity, boolean)`、`standsGround(LivingEntity)`、`guardVillage(LivingEntity, boolean)`、`guardsVillage(LivingEntity)`、`trainArms(LivingEntity, double, double)`、`ensureOpened(LivingEntity, String)` | 给生人挂、撤「职守」：不退；守村（多认声望极差的玩家和袭击队伍，遭袭击时到钟边守着）；任职时把两臂肌肉的训练成长抬到给定值；某类经脉一条都没开时保底开一条。见计划文档「职守」 |
 | `HumanoidTargets`（fabric） | `static void registerDowned(Predicate<LivingEntity>)` | 登记一种「对手倒地」的判断，大脑选式时据此给出 `TARGET_DOWNED`；功法库的倒地僵直不用登记。在模组初始化时调用 |
 
 **调用时机**：登记必须在世界加载前完成，例如在 `ModInitializer.onInitialize` 里。

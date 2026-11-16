@@ -25,6 +25,7 @@ public final class HumanoidBrainConfigLoader {
     private static final String ARMORED_CHEST_ARMOR = "armored_chest_armor";
     private static final String RETURN_UNPRESSED_SECONDS = "return_unpressed_seconds";
     private static final String NOTICE_DISTANCE = "notice_distance";
+    private static final String VILLAGER = "villager";
     /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
     private static final double MAX_NOTICE_DISTANCE = 128;
     private static final String VOLUMES = "volumes";
@@ -95,7 +96,7 @@ public final class HumanoidBrainConfigLoader {
         // 版本只向前兼容一个小版本；旧配置缺少并行节时使用稳定默认策略。
         var parsed = TOML.parse(text);
         TOML.checkKeys(parsed, Set.of("config_version", "decision_interval_ticks", "log_decisions", "threat",
-                "assessment", "response", VOLUMES, "concurrency"), "");
+                "assessment", "response", VOLUMES, "concurrency", VILLAGER), "");
         int version = TOML.integer(parsed, "config_version", "config_version");
         if (version < MIN_SUPPORTED_CONFIG_VERSION || version > CURRENT_CONFIG_VERSION) {
             throw TOML.invalid("config_version 必须位于 " + MIN_SUPPORTED_CONFIG_VERSION + "～"
@@ -108,7 +109,22 @@ public final class HumanoidBrainConfigLoader {
         var response = response(TOML.table(parsed, "response", "response"), threat.safeDistance());
         var volumes = volumes(TOML.table(parsed, VOLUMES, VOLUMES));
         var concurrency = concurrency(parsed);
-        return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes, concurrency);
+        return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes, concurrency,
+                villager(parsed));
+    }
+
+    private static HumanoidBrainConfig.VillagerRules villager(TomlTable parsed) {
+        // 这一节在旧导出文件里没有：整节缺失时读 JAR 默认资源的同名节，load 启动时另行提示缺键。
+        TomlTable source = parsed;
+        if (!parsed.contains(VILLAGER)) {
+            source = TOML.parse(TOML.resource(DEFAULT_RESOURCE));
+        }
+        TomlTable table = TOML.table(source, VILLAGER, VILLAGER);
+        TOML.checkKeys(table, Set.of("sortie_distance", "sortie_reconsider_seconds", "outnumbered_weight"),
+                VILLAGER + ".");
+        return new HumanoidBrainConfig.VillagerRules(positive(table, "sortie_distance", VILLAGER),
+                positive(table, "sortie_reconsider_seconds", VILLAGER),
+                nonNegative(table, "outnumbered_weight", VILLAGER));
     }
 
     private static HumanoidBrainConfig.ConcurrencyRules concurrency(TomlTable parsed) {

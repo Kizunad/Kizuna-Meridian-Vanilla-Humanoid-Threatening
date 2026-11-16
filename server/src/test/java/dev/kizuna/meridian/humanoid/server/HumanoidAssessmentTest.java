@@ -29,6 +29,10 @@ public class HumanoidAssessmentTest {
     private static final Set<Means> AXE_ADEPT = EnumSet.of(Means.CASTABLE_STRIKE, Means.VANILLA_OFFENSE,
             Means.MELEE_WEAPON);
     private static final Set<Means> BARE_HANDED = EnumSet.of(Means.VANILLA_OFFENSE);
+    private static final double OUTNUMBERED_WEIGHT = 1.5;
+    private static final double BEARABLE_HANDICAP = 2;
+    private static final double UNBEARABLE_HANDICAP = 3;
+    private static final int CROWD = 4;
 
     @Test
     public void unskilledVillagerRetreatsFromVindicator() {
@@ -163,6 +167,32 @@ public class HumanoidAssessmentTest {
         var exhausted = fighter(Realm.WANDERING_QI, new Condition(1, 1, 1, EXHAUSTED_ARM, 1), strike);
         assertEquals(Stance.RETREAT, HumanoidAssessment.standing(exhausted, RULES));
         assertEquals(Stance.RETREAT, HumanoidAssessment.standing(fighter(Realm.TRUE_QI, FULL, Set.of()), RULES));
+    }
+
+    @Test
+    public void handicapIsTakenOffTheMargin() {
+        // 会拳的游炁村民对没有身体的凡人尸壳：战力差 2（境界高一档、会打击式各算 1）。人数上的劣势从里面减：
+        // 减 2 剩 0，不低于对敌余量 −0.5，照打；减 3 剩 −1，撤。不传就是只比一对一。
+        Fighter villager = fighter(Realm.WANDERING_QI, FULL, Set.of(Means.CASTABLE_STRIKE));
+        Fighter husk = new Fighter(Fighter.MORTAL_TIER, FULL, BARE_HANDED);
+        var near = pressedAt(NEAR);
+        assertEquals(Stance.ENGAGE, stance(villager, husk, Stance.ENGAGE));
+        assertEquals(Stance.ENGAGE,
+                HumanoidAssessment.stance(villager, husk, Stance.ENGAGE, near, RULES, BEARABLE_HANDICAP));
+        assertEquals(Stance.RETREAT,
+                HumanoidAssessment.stance(villager, husk, Stance.ENGAGE, near, RULES, UNBEARABLE_HANDICAP));
+    }
+
+    @Test
+    public void outnumberedCountsExtraEnemiesNetOfAllies() {
+        // 对方每多一个算一份权重，我方帮手一个抵一个；不多就是 0，帮手再多也不倒贴。
+        assertEquals(0, HumanoidAssessment.outnumbered(1, 0, OUTNUMBERED_WEIGHT), TOLERANCE);
+        assertEquals((CROWD - 1) * OUTNUMBERED_WEIGHT,
+                HumanoidAssessment.outnumbered(CROWD, 0, OUTNUMBERED_WEIGHT), TOLERANCE);
+        assertEquals(OUTNUMBERED_WEIGHT, HumanoidAssessment.outnumbered(CROWD, CROWD - 2, OUTNUMBERED_WEIGHT),
+                TOLERANCE);
+        assertEquals(0, HumanoidAssessment.outnumbered(2, CROWD, OUTNUMBERED_WEIGHT), TOLERANCE);
+        assertEquals(0, HumanoidAssessment.outnumbered(0, 0, OUTNUMBERED_WEIGHT), TOLERANCE);
     }
 
     private static Fighter fighter(Realm realm, Condition condition, Set<Means> means) {

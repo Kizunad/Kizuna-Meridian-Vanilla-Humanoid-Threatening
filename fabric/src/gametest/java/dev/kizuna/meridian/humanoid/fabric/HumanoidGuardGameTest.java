@@ -12,7 +12,6 @@ import dev.kizuna.meridian.technique.server.TechniqueService.Stagger;
 import dev.kizuna.meridian.technique.server.TechniqueService.StaggerKind;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.fabricmc.fabric.api.entity.FakePlayer;
@@ -73,22 +72,21 @@ public final class HumanoidGuardGameTest {
 
     @GameTest(maxTicks = TIMEOUT, environment = HATED_BATCH)
     public void guardTurnsOnAPlayerTheVillageHates(GameTestHelper context) {
-        // 两个村民对同一个玩家的声望都是 −125。带着守村的把他当对手；没带的不理他。玩家站着不动、没打任何人。
+        // 村民对玩家的声望是 −125，玩家站着不动、没打任何人。带着守村的见了不放过：不管打不打得过都把他当对手
+        // （打不过照评估躲）。没带守村的村民会不会上看它自己会不会打，在袖手拳仓的出击用例里看。
         Villager guard = mob(context, EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, new BlockPos(2, 2, 2), false);
-        Villager plain = mob(context, EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, new BlockPos(5, 2, 2), false);
         HumanoidDuties.guardVillage(guard, true);
         FakePlayer player = player(context, "GuardHated", new BlockPos(3, 2, 5));
-        Runnable cleanup = () -> leave(context, player, guard, plain);
-        for (Villager villager : new Villager[]{guard, plain}) {
-            villager.getGossips().add(player.getUUID(), GossipType.MAJOR_NEGATIVE, BAD_GOSSIP);
-            ensure(context, villager.getPlayerReputation(player) <= HumanoidGuards.HOSTILE_REPUTATION,
-                    () -> "声望没有降到门槛以下：" + villager.getPlayerReputation(player), cleanup);
-        }
+        Runnable cleanup = () -> leave(context, player, guard);
+        guard.getGossips().add(player.getUUID(), GossipType.MAJOR_NEGATIVE, BAD_GOSSIP);
+        ensure(context, guard.getPlayerReputation(player) <= HumanoidSorties.HOSTILE_REPUTATION,
+                () -> "声望没有降到门槛以下：" + guard.getPlayerReputation(player), cleanup);
         await(context, NOTICE_TICKS, () -> HumanoidBrain.opponent(guard).filter(found -> found == player).isPresent(),
                 () -> "守村的村民没有把声望极差的玩家当对手：带着守村=" + HumanoidDuties.guardsVillage(guard)
                         + " 对手=" + HumanoidBrain.opponent(guard), cleanup,
                 () -> context.runAfterDelay(QUIET_TICKS, () -> {
-                    ensure(context, HumanoidBrain.opponent(plain).isEmpty(), () -> "没带守村的村民也把玩家当了对手", cleanup);
+                    ensure(context, HumanoidBrain.opponent(guard).filter(found -> found == player).isPresent(),
+                            () -> "守村的村民把声望极差的玩家放过了", cleanup);
                     cleanup.run();
                     context.succeed();
                 }));
