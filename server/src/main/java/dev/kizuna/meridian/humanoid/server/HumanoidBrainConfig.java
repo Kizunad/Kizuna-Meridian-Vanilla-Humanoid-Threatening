@@ -58,17 +58,24 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
         }
     }
 
-    /** 村民主动出击：多远以内看得见的敌意对象才评估、评估不划算后隔多久再评估、对方每多一个从战力差里减多少。 */
-    public record VillagerRules(double sortieDistance, double sortieReconsiderSeconds, double outnumberedWeight) {
+    /** 村民的出击距离、再评估间隔、人数劣势权重，以及近身守卫在对手装填时的接敌导航倍率。 */
+    public record VillagerRules(double sortieDistance, double sortieReconsiderSeconds, double outnumberedWeight,
+                                double reloadApproachSpeed) {
+        public static final double DEFAULT_RELOAD_APPROACH_SPEED = 0.75;
         private static final double DEFAULT_SORTIE_DISTANCE = 16;
         private static final double DEFAULT_RECONSIDER_SECONDS = 5;
         public static final VillagerRules DEFAULTS = new VillagerRules(
                 DEFAULT_SORTIE_DISTANCE, DEFAULT_RECONSIDER_SECONDS, 1 /* outnumberedWeight */);
 
+        public VillagerRules(double sortieDistance, double sortieReconsiderSeconds, double outnumberedWeight) {
+            this(sortieDistance, sortieReconsiderSeconds, outnumberedWeight, DEFAULT_RELOAD_APPROACH_SPEED);
+        }
+
         public VillagerRules {
-            // 距离和间隔为正、权重不为负由配置加载器校验；直接构造时同样拒绝。
-            if (!(sortieDistance > 0) || !(sortieReconsiderSeconds > 0) || !(outnumberedWeight >= 0)) {
-                throw new IllegalArgumentException("出击距离和再评估间隔必须为正，人数权重不能为负");
+            // 距离、间隔和导航倍率为正，人数权重不为负；直接构造与配置加载使用相同约束。
+            if (!(sortieDistance > 0) || !(sortieReconsiderSeconds > 0) || !(outnumberedWeight >= 0)
+                    || !Double.isFinite(reloadApproachSpeed) || reloadApproachSpeed <= 0) {
+                throw new IllegalArgumentException("出击距离、再评估间隔和导航倍率必须为正，人数权重不能为负");
             }
         }
     }

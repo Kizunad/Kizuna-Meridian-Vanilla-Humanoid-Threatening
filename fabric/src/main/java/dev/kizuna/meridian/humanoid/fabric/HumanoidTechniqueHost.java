@@ -219,6 +219,13 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         return clock.isEmpty() || clock.getAsLong() <= activeEnd.get();
     }
 
+    static boolean beforeWarmupEnd(LivingEntity entity) {
+        var warmupEnd = publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
+                .map(progress -> progress.getActiveCast().getWarmupEndMillis());
+        var clock = clockMillis(entity);
+        return warmupEnd.isPresent() && clock.isPresent() && clock.getAsLong() < warmupEnd.get();
+    }
+
     private static Optional<TechniqueDefinition> activeDefinition(LivingEntity entity) {
         // 只从已发布进度读取当前式，不结清身体时间或创建新会话。
         return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)

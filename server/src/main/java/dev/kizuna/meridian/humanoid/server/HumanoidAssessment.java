@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.server;
 
 /** 敌我威胁评估：硬性撤退条件、进攻手段、战力差依次判定，撤退后按滞回门槛回归。 */
 public final class HumanoidAssessment {
+    public static final double GUARD_RECOVERED_PART_RATIO = 0.4;
     /** 对敌或撤退。 */
     public enum Stance { ENGAGE, RETREAT }
 
@@ -44,6 +45,18 @@ public final class HumanoidAssessment {
         // 有「不退」职守的一方不比战力、不看伤势：只有两臂虚脱或没有进攻手段时才撤，其余一律对敌。
         boolean spent = self.condition().armStrengthRatio() < rules.retreat().armStrengthRatio();
         return spent || !offensive(self) ? Stance.RETREAT : Stance.ENGAGE;
+    }
+
+    public static Stance guarding(Fighter self, Stance previous, Separation separation, AssessmentRules rules) {
+        // 守卫不比较战力，但重伤必须撤；撤离后最弱部位也要恢复，不能因总体仍健康而折返。
+        if (mustRetreat(self, rules.retreat()) || !offensive(self)) {
+            return Stance.RETREAT;
+        }
+        if (previous == Stance.RETREAT && (!recovered(self, separation, rules.recovery())
+                || self.condition().weakestPartHpRatio() < GUARD_RECOVERED_PART_RATIO)) {
+            return Stance.RETREAT;
+        }
+        return Stance.ENGAGE;
     }
 
     public static double power(Fighter fighter, AssessmentRules rules) {

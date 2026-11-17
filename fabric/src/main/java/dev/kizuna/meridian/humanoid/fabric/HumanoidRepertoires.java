@@ -126,6 +126,8 @@ final class HumanoidRepertoires {
                 .filter(entry -> firstStrike(entry.definition()).isPresent())
                 .filter(entry -> peddlerStrikeAllowed(source, opponent, entry))
                 .filter(entry -> HumanoidWayfarerAi.allowed(mob, body, entry.definition(), source.target()))
+                .filter(entry -> opponent.map(foe -> HumanoidMeleeGuard.reaches(mob, foe.entity(),
+                        entry.definition())).orElse(true))
                 .toList();
         boolean followUpAvailable = source.progress().hasActiveCast() && !readyStrikes.isEmpty();
         var repertoire = new Repertoire(strikes(source, readyStrikes, opponent), supports(body, castable),

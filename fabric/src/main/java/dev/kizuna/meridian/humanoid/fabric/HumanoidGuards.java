@@ -8,6 +8,8 @@ import java.util.WeakHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
@@ -47,6 +49,17 @@ final class HumanoidGuards {
             return false;
         }
         return true;
+    }
+
+    static boolean withinPost(Mob mob, LivingEntity target) {
+        // 有钟的近身守卫只截击守区内的敌人；没有集合点时不虚构守区中心。
+        if (!(mob instanceof Villager villager) || !HumanoidMeleeGuard.enabled(mob)) {
+            return true;
+        }
+        return bell((ServerLevel) mob.level(), villager)
+                .map(position -> target.position().distanceToSqr(Vec3.atBottomCenterOf(position))
+                        <= POST_RADIUS * POST_RADIUS)
+                .orElse(true);
     }
 
     static void hold(Brain<Villager> brain, ServerLevel world, Villager villager) {

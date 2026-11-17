@@ -16,6 +16,18 @@ public final class HumanoidDuties {
     /** 守村：村子遭袭击时到钟边守着，不躲；对村里声望极差的玩家和袭击队伍主动出手。只对村民有意义。 */
     public static final String GUARD_VILLAGE_TAG = "meridian_humanoid.duty.guard_village";
 
+    /** 近身守卫：任职方登记的接敌策略，只给非凡人村民使用。 */
+    public static final String MELEE_GUARD_TAG = "meridian_humanoid.duty.melee_guard";
+
+    public static void appointMeleeGuard(LivingEntity entity) {
+        entity.addTag(MELEE_GUARD_TAG);
+    }
+
+    public static void dismissMeleeGuard(LivingEntity entity) {
+        entity.removeTag(MELEE_GUARD_TAG);
+        entity.removeTag(HumanoidMeleeGuard.WITHDRAWN_TAG);
+    }
+
     private HumanoidDuties() {
         // 纯静态入口。
     }

@@ -121,6 +121,7 @@ final class HumanoidThreats {
         List<LivingEntity> candidates = candidates(mob, previous).stream()
                 .distinct()
                 .filter(candidate -> valid(mob, candidate))
+                .filter(candidate -> HumanoidGuards.withinPost(mob, candidate))
                 .toList();
         var sources = new LinkedHashMap<LivingEntity, List<LivingEntity>>();
         for (LivingEntity candidate : candidates) {

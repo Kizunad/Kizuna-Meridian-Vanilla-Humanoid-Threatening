@@ -184,7 +184,8 @@ public final class HumanoidBrain {
         } else if (!followUp && !mind.followUpExamined()) {
             mind.followUpExamined(followUpOpening(body(mob)));
         }
-        if (casting && !followUp && opponent.cast().isEmpty() && !HumanoidTechniqueHost.castingWayfarer(mob)) {
+        if (casting && !followUp && opponent.cast().isEmpty() && !HumanoidTechniqueHost.castingWayfarer(mob)
+                && !HumanoidMeleeGuard.enabled(mob)) {
             return;
         }
         fight(mob, mind, opponent);
@@ -253,6 +254,10 @@ public final class HumanoidBrain {
         // 行商该撤就撤；「不退」的不比战力；其余比战力，村民再减掉人数上的劣势。
         if (HumanoidRepertoires.peddlerShouldRetreat(readout)) {
             return HumanoidAssessment.Stance.RETREAT;
+        }
+        if (HumanoidMeleeGuard.enabled(mob) && (HumanoidMeleeGuard.withdrawn(mob)
+                || mind.opponent().filter(HumanoidMeleeGuard::holdsCrossbow).isPresent())) {
+            return HumanoidMeleeGuard.assess(mob, mind, self, separation);
         }
         if (HumanoidDuties.standsGround(mob)) {
             return HumanoidAssessment.standing(self, config.assessment());
@@ -633,7 +638,7 @@ public final class HumanoidBrain {
     }
 
     static void move(Mob mob, HumanoidMotion.Speeds speeds) {
-        // 近战打击与行矢在出手段结束前面向对手站定；收式阶段和其余时候执行当前指令。
+        // 近战与行矢在出手段结束前站定，近身守卫的地面起手可跟进；收式执行当前指令。
         if (HumanoidCharmController.follow(mob)) {
             return;
         }
@@ -641,23 +646,34 @@ public final class HumanoidBrain {
         if (mind == null) {
             return;
         }
-        if (holdsForStrike(mob)) {
+        boolean meleeGuard = HumanoidMeleeGuard.enabled(mob);
+        if (mind.opponent().isEmpty() && meleeGuard) {
+            HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
+            return;
+        }
+        if (holdsForStrike(mob, mind)) {
             HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;
         }
         var directive = mind.directive();
+        var selectedSpeeds = HumanoidMeleeGuard.speeds(mob, mind, speeds);
         if (directive == HumanoidMotion.Directive.RELEASED) {
             HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.FOLLOWING, speeds);
             return;
         }
-        HumanoidMotion.apply(mob, mind, directive, speeds);
+        HumanoidMotion.apply(mob, mind, directive, selectedSpeeds);
+        if (directive.movement() == HumanoidMotion.Movement.FOLLOW && meleeGuard) {
+            mob.getNavigation().setSpeedModifier(selectedSpeeds.approach());
+        }
     }
 
-    private static boolean holdsForStrike(Mob mob) {
-        // 首击距离靠起手时的站位保住，出手段结束前不走；收式阶段照常移动，速度受这一式声明的施放移动倍率限制，
-        // 与玩家施法时一样。不提前收式：玩家没有这个能力。
+    private static boolean holdsForStrike(Mob mob, HumanoidMind mind) {
+        // 近身守卫可在起手时跟进；出手段仍站定，收式照常移动。全程服从目录移动倍率。
         boolean closeStrike = HumanoidTechniqueHost.castingCloseStrike(mob);
         boolean wayfarer = HumanoidTechniqueHost.castingWayfarer(mob);
+        if (closeStrike && !wayfarer && HumanoidMeleeGuard.followsWarmup(mob, mind)) {
+            return false;
+        }
         return (closeStrike || wayfarer) && HumanoidTechniqueHost.beforeRecovery(mob);
     }
 
