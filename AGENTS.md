@@ -9,5 +9,15 @@
 - 纯规则的输入错误集中于 `server/.../HumanoidErrors.java`。随机生成由世界种子和实体 UUID 决定；重整代码时保留随机调用顺序与快照内容。
 - Mixin 数组复制使用 `System.arraycopy`，或交给非 Mixin 工具类调用 `clone()`；数组方法引用和 Mixin 内直接调用数组 `clone()` 会导致当前 Mixin 转换失败。
 - 仅保留必要的整体回归。Fabric GameTest 使用完整附属装配；测试运行依赖放入 GameTest classpath，正式 Fabric JAR 通过 `include` 嵌套 server JAR。
-- 文档唯一编辑源为 `docs/wiki/`，README 仅作入口；使用 patch 修改源码，保留已有未提交改动。交付执行 `test build`、Fabric GameTest、文档引用检查和 `git diff --check`。
+- 文档唯一编辑源为 `docs/wiki/`，README 仅作入口；使用 patch 修改源码，保留已有未提交改动。交付执行 Fabric GameTest、文档引用检查和 `git diff --check`。
 - 未获授权不提交、推送或远端建仓。许可为 PolyForm Noncommercial 1.0.0，保留第三方许可。
+
+## 构建和测试
+
+构建、测试一律走工作区的 `kz`（`~/Code/Kizuna-remote-session/scripts/kz`），不直接运行 `./gradlew`。细则以 `~/Code/Kizuna-remote-session/handoff/codex-worker-rules.md` 为准，动手前先读。
+
+- 单测、构建和服务端 GameTest：`kz test ~/Code/<本仓的 worktree>`
+- 要带上别的仓的 worktree 一起测：每个加一次 `--with ~/Code/<那个仓的 worktree>`
+- 客户端测试：`kz client ~/Code/<本仓的 worktree>` 列出有哪些项，`kz client ~/Code/<本仓的 worktree> <项>` 跑其中一项
+- 要自己写 Gradle 参数时：`kz gradle ~/Code/<本仓的 worktree> -- <参数>`
+- 不提交、不推送；在自己的 worktree（`~/Code/wt-*`）里改，不改主目录。
