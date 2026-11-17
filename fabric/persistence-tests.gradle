@@ -5,7 +5,7 @@ def reproClasses = [
                'HumanoidWitchBrewGameTest',
                'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
                'HumanoidWitchVanillaGameTest',
-               'HumanoidTechniqueGameTest',
+               'HumanoidTechniqueGameTest', 'HumanoidLeapEstimateGameTest',
                'HumanoidBrainGameTest', 'HumanoidSpawnGameTest',
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
                'HumanoidPeddlerGameTest', 'HumanoidLimbStrikeGameTest', 'HumanoidTierTagGameTest',

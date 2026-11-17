@@ -16,6 +16,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWitchRaidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWitchVanillaGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidLeapEstimateGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidSpawnGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidBrainGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidPeddlerGameTest",

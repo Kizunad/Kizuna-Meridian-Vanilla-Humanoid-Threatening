@@ -14,6 +14,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastRequest;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HorizontalDirection;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.KnownTechnique;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TargetDistanceBand;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueFailure;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.server.TechniqueSelector;
@@ -39,7 +40,7 @@ final class HumanoidActions {
     private static final long FLIGHT_TIME_TOLERANCE_MILLIS = 100;
     private static final double HOLD_RANGE_MARGIN = 0.5;
     private static final double HOLD_RANGE_WIDTH = 4.0;
-    private static final double MILLIS_PER_SECOND = 1000.0;
+    private static final double MILLIS_PER_TICK = 50.0;
     /** 站位离射程边和盯上距离再往里留的余量（格）：100 格正是客户端画掠夺者的边。 */
     private static final double STANDOFF_MARGIN = 4.0;
     /** 站位距离带的宽度（格）：带里停下出式，不为一两格来回挪。 */
@@ -158,8 +159,8 @@ final class HumanoidActions {
         }
         TechniqueLeaps.Preview leapPreview = preview.orElseThrow();
         long flightMillis = leapPreview.flightMillis();
-        double seconds = flightMillis / MILLIS_PER_SECOND;
-        Vec3 predictedTarget = opponent.position().add(opponent.getDeltaMovement().scale(seconds));
+        // 落地距离用于所有候选的初筛；首击时刻随式不同，选中后另验。
+        Vec3 predictedTarget = predictedTargetPosition(opponent.position(), opponent.getDeltaMovement(), flightMillis);
         double expectedDistance = horizontalDistance(landing, predictedTarget);
         Optional<Repertoire.Strike> strike = chooseStrike(turn, expectedDistance).filter(candidate -> {
             LeapPlan plan = new LeapPlan(candidate, leapPreview, landing, flightMillis,
@@ -353,27 +354,60 @@ final class HumanoidActions {
 
     static boolean plannedLeapSafe(Turn turn, LeapPlan plan) {
         // 落点偏差、目标移动和来袭覆盖均在提交跃步前验证。
-        Repertoire.Strike strike = plan.strike();
         TechniqueLeaps.Preview preview = plan.preview();
+        Vec3 actualLanding = preview.landing();
         Vec3 expectedLanding = plan.expectedLanding();
         long expectedFlightMillis = plan.expectedFlightMillis();
         long firstHitMillis = plan.firstHitMillis();
-        if (preview.landing().distanceTo(expectedLanding) > LANDING_DEVIATION_TOLERANCE) {
+        if (actualLanding.distanceTo(expectedLanding) > LANDING_DEVIATION_TOLERANCE) {
             return false;
         }
-        long flightDifference = Math.abs(preview.flightMillis() - expectedFlightMillis);
+        long flightMillis = preview.flightMillis();
+        long flightDifference = Math.abs(flightMillis - expectedFlightMillis);
         if (flightDifference > FLIGHT_TIME_TOLERANCE_MILLIS) {
             return false;
         }
         LivingEntity opponent = opponentEntity(turn);
-        long horizonMillis = preview.flightMillis() + firstHitMillis;
-        double seconds = horizonMillis / MILLIS_PER_SECOND;
-        Vec3 predictedTarget = opponent.position().add(opponent.getDeltaMovement().scale(seconds));
-        double landingDistance = horizontalDistance(preview.landing(), predictedTarget);
-        if (landingDistance > strike.reach() + ASSAULT_LANDING_MARGIN) {
+        var technique = reference(turn, plan.strike().technique());
+        var definition = turn.readout().context().registry().find(technique).orElseThrow();
+        if (!landingStrikeInRange(plan, definition, opponent.position(), opponent.getDeltaMovement())) {
             return false;
         }
-        return !overlappingIncoming(turn, horizonMillis);
+        long incomingHorizonMillis = flightMillis + firstHitMillis;
+        return !overlappingIncoming(turn, incomingHorizonMillis);
+    }
+
+    static boolean landingStrikeInRange(LeapPlan plan, TechniqueDefinition definition,
+                                         Vec3 targetPosition, Vec3 velocityPerTick) {
+        // 起跳和起手同时发生；先确认落地时或之后还有打击，再核对目标是否仍在落点的起手范围。
+        var preview = plan.preview();
+        long flightMillis = preview.flightMillis();
+        boolean hitAtOrAfterLanding = definition.getEffectsList().stream()
+                .filter(effect -> effect.getAtMillis() >= flightMillis)
+                .anyMatch(effect -> switch (effect.getOperationCase()) {
+                    case WEAPON_STRIKE, LEG_STRIKE, LIMB_STRIKE, GRAPPLE, LAUNCH_PROJECTILE -> true;
+                    default -> false;
+                });
+        if (!hitAtOrAfterLanding) {
+            return false;
+        }
+        Vec3 predictedTarget = predictedTargetAtLandingOrFirstHit(targetPosition, velocityPerTick,
+                flightMillis, plan.firstHitMillis());
+        double landingDistance = horizontalDistance(preview.landing(), predictedTarget);
+        return landingDistance <= plan.strike().reach() + ASSAULT_LANDING_MARGIN;
+    }
+
+    static Vec3 predictedTargetAtLandingOrFirstHit(Vec3 position, Vec3 velocityPerTick,
+                                                   long flightMillis, long firstHitMillis) {
+        // 首击早于落地时看落地位置；首击晚于落地时仍等到首击，二者都是从同一次起跳起算。
+        long horizonMillis = Math.max(flightMillis, firstHitMillis);
+        return predictedTargetPosition(position, velocityPerTick, horizonMillis);
+    }
+
+    static Vec3 predictedTargetPosition(Vec3 position, Vec3 velocityPerTick, long horizonMillis) {
+        // getDeltaMovement 的单位是格/tick，预报时长也从毫秒换成 tick。
+        double horizonTicks = horizonMillis / MILLIS_PER_TICK;
+        return position.add(velocityPerTick.scale(horizonTicks));
     }
 
     private static boolean overlappingIncoming(Turn turn, long horizonMillis) {
