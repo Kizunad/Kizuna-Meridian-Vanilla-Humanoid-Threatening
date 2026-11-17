@@ -197,8 +197,8 @@ public final class HumanoidBrainGameTest {
     @GameTest(maxTicks = LONG_TIMEOUT,
             environment = ARMED_VILLAGER_BATCH)
     public void trueQiVillagerWithUpperVolumeEngagesAndKnocks(GameTestHelper context) {
-        // 学了破门上卷、持斧的真炁村民对游炁卫道士对敌，用上卷的式打伤对方。上卷叩门、撞门、劈门按权重抽，
-        // 先抽到撞门再抽到劈门时，一记劈中头就能在叩门出现前打死卫道士，所以不限定叩门，打死也算打伤。
+        // 环境不发村民的默认功法，只学破门上卷，避免袖手拳先打死对手；持斧真炁村民要用上卷的式打伤游炁卫道士。
+        // 上卷叩门、撞门、劈门按权重抽，不限定叩门，打死也算打伤。
         var arena = new Arena(context);
         Villager villager = arena.spawn(EntityTypes.VILLAGER, HumanoidTier.TRUE_QI, "armed", SUBJECT_POS);
         villager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
