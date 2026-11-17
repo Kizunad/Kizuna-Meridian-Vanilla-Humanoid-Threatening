@@ -39,7 +39,8 @@ public final class HumanoidPillagerRangeGameTest {
     private static final String FIELD = "meridian_humanoid_test:open_field";
     /** 空地结构里地面的相对高度：GameTest 用屏障封底，站在结构最低一层。 */
     private static final int FLOOR_Y = 0;
-    private static final int OBSERVATION_TICKS = 1800;
+    /** 包含重射承接、双臂恢复、继续退开和连续站位的观察时间。 */
+    private static final int OBSERVATION_TICKS = 2400;
     private static final int TIMEOUT = OBSERVATION_TICKS + 20;
     /** 远处玩家离掠夺者的水平距离（格）：原版 32 格的跟踪距离外，盯上距离 100 格以内。 */
     private static final double FAR_DISTANCE = 98;
@@ -58,6 +59,7 @@ public final class HumanoidPillagerRangeGameTest {
     private static final double APPROACH_TOLERANCE = 2.0;
     /** 连续这么多 tick 都在站位带里才算站定。 */
     private static final int SETTLED_TICKS = 40;
+    private static final int NOT_OBSERVED_TICK = -1;
     /** 盯上时至少要在这么远（格）：任务要求 80 格外发现玩家。 */
     private static final double NOTICE_PROOF_DISTANCE = 80;
     /** 原版无动作计时过这个值，32 格外的生物开始有机会随机消失。 */
@@ -120,8 +122,11 @@ public final class HumanoidPillagerRangeGameTest {
         private final Set<String> casts = new LinkedHashSet<>();
         private double noticedAt = -1;
         private double closest = Double.MAX_VALUE;
+        private int noticedTick = NOT_OBSERVED_TICK;
+        private int firstInBandTick = NOT_OBSERVED_TICK;
         private int idlePeak;
         private int settled;
+        private int settledPeak;
 
         private Watch(GameTestHelper context, Pillager mob, Mob control, FakePlayer player, Start start) {
             // 观察身份固定，别的测试实体不参与断言。
@@ -135,18 +140,8 @@ public final class HumanoidPillagerRangeGameTest {
         private void tick(int remaining) {
             // 每 tick 只读状态：盯上时的距离、最近距离、交战后的无动作计时峰值、出过的式和连续在带里的 tick。
             double distance = mob.distanceTo(player);
-            boolean noticed = mob.getTarget() == player;
-            if (noticed && noticedAt < 0) {
-                noticedAt = distance;
-            }
-            if (noticed) {
-                closest = Math.min(closest, distance);
-                idlePeak = Math.max(idlePeak, mob.getNoActionTime());
-            }
+            recordPosition(remaining, distance);
             recordCast();
-            boolean inBand = distance >= STANDOFF_MINIMUM - PATH_ACCURACY
-                    && distance <= STANDOFF_MAXIMUM + BAND_TOLERANCE;
-            settled = noticed && inBand ? settled + 1 : 0;
             if (settled >= SETTLED_TICKS && (start == Start.NEAR || !casts.isEmpty())) {
                 verify(distance);
                 return;
@@ -158,6 +153,31 @@ public final class HumanoidPillagerRangeGameTest {
                 return;
             }
             context.runAfterDelay(1, () -> tick(remaining - 1));
+        }
+
+        private void recordPosition(int remaining, double distance) {
+            // 时刻相对本用例开始计数；尚未认出目标或进带时保持 -1。
+            int elapsed = OBSERVATION_TICKS - remaining;
+            boolean noticed = mob.getTarget() == player;
+            if (noticed && noticedTick < 0) {
+                noticedAt = distance;
+                noticedTick = elapsed;
+            }
+            if (noticed) {
+                closest = Math.min(closest, distance);
+                idlePeak = Math.max(idlePeak, mob.getNoActionTime());
+            }
+            boolean inBand = distance >= STANDOFF_MINIMUM - PATH_ACCURACY
+                    && distance <= STANDOFF_MAXIMUM + BAND_TOLERANCE;
+            if (inBand && firstInBandTick < 0) {
+                firstInBandTick = elapsed;
+            }
+            if (noticed && inBand) {
+                settled++;
+            } else {
+                settled = 0;
+            }
+            settledPeak = Math.max(settledPeak, settled);
         }
 
         private void recordCast() {
@@ -192,9 +212,10 @@ public final class HumanoidPillagerRangeGameTest {
         }
 
         private String diagnosis(double distance) {
-            // 失败与通过日志都带上距离、盯上时距离、最近距离、计时峰值、出过的式和最近的决策。
+            // 失败与通过日志保留距离、首次盯上和进带时刻、连续计时峰值、出过的式和最近的决策。
             return " distance=" + distance + " noticedAt=" + noticedAt + " closest=" + closest
-                    + " idlePeak=" + idlePeak + " casts=" + casts
+                    + " idlePeak=" + idlePeak + " noticedTick=" + noticedTick
+                    + " firstInBandTick=" + firstInBandTick + " settledPeak=" + settledPeak + " casts=" + casts
                     + " target=" + mob.getTarget() + " directing=" + HumanoidBrain.directing(mob)
                     + " decisions=" + HumanoidBrain.decisions(mob.getUUID());
         }
