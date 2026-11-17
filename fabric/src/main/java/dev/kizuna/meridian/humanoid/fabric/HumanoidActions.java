@@ -35,7 +35,7 @@ import net.minecraft.world.phys.Vec3;
 /** 把一次战术决策落到施放请求与移动指令上；施放失败按式累计，连续失败后暂停该式。 */
 final class HumanoidActions {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_brain");
-    private static final double ASSAULT_LANDING_MARGIN = 0.75;
+    private static final double ASSAULT_LANDING_MARGIN = 0.95;
     private static final double LANDING_DEVIATION_TOLERANCE = 2.0;
     private static final long FLIGHT_TIME_TOLERANCE_MILLIS = 100;
     private static final double HOLD_RANGE_MARGIN = 0.5;
