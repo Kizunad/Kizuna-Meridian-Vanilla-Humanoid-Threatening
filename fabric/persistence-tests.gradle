@@ -1,7 +1,8 @@
 // 常规回归包含存档边界；坏档启动和强退重启使用独立世界，防止污染普通测试。
 def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
 def reproClasses = [
-        full: ['HumanoidGameTest', 'HumanoidActivityGameTest', 'HumanoidCharmGameTest', 'HumanoidWitchBrewGameTest',
+        full: ['HumanoidGameTest', 'HumanoidActivityGameTest', 'HumanoidCharmGameTest', 'HumanoidCharmAllyGameTest',
+               'HumanoidWitchBrewGameTest',
                'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
                'HumanoidWitchVanillaGameTest',
                'HumanoidTechniqueGameTest',
@@ -22,6 +23,8 @@ def reproClasses = [
         // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。
         perf: ['HumanoidCrowdPerfGameTest'],
         normal: ['HumanoidAuditReproGameTest'],
+        // 只跑魅惑的两类用例：改魅惑时快速回归、做负对照用。
+        charm: ['HumanoidCharmGameTest', 'HumanoidCharmAllyGameTest'],
         'bad-ledger': ['BadLedgerReproGameTest'],
         'release-before': ['ReleaseCrashBeforeGameTest'],
         'release-after': ['ReleaseCrashAfterGameTest']

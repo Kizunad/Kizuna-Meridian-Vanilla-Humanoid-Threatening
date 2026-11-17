@@ -74,7 +74,7 @@ public abstract class WitchUseMixin extends Raider {
         // 定身与盟友保护也覆盖直接调用女巫投掷入口。
         Witch witch = (Witch) (Object) this;
         if (HumanoidBrain.blocksRanged(witch) || HumanoidWitchHands.occupied(witch)
-                || HumanoidCharmController.protects(witch, target)) {
+                || HumanoidCharmController.spares(witch, target)) {
             callback.cancel();
         }
     }

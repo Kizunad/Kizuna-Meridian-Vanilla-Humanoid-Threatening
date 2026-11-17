@@ -23,9 +23,17 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/** 执行 Brewing 的会话，不重新判定脑力、阵营归属或药效期限。 */
+/**
+ * 执行 Brewing 的会话，不重新判定脑力、阵营归属或药效期限。
+ *
+ * <p>受控者不打施药者一方；生物施药者也不打自己魅惑着的生物：会话一开始就放下这个目标、两边互相的旧账一起清掉，
+ * 会话期间选敌、原版改目标、出手筛选都不认它。醒了以后不凭旧账复打。</p>
+ */
 public final class HumanoidCharmController implements CharmController {
+    private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid");
     private static final int MAX_BYTES = 4_096;
     private static final double FOLLOW_DISTANCE = 2;
     private static final double FOLLOW_SPEED = 1;
@@ -93,6 +101,9 @@ public final class HumanoidCharmController implements CharmController {
             long tombstoneUntil;
             if (previous != null && previous.getSessionId().equals(sessionId)) {
                 tombstoneUntil = starts.get(subjectId).getEndsTick();
+                // 一局魅惑一行日志，排查「怎么又打起来了」时看它是怎么醒的。
+                LOGGER.info("魅惑会话结束：受控 {}，施药者 {}，原因 {}，第 {} tick（原定到 {}）", subjectId,
+                        session.getCasterUuid(), command.getReason(), tick, tombstoneUntil);
                 finish(command, subjectId);
             } else {
                 tombstoneUntil = endsTick;
@@ -128,6 +139,7 @@ public final class HumanoidCharmController implements CharmController {
         sessions.put(subjectId, session);
         if (previous == null) {
             starts.put(subjectId, session);
+            truce(subject, HumanoidFabric.findEntity(UUID.fromString(session.getCasterUuid())));
         }
         if (previous == null || !previous.getOpponentUuid().equals(session.getOpponentUuid())) {
             TechniqueFabric.service().cancelOnUnload(subjectId);
@@ -140,6 +152,21 @@ public final class HumanoidCharmController implements CharmController {
             mob.setTarget(opponent(mob));
         }
         return true;
+    }
+
+    private static void truce(LivingEntity subject, LivingEntity caster) {
+        // 会话开始：两边互相的敌意记忆清掉；生物施药者放下这个目标，大脑里认的对手、排好的出手一起撤。
+        if (caster == null) {
+            return;
+        }
+        HumanoidThreats.forget(subject, caster);
+        HumanoidThreats.forget(caster, subject);
+        if (caster instanceof Mob mob) {
+            if (mob.getTarget() == subject) {
+                mob.setTarget(null);
+            }
+            HumanoidBrain.releaseControl(mob.getUUID());
+        }
     }
 
     private static void validate(CharmCommand command) {
@@ -254,8 +281,22 @@ public final class HumanoidCharmController implements CharmController {
         return caster != null && BrewCharmTargets.sameSide(caster, target);
     }
 
+    public static boolean ownSubject(LivingEntity caster, Entity target) {
+        // 这只生物现在是不是被我魅惑着。
+        CharmSession session = target == null ? null : sessions.get(target.getUUID());
+        return session != null && session.getCasterUuid().equals(caster.getStringUUID());
+    }
+
+    public static boolean spares(LivingEntity actor, Entity target) {
+        // 不该对它出手：我受控时的施药者一方，或者我自己魅惑着的生物。
+        return protects(actor, target) || ownSubject(actor, target);
+    }
+
     public static boolean acceptsTarget(Mob subject, LivingEntity target) {
-        // 原版选敌任务不能覆盖施药者的目标，凡人仍用原版攻击与导航任务。
+        // 原版选敌任务不能覆盖施药者的目标，凡人仍用原版攻击与导航任务；施药者也不能把自己魅惑着的生物选成目标。
+        if (ownSubject(subject, target)) {
+            return false;
+        }
         return !controlled(subject) || target == opponent(subject);
     }
 

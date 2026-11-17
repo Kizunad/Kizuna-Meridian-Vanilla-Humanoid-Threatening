@@ -61,7 +61,7 @@ public abstract class MobTechniqueMixin {
                                              CallbackInfoReturnable<Boolean> callback) {
         // 功法打击自行结算，原版近战不能在施放或撤退中叠加一次攻击。
         Mob mob = (Mob) (Object) this;
-        if (HumanoidBrain.blocksMelee(mob) || HumanoidCharmController.protects(mob, target)) {
+        if (HumanoidBrain.blocksMelee(mob) || HumanoidCharmController.spares(mob, target)) {
             callback.setReturnValue(false /* attacked */);
         }
     }

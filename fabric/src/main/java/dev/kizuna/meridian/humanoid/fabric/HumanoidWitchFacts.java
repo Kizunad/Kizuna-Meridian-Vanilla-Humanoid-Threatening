@@ -110,7 +110,7 @@ final class HumanoidWitchFacts {
         // 原版目标、攻击者和大脑记忆共用敌意判定；受惑保护也必须保留。
         return entity != witch && entity.isAlive() && !entity.isSpectator() && !ally(witch, entity)
                 && (!(entity instanceof Player player) || !player.isCreative())
-                && !HumanoidCharmController.protects(witch, entity)
+                && !HumanoidCharmController.spares(witch, entity)
                 && HumanoidThreats.enemy(witch, entity);
     }
 

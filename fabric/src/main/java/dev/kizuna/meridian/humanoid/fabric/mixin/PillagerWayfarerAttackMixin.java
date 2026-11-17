@@ -16,7 +16,7 @@ public abstract class PillagerWayfarerAttackMixin {
     private void meridian$blockVanillaShot(LivingEntity target, float power, CallbackInfo callback) {
         // 已上弦原版弩不能在功法期间另射一发，原有上弦组件因此保持不变。
         Pillager pillager = (Pillager) (Object) this;
-        if (HumanoidBrain.blocksRanged(pillager) || HumanoidCharmController.protects(pillager, target)) {
+        if (HumanoidBrain.blocksRanged(pillager) || HumanoidCharmController.spares(pillager, target)) {
             callback.cancel();
         }
     }

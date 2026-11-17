@@ -220,16 +220,39 @@ final class HumanoidThreats {
     }
 
     private static boolean valid(Mob mob, LivingEntity candidate) {
-        // 同一世界的存活实体；旁观与创造模式玩家不算敌人。
+        // 同一世界的存活实体；旁观与创造模式玩家不算敌人，我自己魅惑着的生物也不算。
         if (candidate == mob || !candidate.isAlive() || candidate.isRemoved()
-                || candidate.level() != mob.level() || candidate.isSpectator()) {
+                || candidate.level() != mob.level() || candidate.isSpectator()
+                || HumanoidCharmController.ownSubject(mob, candidate)) {
             return false;
         }
         return !(candidate instanceof Player player) || !player.isCreative();
     }
 
+    static void forget(LivingEntity self, LivingEntity other) {
+        // self 不再记 other 的仇：受击记忆、原版记的「谁打过我」，村民大脑里的敌对与受击记忆。
+        var remembered = attackers.get(self);
+        if (remembered != null) {
+            remembered.remove(other);
+        }
+        if (self.getLastHurtByMob() == other) {
+            self.setLastHurtByMob(null);
+        }
+        if (self instanceof Villager villager) {
+            var brain = villager.getBrain();
+            for (var memory : List.of(MemoryModuleType.NEAREST_HOSTILE, MemoryModuleType.HURT_BY_ENTITY)) {
+                if (brain.getMemory(memory).filter(found -> found == other).isPresent()) {
+                    brain.eraseMemory(memory);
+                }
+            }
+        }
+    }
+
     static boolean enemy(LivingEntity self, LivingEntity other) {
-        // 我的对手、我的目标、以我为目标的，或在受击记忆里的。
+        // 我的对手、我的目标、以我为目标的，或在受击记忆里的。魅惑着的两边互不为敌。
+        if (HumanoidCharmController.spares(self, other) || HumanoidCharmController.spares(other, self)) {
+            return false;
+        }
         if (self instanceof Mob mob && (mob.getTarget() == other
                 || HumanoidBrain.opponent(mob).filter(opponent -> opponent == other).isPresent())) {
             return true;
@@ -246,6 +269,9 @@ final class HumanoidThreats {
         // 打击不伤同伴，除非对方正是我的敌人。
         if (HumanoidCharmController.controlled(actor)) {
             return target != actor && !HumanoidCharmController.protects(actor, target);
+        }
+        if (HumanoidCharmController.ownSubject(actor, target)) {
+            return false;
         }
         return !allied(actor, target) || enemy(actor, target);
     }
