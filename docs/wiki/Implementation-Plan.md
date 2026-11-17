@@ -255,7 +255,7 @@
 | 空学卷表的掠夺者仍用原版弩射击 | `emptyTablePillagerStillShoots` |
 | 无威胁村民夜里照常上床 | `idleVillagerStillSleepsAtNight` |
 | 一百个无威胁村民一分钟内不准备身体会话、不记决策（健康宿主照常惰性出生身体；方阵放在 10×10 的测试结构里，由 GameTest 的屏障围住，闲逛不会撞上前面批次留下的生物） | `hundredIdleVillagersPrepareNoBodiesForAMinute` |
-| 两只真炁卫道士互打（原版同伴，互为目标；出生后先空等原版近战查过两次再互设目标，不让原版抢在大脑前开砍）：至少一方起手打击式且至少一方被打击式打中，或双方都撤退；双方都起过手时各自有应对；双方蓄力；同一式连续失败不到三次；每局走的分支（交手 / 一方撤退 / 双方撤退）写进 GameTest 日志，不断言 | `trueQiVindicatorsDuelForThreeMinutes` |
+| 两只真炁卫道士互打（原版同伴，互为目标；出生后先空等原版近战查过两次再互设目标，不让原版抢在大脑前开砍；铁盔、铁胸甲与抗性提升 IV 留出打击式的观察窗口）：至少一方起手打击式且至少一方被打击式打中，或双方都撤退；双方都起过手时各自有应对；双方蓄力；同一式连续失败不到三次；每局走的分支（交手 / 一方撤退 / 双方撤退）写进 GameTest 日志，不断言 | `trueQiVindicatorsDuelForThreeMinutes` |
 | 不动的唤魔者在 6 格外的平地上，它的两只恼鬼贴身咬真炁村民：村民的对手一直是唤魔者，没换成过恼鬼 | `vexBitesKeepTheEvokerAsTheOpponent` |
 | 不动的掠夺者在 6 格外误伤真炁卫道士一下，原版受击记忆记着它：之后 3 秒卫道士没把同伴当过对手，也没以它为目标 | `allyStrayHitDoesNotStartAFight` |
 | 两只不动的尸壳都盯着真炁卫道士，近的 3 格、远的 6 格，远的先打了它 8 点：卫道士第一次决策就选远的，之后 3 秒没换过（只按远近时选近的） | `scoredThreatPrefersTheFartherOneWhoHurtMe` |

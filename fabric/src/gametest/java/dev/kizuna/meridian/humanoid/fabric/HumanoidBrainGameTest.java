@@ -23,6 +23,8 @@ import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
@@ -148,6 +150,7 @@ public final class HumanoidBrainGameTest {
     private static final BlockPos RIGHT_POS = new BlockPos(6, 0, 5);
     private static final BlockPos MIDDLE_SUBJECT_POS = new BlockPos(3, 0, 1);
     private static final int DUEL_TIMEOUT = 4200;
+    private static final int DUEL_RESISTANCE_AMPLIFIER = 3;
     private static final int ROOM_EDGE = 9;
     private static final int ROOM_CEILING = 6;
     private static final BlockPos ROOM_SUBJECT = new BlockPos(2, 1, 2);
@@ -622,10 +625,12 @@ public final class HumanoidBrainGameTest {
             Vindicator second = arena.spawn(EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, "duel-second", FAR_POS);
             for (Vindicator fighter : List.of(first, second)) {
                 fighter.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_AXE));
-                // 颈、胸归零即死以后，光着身子的两个人常常两秒多就被原版的斧子砍中颈部分出胜负，
-                // 打击式还没来得及落到人身上，这一局就什么也验不到。戴上铁盔、铁胸甲（盔同时护着颈），让对决打得够久。
+                // 铁盔、铁胸甲仍挡不住蓄力后的原版斧一击砍断颈部；抗性提升 IV 留出打击式的观察窗口，
+                // 减伤后仍走正式的部位伤害、僵直、撤退与死亡结算。
                 fighter.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
                 fighter.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.IRON_CHESTPLATE));
+                fighter.addEffect(new MobEffectInstance(MobEffects.RESISTANCE, DUEL_TIMEOUT,
+                        DUEL_RESISTANCE_AMPLIFIER));
             }
             arena.later(DUEL_OPENING_TICKS, () -> duel(context, arena, first, second));
         });
