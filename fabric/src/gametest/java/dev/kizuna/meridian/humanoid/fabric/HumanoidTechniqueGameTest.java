@@ -589,8 +589,8 @@ public final class HumanoidTechniqueGameTest {
         mob.setNoAi(false /* aiDisabled */);
         var body = body(mob);
         long now = body.settledAt().elapsedMillis();
-        var cleave = progress(mob).getActiveCast();
-        long opens = TechniqueCastTimelines.status(TechniqueFabric.service().registry(), progress(mob), now)
+        var cleave = TechniqueState.read(body).getActiveCast();
+        long opens = TechniqueCastTimelines.status(TechniqueFabric.service().registry(), body, now)
                 .getFollowUpsList().stream()
                 .filter(hint -> hint.getTechniqueId().equals(PREFIX + "finale"))
                 .mapToLong(hint -> cleave.getStartedMillis() + hint.getOpenMillis())

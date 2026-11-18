@@ -199,7 +199,7 @@ public final class HumanoidBrain {
         }
         long now = body.settledAt().elapsedMillis();
         long started = progress.getActiveCast().getStartedMillis();
-        return TechniqueCastTimelines.status(TechniqueFabric.service().registry(), progress, now)
+        return TechniqueCastTimelines.status(TechniqueFabric.service().registry(), body, now)
                 .getFollowUpsList().stream()
                 .mapToLong(hint -> started + hint.getOpenMillis())
                 .filter(opens -> opens > now)
