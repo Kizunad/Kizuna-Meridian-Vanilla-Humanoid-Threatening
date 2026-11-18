@@ -137,8 +137,9 @@ public final class HumanoidBodyCacheGameTest {
     }
 
     private static TechniqueDefinition unknownTechnique(TechniqueProgress progress) {
-        // 目录里任取一式还没学过的。
+        // 目录里任取一式还没学过的；天生会的式学了也不留记录，不能拿来验「新学一式」。
         return TechniqueFabric.service().registry().definitions().stream()
+                .filter(definition -> !definition.getInnate())
                 .filter(definition -> progress.getKnownList().stream()
                         .noneMatch(known -> known.getTechnique().getId().equals(definition.getId())))
                 .findFirst().orElseThrow();

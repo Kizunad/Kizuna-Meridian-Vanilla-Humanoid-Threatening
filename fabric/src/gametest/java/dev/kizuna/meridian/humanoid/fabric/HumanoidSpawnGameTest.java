@@ -7,6 +7,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.fabric.TechniqueScrollItems;
+import dev.kizuna.meridian.technique.server.TechniqueState;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
@@ -244,8 +245,10 @@ public final class HumanoidSpawnGameTest {
         var mortal = spawnByCommand(context, run(source, SPAWN + "vindicator mortal"), output);
         var wandering = spawnByCommand(context, run(source, SPAWN + "vindicator wandering_qi"), output);
         try {
-            var known = TechniqueFabric.service().known(mortal.getUUID());
-            context.assertTrue(known.isEmpty(), "凡人生成后学了卷：" + known);
+            // 看身体上的学习记录：天生会的式不入卷、不留记录，凡人照样会。
+            var learned = TechniqueState.read(((HumanoidEntityAccess) mortal).meridian$humanoidBody().currentBody())
+                    .getKnownList();
+            context.assertTrue(learned.isEmpty(), "凡人生成后学了卷：" + learned);
             assertSpawn(context, wandering, HumanoidVariant.WANDERING_QI);
         } finally {
             mortal.discard();
