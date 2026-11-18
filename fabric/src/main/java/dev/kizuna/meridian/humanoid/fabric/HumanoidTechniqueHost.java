@@ -8,6 +8,7 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ActiveCast;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.MovementAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueActivityCommit;
@@ -220,10 +221,14 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     }
 
     static boolean beforeWarmupEnd(LivingEntity entity) {
-        var warmupEnd = publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
-                .map(progress -> progress.getActiveCast().getWarmupEndMillis());
+        var warmupEnd = activeCast(entity).map(ActiveCast::getWarmupEndMillis);
         var clock = clockMillis(entity);
         return warmupEnd.isPresent() && clock.isPresent() && clock.getAsLong() < warmupEnd.get();
+    }
+
+    static Optional<ActiveCast> activeCast(LivingEntity entity) {
+        return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
+                .map(TechniqueProgress::getActiveCast);
     }
 
     private static Optional<TechniqueDefinition> activeDefinition(LivingEntity entity) {

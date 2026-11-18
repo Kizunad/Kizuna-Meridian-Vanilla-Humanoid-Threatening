@@ -135,6 +135,19 @@ final class HumanoidMotion {
         }
     }
 
+    static void followWarmup(Mob mob, HumanoidMind mind, double speed) {
+        LivingEntity target = mind.opponent().orElseThrow();
+        mob.getLookControl().setLookAt(target, LOOK_YAW_SPEED, LOOK_PITCH_SPEED);
+        var navigation = mob.getNavigation();
+        var destination = target.blockPosition();
+        // 对手穿身后要追当前格；普通跟随允许差一格到达，旧终点会把起手留在原地。
+        if (!destination.equals(navigation.getTargetPos()) || pathDue(mob, mind)) {
+            navigation.moveTo(navigation.createPath(destination, 0), speed);
+            mind.pathed(mob.tickCount);
+        }
+        navigation.setSpeedModifier(speed);
+    }
+
     private static boolean probedOver(PathNavigation navigation) {
         // 试算退路会把原版导航记的目标格改成新落点，却不换掉正在走的路径；之后按同一格寻路，原版直接沿用旧路径。
         // 正在走的路径终点与导航目标格不一致，说明它通往别处（例如原版攻击走向对手的那条），不能冒充去新落点的路。

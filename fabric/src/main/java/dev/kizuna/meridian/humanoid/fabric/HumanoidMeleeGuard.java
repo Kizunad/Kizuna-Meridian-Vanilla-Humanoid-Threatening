@@ -4,9 +4,13 @@ import dev.kizuna.meridian.humanoid.server.Fighter;
 import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.MeleeGuardRules;
+import dev.kizuna.meridian.technique.fabric.world.TechniqueMovementSpeed;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefinition;
+import dev.kizuna.meridian.technique.server.TechniqueMovement;
+import java.util.OptionalDouble;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
@@ -93,11 +97,37 @@ final class HumanoidMeleeGuard {
 
     static boolean followsWarmup(Mob mob, HumanoidMind mind) {
         // 仅地面跟随的起手可以走；首击、擒持及出手段仍按原约束站定。
+        return groundFollow(mob, mind) && HumanoidTechniqueHost.beforeWarmupEnd(mob);
+    }
+
+    private static boolean groundFollow(Mob mob, HumanoidMind mind) {
         return enabled(mob) && mob.onGround() && !HumanoidRestrictions.locked(mob)
                 && mind.opponent().isPresent()
                 && mind.stance() == HumanoidAssessment.Stance.ENGAGE
-                && mind.directive().movement() == HumanoidMotion.Movement.FOLLOW
-                && HumanoidTechniqueHost.beforeWarmupEnd(mob);
+                && mind.directive().movement() == HumanoidMotion.Movement.FOLLOW;
+    }
+
+    static OptionalDouble warmupPursuit(Mob mob, HumanoidMind mind) {
+        var active = HumanoidTechniqueHost.activeCast(mob);
+        if (active.isEmpty() || !groundFollow(mob, mind) || withdrawn(mob)
+                || !HumanoidTechniqueHost.beforeWarmupEnd(mob)) {
+            return OptionalDouble.empty();
+        }
+        var cast = active.orElseThrow();
+        var request = cast.getRequest();
+        var target = mind.opponent().orElseThrow();
+        if (!(target instanceof Pillager) || !holdsCrossbow(target) || !target.isAlive()
+                || !target.getStringUUID().equals(request.getTargetId()) || !HumanoidGuards.withinPost(mob, target)
+                || !HumanoidDuties.permitsWarmupPursuit(mob, request.getTechnique().getId())) {
+            return OptionalDouble.empty();
+        }
+        double multiplier = TechniqueMovement.multiplier(cast);
+        if (multiplier <= 0) {
+            return OptionalDouble.empty();
+        }
+        // 只抵消本次施放自己的限速；伤势、状态与其他属性修饰继续参与原版移动。
+        double approach = HumanoidBrain.config().villager().guardApproachSpeed();
+        return OptionalDouble.of(approach / TechniqueMovementSpeed.attributeMultiplier(mob, multiplier));
     }
 
     static HumanoidMotion.Speeds speeds(Mob mob, HumanoidMind mind, HumanoidMotion.Speeds ordinary) {

@@ -651,6 +651,11 @@ public final class HumanoidBrain {
             HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;
         }
+        var pursuit = HumanoidMeleeGuard.warmupPursuit(mob, mind);
+        if (pursuit.isPresent()) {
+            HumanoidMotion.followWarmup(mob, mind, pursuit.getAsDouble());
+            return;
+        }
         if (holdsForStrike(mob, mind)) {
             HumanoidMotion.apply(mob, mind, HumanoidMotion.Directive.STAYING, speeds);
             return;

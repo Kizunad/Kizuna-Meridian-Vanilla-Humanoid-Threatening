@@ -1,7 +1,10 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import net.minecraft.world.entity.LivingEntity;
 
 /**
@@ -18,6 +21,18 @@ public final class HumanoidDuties {
 
     /** 近身守卫：任职方登记的接敌策略，只给非凡人村民使用。 */
     public static final String MELEE_GUARD_TAG = "meridian_humanoid.duty.melee_guard";
+
+    private static final Map<String, Set<String>> pursuitTechniques = new HashMap<>();
+
+    /** 任职方在初始化时登记自己的上任标签和允许在首击前跟进的近身式。 */
+    public static void registerWarmupPursuit(String appointmentTag, Set<String> techniques) {
+        pursuitTechniques.put(appointmentTag, Set.copyOf(techniques));
+    }
+
+    static boolean permitsWarmupPursuit(LivingEntity guard, String technique) {
+        return pursuitTechniques.entrySet().stream()
+                .anyMatch(duty -> guard.entityTags().contains(duty.getKey()) && duty.getValue().contains(technique));
+    }
 
     public static void appointMeleeGuard(LivingEntity entity) {
         entity.addTag(MELEE_GUARD_TAG);
