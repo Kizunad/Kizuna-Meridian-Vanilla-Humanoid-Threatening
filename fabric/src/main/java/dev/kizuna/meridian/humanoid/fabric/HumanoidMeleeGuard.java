@@ -8,15 +8,12 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueDefi
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
 /** 任职方登记的近身守卫策略；不识别职业和具体功法。 */
 final class HumanoidMeleeGuard {
     static final String WITHDRAWN_TAG = "meridian_humanoid.duty.melee_guard_withdrawn";
-    private static final double ARROW_CORRIDOR_MARGIN = 2;
-    private static final double MOVING_ARROW_EPSILON = 0.0001;
     private static final double HALF = 0.5;
     private static final double GROUND_PROBE_BLOCKS = 0.01;
 
@@ -103,25 +100,14 @@ final class HumanoidMeleeGuard {
                 && HumanoidTechniqueHost.beforeWarmupEnd(mob);
     }
 
-    static boolean reloadWindow(Mob mob, LivingEntity target) {
-        if (!enabled(mob) || withdrawn(mob) || !mob.onGround() || mob.hurtTime > 0
-                || HumanoidTechniqueHost.hasActiveCast(mob) || !holdsCrossbow(target) || !target.isUsingItem()
-                || !target.getUseItem().is(Items.CROSSBOW) || !mob.hasLineOfSight(target)) {
-            return false;
-        }
-        // 装填不会让已射出的箭消失；通往射手的走廊内仍有它的飞箭时不提速。
-        var corridor = mob.getBoundingBox().minmax(target.getBoundingBox()).inflate(ARROW_CORRIDOR_MARGIN);
-        return mob.level().getEntitiesOfClass(AbstractArrow.class, corridor,
-                arrow -> arrow.getOwner() == target
-                        && arrow.getDeltaMovement().lengthSqr() > MOVING_ARROW_EPSILON).isEmpty();
-    }
-
     static HumanoidMotion.Speeds speeds(Mob mob, HumanoidMind mind, HumanoidMotion.Speeds ordinary) {
-        if (mind.stance() != HumanoidAssessment.Stance.ENGAGE
+        // 只提高未施放的接敌追击；施放跟进、撤离与无对手时保留原导航速度。
+        if (!enabled(mob) || withdrawn(mob) || HumanoidTechniqueHost.hasActiveCast(mob)
+                || mind.stance() != HumanoidAssessment.Stance.ENGAGE
                 || mind.directive().movement() != HumanoidMotion.Movement.FOLLOW
-                || mind.opponent().filter(target -> reloadWindow(mob, target)).isEmpty()) {
+                || mind.opponent().isEmpty()) {
             return ordinary;
         }
-        return new HumanoidMotion.Speeds(HumanoidBrain.config().villager().reloadApproachSpeed(), ordinary.flee());
+        return new HumanoidMotion.Speeds(HumanoidBrain.config().villager().guardApproachSpeed(), ordinary.flee());
     }
 }

@@ -60,7 +60,7 @@ return_unpressed_seconds = 5.0 # 拉开：到了安全距离，或者连着这�
 # 正在袭击里的袭击队伍成员、村里声望 −100 及以下的玩家）也算进选敌，评估划算就迎上去。
 # 评估不划算、对方又还没冲着他来（没盯他、没打过他、没进原版的近距离）就当没看见，照原版日常过。
 [villager]
-reload_approach_speed = 0.75   # 近身守卫未施放、对手装填且接敌走廊没有飞箭时的导航倍率。
+guard_approach_speed = 0.805  # 近身守卫有对手且未施放时的接敌导航倍率；撤离和日常不变。
 sortie_distance = 16           # 出击距离（格）
 sortie_reconsider_seconds = 5  # 评估不划算后隔这么多秒再评估一次
 outnumbered_weight = 1.0       # 村民的战力差再减去 此值 ×（对方人数 − 1 − 我方帮手数），括号里小于 0 按 0；

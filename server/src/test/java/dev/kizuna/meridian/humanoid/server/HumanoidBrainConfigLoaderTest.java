@@ -278,6 +278,21 @@ public class HumanoidBrainConfigLoaderTest {
     }
 
     @Test
+    public void guardApproachSpeedReplacesReloadSpeedAndValidatesValues() {
+        var defaults = HumanoidBrainConfigLoader.defaults().villager();
+        String missing = replace("guard_approach_speed = 0.805", "# guard_approach_speed = 0.805");
+        assertEquals(defaults, HumanoidBrainConfigLoader.parse(missing).villager());
+        String legacy = replace("guard_approach_speed = 0.805", "reload_approach_speed = 0.75");
+        assertEquals(defaults, HumanoidBrainConfigLoader.parse(legacy).villager());
+        String custom = replace("guard_approach_speed = 0.805", "guard_approach_speed = 1");
+        assertEquals(1, HumanoidBrainConfigLoader.parse(custom).villager().guardApproachSpeed(), TOLERANCE);
+        for (String invalid : List.of("0", "-1", "nan", "inf")) {
+            String text = replace("guard_approach_speed = 0.805", "guard_approach_speed = " + invalid);
+            assertThrows(IllegalArgumentException.class, () -> HumanoidBrainConfigLoader.parse(text));
+        }
+    }
+
+    @Test
     public void invalidThreatScoresAreRejected() {
         // 扣分项为正、加分项为负、未知键、物种无命名空间、物种表未知键和默认表缺键都在加载时拒绝。
         var invalid = Map.of(

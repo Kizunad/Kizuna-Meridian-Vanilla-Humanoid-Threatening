@@ -123,15 +123,16 @@ public final class HumanoidBrainConfigLoader {
         }
         TomlTable table = TOML.table(source, VILLAGER, VILLAGER);
         TOML.checkKeys(table, Set.of("sortie_distance", "sortie_reconsider_seconds", "outnumbered_weight",
-                "reload_approach_speed"),
+                "guard_approach_speed", "reload_approach_speed"),
                 VILLAGER + ".");
-        double reloadSpeed = HumanoidBrainConfig.VillagerRules.DEFAULT_RELOAD_APPROACH_SPEED;
-        if (table.contains("reload_approach_speed")) {
-            reloadSpeed = positive(table, "reload_approach_speed", VILLAGER);
+        // 旧装填速度键仅允许读取旧导出文件，不再参与速度选择。
+        double approachSpeed = HumanoidBrainConfig.VillagerRules.DEFAULT_GUARD_APPROACH_SPEED;
+        if (table.contains("guard_approach_speed")) {
+            approachSpeed = positive(table, "guard_approach_speed", VILLAGER);
         }
         return new HumanoidBrainConfig.VillagerRules(positive(table, "sortie_distance", VILLAGER),
                 positive(table, "sortie_reconsider_seconds", VILLAGER),
-                nonNegative(table, "outnumbered_weight", VILLAGER), reloadSpeed);
+                nonNegative(table, "outnumbered_weight", VILLAGER), approachSpeed);
     }
 
     private static HumanoidBrainConfig.ConcurrencyRules concurrency(TomlTable parsed) {
