@@ -8,6 +8,7 @@ import dev.kizuna.meridian.core.TimeCursor;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.humanoid.server.SpeciesBodyRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
@@ -119,10 +120,10 @@ public final class HumanoidBodyState {
         var random = HumanoidBodyGenerator.randomFor(worldSeed, entityId);
         HumanoidBodyGenerator generator = HumanoidFabric.generator();
         var inventory = region.inventory();
-        HumanoidTier rolled = HumanoidTier.of(generator.rollVariant(species, inventory, random));
-        HumanoidTier forced = subject.forcedTier();
-        HumanoidTier tier = forced == null ? rolled : forced;
-        var birth = new SpeciesBodyRules.Birth(entityId, region, now, tier, random);
+        var plan = subject.plan();
+        var identity = new SpeciesBodyRules.Identity(entityId, plan.spawn());
+        HumanoidTier tier = birthTier(subject, inventory, generator, random);
+        var birth = new SpeciesBodyRules.Birth(identity, region, now, tier, random);
         BodyMessages.BodySnapshot body;
         var factory = species.bodyRules().birth();
         if (factory != null) {
@@ -134,6 +135,21 @@ public final class HumanoidBodyState {
             body = generate(generator, subject.grade(), tier, request, random);
         }
         return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis(), species);
+    }
+
+    private static HumanoidTier birthTier(BirthSubject subject, RegionInventory region,
+                                          HumanoidBodyGenerator generator, RandomGenerator random) {
+        var plan = subject.plan();
+        var species = subject.species();
+        var policy = species.bodyRules().spawnRoll();
+        if (policy != null) {
+            return plan.selected().orElseGet(() -> policy.select(plan.spawn(), random));
+        }
+        // 生人即使指定了档位也先消耗原来的抽档随机数，后续开脉和库存仍沿用原序列。
+        var rolled = HumanoidTier.of(generator.rollVariant(species, region, random));
+        var forced = subject.forcedTier();
+        var fallback = forced == null ? rolled : forced;
+        return plan.selected().orElse(fallback);
     }
 
     private static void validateBirth(BodyMessages.BodySnapshot body, SpeciesBodyRules.Birth birth,
@@ -174,7 +190,8 @@ public final class HumanoidBodyState {
      * @param forcedTier 为空时沿用自然抽档
      * @param grade 精锐只能配真炁档
      */
-    record BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier, BirthGrade grade) {
+    record BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier, BirthGrade grade,
+                        HumanoidBirthPlan plan) {
         // 构造时核对，精锐必须指定真炁档。
         BirthSubject {
             // 等级不能为空；精锐的档位不能靠自然抽。
@@ -186,7 +203,7 @@ public final class HumanoidBodyState {
 
         BirthSubject(HumanoidSpecies species, UUID entityId, HumanoidTier forcedTier) {
             // 寻常出生，绝大多数调用方用这个。
-            this(species, entityId, forcedTier, BirthGrade.ORDINARY);
+            this(species, entityId, forcedTier, BirthGrade.ORDINARY, HumanoidBirthPlan.unknown(species));
         }
     }
 

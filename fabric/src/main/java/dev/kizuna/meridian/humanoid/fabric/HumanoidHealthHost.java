@@ -155,7 +155,9 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             long worldSeed = ((ServerLevel) entity.level()).getSeed();
             // 带档位标签的按标签那一档出生，没带的照自然抽档；结构 NBT、命令放出来的生人靠这个定档。
             HumanoidTier tagged = HumanoidTier.tagged(entity.entityTags()).orElse(null);
-            var subject = new HumanoidBodyState.BirthSubject(species, entityId, tagged);
+            var plan = HumanoidBirthPlan.of(access, species);
+            var subject = new HumanoidBodyState.BirthSubject(species, entityId, tagged,
+                    HumanoidBodyState.BirthGrade.ORDINARY, plan);
             created = HumanoidBodyState.born(subject, worldSeed, region, now);
             HumanoidWayfarerWeapons.equipAtBirth(entity, HumanoidTier.of(created.snapshot()));
         }

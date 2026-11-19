@@ -11,6 +11,7 @@ import dev.kizuna.meridian.technique.server.TechniqueState;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -221,6 +222,38 @@ public final class HumanoidSpawnGameTest {
             entity.discard();
         }
         context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void sevenLivingSpeciesKeepTheirSeededRollAndExplicitRanks(GameTestHelper context) {
+        var output = new RecordedOutput();
+        var commandSource = source(context).withSource(output);
+        var world = context.getLevel();
+        for (var species : HumanoidSpecies.values()) {
+            String command = SPAWN + species.entityId();
+            var natural = observedSpawn(context, commandSource, output, command);
+            var region = HumanoidFabric.region(natural);
+            var random = HumanoidBodyGenerator.randomFor(world.getSeed(), natural.getUUID());
+            var expected = HumanoidFabric.generator().rollVariant(species, region.inventory(), random);
+            var actual = ((HumanoidEntityAccess) natural).meridian$humanoidBody().snapshot();
+            context.assertTrue(actual.getRealm().name().equals(expected.name()), "生人抽档改变 " + species.entityId());
+            natural.discard();
+            for (var requested : HumanoidTier.values()) {
+                var forced = observedSpawn(context, commandSource, output, command + " " + requested.id());
+                var born = ((HumanoidEntityAccess) forced).meridian$humanoidBody().snapshot();
+                context.assertTrue(HumanoidTier.of(born) == requested, "生人显式档位改变 " + command + requested);
+                forced.discard();
+            }
+        }
+        context.succeed();
+    }
+
+    private static LivingEntity observedSpawn(GameTestHelper context, CommandSourceStack source, RecordedOutput output,
+                                              String command) {
+        context.assertTrue(run(source, command) == 1, "生成命令失败 " + command);
+        String feedback = output.messages.getLast();
+        var id = UUID.fromString(feedback.substring(feedback.lastIndexOf('：') + 1));
+        return (LivingEntity) context.getLevel().getEntity(id);
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)

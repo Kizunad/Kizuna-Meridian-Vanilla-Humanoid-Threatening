@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -16,11 +17,20 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.phys.Vec3;
 
 /** 刷怪蛋与管理命令共用的指定档位出生入口；登记物种可以提供自己的放置钩子。 */
 public final class HumanoidSpawns {
     private static final Map<HumanoidSpecies, Placement> PLACEMENTS = new ConcurrentHashMap<>();
+    private static final Map<HumanoidSpecies, Supplier<SpawnGroupData>> COMMAND_GROUPS = new ConcurrentHashMap<>();
+
+    /** 指令放置可指定原版生成组数据，例如只生成能被该物种认领的成年个体。 */
+    public static void registerCommandGroup(HumanoidSpecies species, Supplier<SpawnGroupData> group) {
+        if (COMMAND_GROUPS.putIfAbsent(species, group) != null) {
+            throw new IllegalStateException("物种的指令生成组已登记：" + species.entityId());
+        }
+    }
 
     private HumanoidSpawns() {
         // 出生只接收明确的物种和档位，不能修改已经存在的身体。
@@ -57,13 +67,19 @@ public final class HumanoidSpawns {
                                 Vec3 position, float sourceYaw) {
         // 登记了放置钩子的物种交给所属附属；其余按原版生物出生，未指定档位时沿用自然抽档。
         Placement placement = PLACEMENTS.get(species);
+        var defaultTier = species.definition().map(entry -> entry.defaultTier());
         if (placement != null) {
-            HumanoidTier chosen = tier.orElseThrow(
+            HumanoidTier chosen = tier.or(() -> defaultTier).orElseThrow(
                     () -> new IllegalStateException("登记物种出生缺少档位：" + species.entityId()));
             return placement.place(world, position, sourceYaw, chosen);
         }
-        return spawnMob(world, species, mob -> tier.ifPresent(chosen -> HumanoidSpeciesBirths.birth(mob, chosen)),
-                position, EntitySpawnReason.COMMAND);
+        return spawnMob(world, species, mob -> {
+            if (tier.isPresent()) {
+                HumanoidSpeciesBirths.birth(mob, tier.get());
+            } else if (defaultTier.isPresent()) {
+                HumanoidSpeciesBirths.birthDefault(mob, defaultTier.get());
+            }
+        }, position, EntitySpawnReason.COMMAND);
     }
 
     static Mob event(ServerLevel world, HumanoidSpecies species, Consumer<Mob> birth, Vec3 position) {
@@ -79,7 +95,12 @@ public final class HumanoidSpawns {
             throw new IllegalStateException("无法创建类人实体：" + species.entityId());
         }
         mob.snapTo(position.x, position.y, position.z, 0, 0);
-        mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, null);
+        SpawnGroupData group = null;
+        var groupFactory = COMMAND_GROUPS.get(species);
+        if (reason == EntitySpawnReason.COMMAND && groupFactory != null) {
+            group = groupFactory.get();
+        }
+        mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, group);
         if (!HumanoidFabric.isClaimed(mob)) {
             throw new IllegalStateException("物种未认领此次生成的实体：" + species.entityId());
         }

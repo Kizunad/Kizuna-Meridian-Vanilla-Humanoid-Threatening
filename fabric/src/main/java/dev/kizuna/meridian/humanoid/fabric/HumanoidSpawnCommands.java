@@ -6,7 +6,6 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
-import dev.kizuna.meridian.humanoid.server.HumanoidSpeciesDefinition;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -71,8 +70,7 @@ final class HumanoidSpawnCommands {
             source.sendFailure(Component.literal("生成位置超出世界边界"));
             return 0;
         }
-        Optional<HumanoidTier> tier = realm.or(() -> species.definition().map(HumanoidSpeciesDefinition::defaultTier));
-        LivingEntity entity = HumanoidSpawns.command(world, species, tier, position, source.getRotation().y);
+        LivingEntity entity = HumanoidSpawns.command(world, species, realm, position, source.getRotation().y);
 
         // 物种的出生工厂可以自行定档，反馈按实际生成的身体计算。
         var body = ((HumanoidEntityAccess) entity).meridian$humanoidBody().snapshot();

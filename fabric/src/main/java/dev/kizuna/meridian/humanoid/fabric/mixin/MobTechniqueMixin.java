@@ -2,9 +2,14 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.CrisisRaiders;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBrain;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidBirthPlan;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidRestrictions;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.DifficultyInstance;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.SpawnGroupData;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -21,6 +26,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MobTechniqueMixin {
     @Shadow @Final protected GoalSelector goalSelector;
     @Shadow @Final protected GoalSelector targetSelector;
+
+    @Inject(method = "finalizeSpawn", at = @At("HEAD"))
+    private void meridian$captureSpawn(ServerLevelAccessor level, DifficultyInstance difficulty,
+            EntitySpawnReason reason, SpawnGroupData group, CallbackInfoReturnable<SpawnGroupData> callback) {
+        HumanoidBirthPlan.capture((Mob) (Object) this, level, difficulty, reason);
+    }
 
     @Inject(method = "tick", at = @At("HEAD"))
     private void meridian$checkIndividualClaim(CallbackInfo callback) {

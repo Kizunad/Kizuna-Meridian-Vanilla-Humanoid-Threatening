@@ -5,6 +5,10 @@ import net.minecraft.nbt.CompoundTag;
 
 /** LivingEntity mixin 暴露的类人实体身体存档边界；不把 Minecraft 类型带入 server 纯 Java 层。 */
 public interface HumanoidEntityAccess {
+    HumanoidBirthPlan meridian$birthPlan();
+
+    void meridian$birthPlan(HumanoidBirthPlan plan);
+
     HumanoidBodyState meridian$humanoidBody();
 
     void meridian$humanoidBody(HumanoidBodyState state);

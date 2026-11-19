@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidBirthPlan;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidFabric;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidWitchHands;
@@ -13,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
@@ -31,6 +33,8 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private static final int meridian$MAX_SAVED_RECEIPTS = 32;
     @Unique private static final Logger meridian$LOGGER = LoggerFactory.getLogger("meridian_humanoid_host");
     @Unique private HumanoidBodyState meridian$body;
+    @Unique private HumanoidBirthPlan meridian$birthPlan;
+    @Unique private static final String meridian$BIRTH_KEY = "meridian_humanoid_birth";
     @Unique private byte[] meridian$savedBody;
     @Unique private byte[][] meridian$savedReceipts = new byte[0][];
     @Unique private String meridian$savedRegionSource = "";
@@ -60,6 +64,16 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     }
 
     @Override
+    public HumanoidBirthPlan meridian$birthPlan() {
+        return meridian$birthPlan;
+    }
+
+    @Override
+    public void meridian$birthPlan(HumanoidBirthPlan plan) {
+        meridian$birthPlan = plan;
+    }
+
+    @Override
     public HumanoidBodyState meridian$humanoidBody() {
         // 身体状态随实体对象生命周期存在，不使用全局 UUID 表强引用卸载实体。
         if (meridian$body != null && !HumanoidFabric.isClaimed((LivingEntity) (Object) this)) {
@@ -72,6 +86,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     public void meridian$humanoidBody(HumanoidBodyState state) {
         // 宿主完成快照校验后才发布实体级引用。
         meridian$body = state;
+        if (state != null) {
+            meridian$birthPlan = null;
+        }
         meridian$preservedBodyNbt = null;
         meridian$savedBody = null;
         meridian$savedReceipts = new byte[0][];
@@ -200,7 +217,15 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         meridian$beginHumanoidLoading();
         // 26.2 实体存档经 ValueInput 读取；身体仍整体读成复合标签，字段校验沿用标签写法。
         Optional<CompoundTag> saved = input.read("meridian_humanoid", CompoundTag.CODEC);
+        meridian$birthPlan = null;
         if (saved.isEmpty()) {
+            try {
+                meridian$birthPlan = input.read(meridian$BIRTH_KEY, CompoundTag.CODEC)
+                        .map(HumanoidBirthPlan::load).orElse(null);
+            } catch (IllegalArgumentException | NoSuchElementException invalid) {
+                meridian$LOGGER.warn("实体出生事实无效，按未知来源建身 subject={}",
+                        ((Entity) (Object) this).getStringUUID(), invalid);
+            }
             return;
         }
         CompoundTag stored = saved.get();
@@ -296,6 +321,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         // 快照与回执同属实体复合标签，确保区块卸载不会只保存一半身体。
         // 26.2 实体存档经 ValueOutput 写入；先组成与旧版相同的复合标签，再整体存入同一个键。
         CompoundTag holder = new CompoundTag();
+        if (meridian$birthPlan != null) {
+            output.store(meridian$BIRTH_KEY, CompoundTag.CODEC, meridian$birthPlan.save());
+        }
         meridian$writeHumanoidNbt(holder);
         holder.getCompound("meridian_humanoid")
                 .ifPresent(stored -> output.store("meridian_humanoid", CompoundTag.CODEC, stored));

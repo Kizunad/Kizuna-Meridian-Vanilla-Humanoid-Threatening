@@ -31,7 +31,9 @@ Threatening 内置七种原版生人。其他模组可以在初始化时登记�
 
 **调用时机**：登记必须在世界加载前完成，例如在 `ModInitializer.onInitialize` 里。
 
-`SpeciesBodyRules.BirthFactory` 收到实体 UUID、区域库存及来源 ID、结算时刻、档位和随机源。返回快照的 ID 须等于 `request.bodyId()`，时刻须等于 `request.now()`，模板 ID 须与物种表一致，版本须已安装。缺省生成器沿用人体出生逻辑。
+`SpeciesBodyRules.BirthFactory` 收到实体 UUID、区域库存及来源 ID、结算时刻、档位和随机源。`request.identity().spawn()` 提供原版实体类型 ID、生成原因枚举名、生成时的有效当地难度以及调用方明确指定的档位。缺少生成事实的旧实体使用 `UNKNOWN`。返回快照的 ID 须等于 `request.bodyId()`，时刻须等于 `request.now()`，模板 ID 须与物种表一致，版本须已安装。缺省生成器沿用人体出生逻辑。
+
+需要生成时定档的物种可以登记 `SpeciesBodyRules.SpawnRoll`。宿主在原版生成时调用，将结果与来源一起暂存在实体的 `meridian_humanoid_birth` 中。建身成功后，往后只使用身体快照。管理员明确给出的档位优先。需要指定成年生成组的物种可以调用 `HumanoidSpawns.registerCommandGroup`。
 
 `SpeciesBodyRules.DeathVerdict` 收到扣除本击部位、组织和器官 HP 后的快照与完整的人体伤害结果，返回致死判断。缺省时采用表中 `death_rule`。内容包在服务端启动时与人体和真元变体包一起安装，安装后再交会报错。
 
