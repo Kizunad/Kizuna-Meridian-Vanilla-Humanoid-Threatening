@@ -4,7 +4,6 @@ import dev.kizuna.meridian.humanoid.fabric.CrisisRaiders;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBrain;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidRestrictions;
-import dev.kizuna.meridian.humanoid.fabric.HumanoidTempo;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -23,11 +22,18 @@ public abstract class MobTechniqueMixin {
     @Shadow @Final protected GoalSelector goalSelector;
     @Shadow @Final protected GoalSelector targetSelector;
 
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void meridian$checkIndividualClaim(CallbackInfo callback) {
+        Mob mob = (Mob) (Object) this;
+        if (!mob.level().isClientSide()) {
+            HumanoidBrain.updateBodyProjection(mob, goalSelector, targetSelector);
+        }
+    }
+
     @Inject(method = "serverAiStep", at = @At("HEAD"), cancellable = true)
     private void meridian$humanoidBrain(CallbackInfo callback) {
         // 在原版 Goal 与村民大脑之前决策；未接管的物种（含 brain = false）在入口即跳过。
         Mob mob = (Mob) (Object) this;
-        HumanoidTempo.update(mob);
         if (HumanoidRestrictions.locked(mob)) {
             HumanoidRestrictions.stop(mob);
             callback.cancel();

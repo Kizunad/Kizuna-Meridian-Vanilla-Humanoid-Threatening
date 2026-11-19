@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,9 +34,7 @@ import java.util.OptionalLong;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Witch;
@@ -50,7 +47,6 @@ public final class HumanoidBrain {
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid_brain");
     private static final long SEQUENCE_SPREAD = 0x9E3779B97F4A7C15L;
     private static final Map<UUID, HumanoidMind> minds = new HashMap<>();
-    private static final Map<EntityType<?>, Boolean> managedTypes = new IdentityHashMap<>();
     private static final Map<UUID, Optional<TechniqueService.Observation>> observed = new HashMap<>();
     private static long observedTick = Long.MIN_VALUE;
     private static HumanoidBrainConfig config;
@@ -68,9 +64,8 @@ public final class HumanoidBrain {
     }
 
     static void configure(HumanoidBrainConfig next) {
-        // 启动时装配；GameTest 换成只发指定卷的配置。物种可能在其后登记，接管判定缓存重算。
+        // 配置按服务端统一装配，个体是否接管在使用时判断。
         config = next;
-        managedTypes.clear();
     }
 
     static HumanoidBrainConfig config() {
@@ -83,15 +78,28 @@ public final class HumanoidBrain {
         if (!(entity instanceof Mob mob) || mob.isNoAi() || !mob.isAlive()) {
             return false;
         }
-        return managedTypes.computeIfAbsent(entity.getType(), type -> HumanoidSpecies
-                .fromEntityId(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString())
-                .map(HumanoidSpecies::brainManaged)
-                .orElse(false));
+        return HumanoidSpeciesHooks.claimed(mob).map(HumanoidSpecies::brainManaged).orElse(false);
+    }
+
+    public static void updateBodyProjection(Mob mob, GoalSelector goals, GoalSelector targets) {
+        // 按服务端实体刻刷新投影，使关闭 AI 或被定身的个体也能及时交还原版属性。
+        if (!HumanoidSpeciesHooks.excluded(mob)) {
+            HumanoidTempo.update(mob);
+            return;
+        }
+        HumanoidTempo.clear(mob);
+        if (minds.containsKey(mob.getUUID()) || HumanoidTechniqueHost.hasSession(mob)) {
+            HumanoidGoalAdapter.detach(mob, goals, targets);
+            HumanoidTechniqueHost.removed(mob);
+        }
     }
 
     public static void tick(Mob mob, GoalSelector goals, GoalSelector targets) {
         // 每 tick 只装接入；真正的双通道决策仍按错相节奏运行，飞行中不改主意。
-        if (config == null || !HumanoidFabric.isReady() || !managed(mob)) {
+        if (config == null || !HumanoidFabric.isReady()) {
+            return;
+        }
+        if (!managed(mob)) {
             return;
         }
         HumanoidMind mind = minds.computeIfAbsent(mob.getUUID(), ignored -> new HumanoidMind());

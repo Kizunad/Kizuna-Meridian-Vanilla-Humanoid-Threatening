@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.human.server.HumanContent;
+import java.util.Objects;
 import org.tomlj.TomlTable;
 
 import java.util.ArrayList;
@@ -17,14 +19,29 @@ public final class HumanoidSpeciesDefinitions {
     }
 
     public static List<HumanoidSpecies> registerAll(String text) {
-        // 先解析整张表并确认没有已登记或内置的实体 ID，避免半张表生效。
-        List<HumanoidSpeciesDefinition> definitions = parse(text);
+        return registerAll(text, SpeciesBodyRules.DEFAULT);
+    }
+
+    public static synchronized List<HumanoidSpecies> registerAll(String text, SpeciesBodyRules rules) {
+        // 先核对全表，任一条失败时不登记任何物种。
+        return register(parse(text), rules);
+    }
+
+    static synchronized HumanoidSpecies register(HumanoidSpeciesDefinition definition) {
+        return register(List.of(definition), SpeciesBodyRules.DEFAULT).getFirst();
+    }
+
+    private static List<HumanoidSpecies> register(List<HumanoidSpeciesDefinition> definitions, SpeciesBodyRules rules) {
+        Objects.requireNonNull(rules, "rules");
         for (HumanoidSpeciesDefinition definition : definitions) {
+            if (!HumanContent.TEMPLATE_ID.equals(definition.template()) && rules.birth() == null) {
+                throw TOML.invalid(HumanoidErrors.TEMPLATE + " " + definition.template());
+            }
             if (HumanoidSpecies.fromEntityId(definition.entityId()).isPresent()) {
                 throw TOML.invalid("物种已存在 " + definition.entityId());
             }
         }
-        return definitions.stream().map(HumanoidSpecies::register).toList();
+        return definitions.stream().map(definition -> HumanoidSpecies.register(definition, rules)).toList();
     }
 
     public static List<HumanoidSpeciesDefinition> parse(String text) {

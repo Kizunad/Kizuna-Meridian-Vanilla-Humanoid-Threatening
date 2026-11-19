@@ -102,6 +102,17 @@ public class HumanoidSpeciesRegistrationTest {
     }
 
     @Test
+    public void foreignTemplateNamesMissingBirthFactoryBeforeRegistration() {
+        String id = "registration_test:missing_factory";
+        String template = "registration_test:shell";
+        String row = entry(PLAIN_ENTRY, id).replace("human:adult", template);
+        var error = assertThrows(IllegalArgumentException.class, () -> HumanoidSpeciesDefinitions.registerAll(row));
+        assertTrue(error.getMessage().contains(template));
+        assertTrue(error.getMessage().contains("缺少出生生成器"));
+        assertTrue(HumanoidSpecies.fromEntityId(id).isEmpty());
+    }
+
+    @Test
     public void neverRuleKeepsLossesButDropsLethal() {
         // 永不死亡只改致死结论，各目标损失原样保留。
         HealthTarget head = HealthTarget.newBuilder()

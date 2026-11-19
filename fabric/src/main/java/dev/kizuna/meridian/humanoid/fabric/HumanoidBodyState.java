@@ -8,6 +8,7 @@ import dev.kizuna.meridian.core.TimeCursor;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.SpeciesBodyRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
@@ -121,9 +122,33 @@ public final class HumanoidBodyState {
         HumanoidTier rolled = HumanoidTier.of(generator.rollVariant(species, inventory, random));
         HumanoidTier forced = subject.forcedTier();
         HumanoidTier tier = forced == null ? rolled : forced;
-        var request = new HumanoidBodyGenerator.GenerationRequest(species, tier.variant(), entityId, inventory, now);
-        BodyMessages.BodySnapshot body = generate(generator, subject.grade(), tier, request, random);
+        var birth = new SpeciesBodyRules.Birth(entityId, region, now, tier, random);
+        BodyMessages.BodySnapshot body;
+        var factory = species.bodyRules().birth();
+        if (factory != null) {
+            body = factory.create(birth);
+            validateBirth(body, birth, species);
+        } else {
+            var request = new HumanoidBodyGenerator.GenerationRequest(species, tier.variant(), entityId,
+                    inventory, now);
+            body = generate(generator, subject.grade(), tier, request, random);
+        }
         return new HumanoidBodyState(body, List.of(), region.sourceId(), now.getElapsedMillis(), species);
+    }
+
+    private static void validateBirth(BodyMessages.BodySnapshot body, SpeciesBodyRules.Birth birth,
+                                      HumanoidSpecies species) {
+        if (body == null || !birth.bodyId().equals(body.getId())) {
+            throw new IllegalArgumentException("出生快照的身体 ID 与实体不匹配");
+        }
+        if (!birth.now().equals(body.getSettledAt())) {
+            throw new IllegalArgumentException("出生快照的结算时刻与请求不匹配");
+        }
+        var template = body.getTemplate();
+        if (!species.definition().orElseThrow().template().equals(template.getId())
+                || HumanoidFabric.content().findTemplate(template.getId(), template.getVersion()).isEmpty()) {
+            throw new IllegalArgumentException("出生快照与已登记的物种模板不匹配");
+        }
     }
 
     private static BodyMessages.BodySnapshot generate(HumanoidBodyGenerator generator, BirthGrade grade,

@@ -74,18 +74,14 @@ final class HumanoidSpawnCommands {
         Optional<HumanoidTier> tier = realm.or(() -> species.definition().map(HumanoidSpeciesDefinition::defaultTier));
         LivingEntity entity = HumanoidSpawns.command(world, species, tier, position, source.getRotation().y);
 
-        // 反馈实体、档位和 UUID；自然抽档的结果从刚出生的身体读回。
-        HumanoidTier born = tier.orElseGet(() -> rolled(entity));
+        // 物种的出生工厂可以自行定档，反馈按实际生成的身体计算。
+        var body = ((HumanoidEntityAccess) entity).meridian$humanoidBody().snapshot();
+        HumanoidTier born = HumanoidTier.of(body);
         Component feedback = Component.literal("已生成")
                 .append(entity.getDisplayName())
                 .append("（" + label(born) + "）：" + entity.getStringUUID());
         source.sendSuccess(() -> feedback, false /* broadcastToOps */);
         return 1;
-    }
-
-    private static HumanoidTier rolled(LivingEntity entity) {
-        // 自然抽档在出生后由技法宿主准备时完成，档位按身体快照读回。
-        return HumanoidTier.of(((HumanoidEntityAccess) entity).meridian$humanoidBody().snapshot());
     }
 
     private static String label(HumanoidTier tier) {

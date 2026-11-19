@@ -3,8 +3,10 @@ package dev.kizuna.meridian.humanoid.fabric;
 import java.util.EnumSet;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.npc.villager.Villager;
 
 /** 非村民接入：在原版 GoalSelector 里装最高优先级的移动/朝向 Goal 与目标 Goal，大脑指挥时压过原版 Goal；
@@ -26,6 +28,18 @@ final class HumanoidGoalAdapter {
         targets.addGoal(CONTROL_PRIORITY, new TargetGoal(mob));
         HumanoidNotice.widen(mob, HumanoidBrain.config().threat());
         mind.markAdapted();
+    }
+
+    static void detach(Mob mob, GoalSelector goals, GoalSelector targets) {
+        // 个体撤销认领时，停掉先前安装的 Goal，并撤回它们的临时跟踪距离。
+        goals.getAvailableGoals().stream().map(WrappedGoal::getGoal).filter(CombatGoal.class::isInstance)
+                .toList().forEach(goals::removeGoal);
+        targets.getAvailableGoals().stream().map(WrappedGoal::getGoal).filter(TargetGoal.class::isInstance)
+                .toList().forEach(targets::removeGoal);
+        var range = mob.getAttribute(Attributes.FOLLOW_RANGE);
+        if (range != null) {
+            range.removeModifier(HumanoidNotice.MODIFIER);
+        }
     }
 
     /** 大脑指挥期间占住移动与朝向，每 tick 执行当前指令。 */

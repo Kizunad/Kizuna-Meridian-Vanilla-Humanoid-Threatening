@@ -1,13 +1,11 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
-import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.server.TechniqueService;
 import dev.kizuna.meridian.technique.server.TechniqueService.StaggerKind;
 import dev.kizuna.playeranimation.mobs.MobAnimationServer;
 import java.util.EnumSet;
 import java.util.Set;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 
@@ -33,7 +31,7 @@ final class HumanoidStaggerAnimation {
             return;
         }
         LivingEntity entity = HumanoidFabric.findEntity(event.entityUuid());
-        if (!(entity instanceof Mob) || !humanoid(entity)) {
+        if (!(entity instanceof Mob) || !HumanoidFabric.isClaimed(entity)) {
             // 玩家由 Human 播；别的生物没有人形骨架。
             return;
         }
@@ -48,10 +46,5 @@ final class HumanoidStaggerAnimation {
             }
         }
         MobAnimationServer.stop(entity, CLIP);
-    }
-
-    private static boolean humanoid(LivingEntity entity) {
-        String type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-        return HumanoidSpecies.fromEntityId(type).isPresent();
     }
 }

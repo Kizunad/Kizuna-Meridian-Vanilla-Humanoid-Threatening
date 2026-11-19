@@ -14,7 +14,7 @@ import net.minecraft.world.entity.LivingEntity;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Fabric 健康宿主入口；只认领七种生人实体类型。 */
+/** Fabric 健康宿主按物种及其个体判断认领身体。 */
 public final class HumanoidHealthHost implements BodyHealthHost {
     /** 调试用途，不进正式玩法：调试附属改写类人真元库存的入口；权限检查留在调用方命令层。 */
     public static MeridianMessages.FailureCode debugQi(LivingEntity entity, MeridianMessages.DebugQi request) {
@@ -25,8 +25,8 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         if (server == null || !server.isSameThread()) {
             return MeridianMessages.FailureCode.ACCESS_DENIED;
         }
-        HumanoidSpeciesBinding binding = HumanoidSpeciesBinding.resolve(entity);
-        if (binding == null) {
+        HumanoidSpecies species = HumanoidSpeciesHooks.claimed(entity).orElse(null);
+        if (species == null) {
             return MeridianMessages.FailureCode.BODY_NOT_FOUND;
         }
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
@@ -37,7 +37,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             return MeridianMessages.FailureCode.BODY_NOT_FOUND;
         }
         BodyMessages.TimeCursor now = HumanoidFabric.now();
-        HumanoidBodyState state = bodyState(entity, binding.species(), now);
+        HumanoidBodyState state = bodyState(entity, species, now);
         try {
             state.debugQi(request, now);
         } catch (HumanoidBodyState.HumanoidHealthFailure rejected) {
@@ -64,8 +64,8 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         if (entity == null) {
             return unbound(response);
         }
-        HumanoidSpeciesBinding binding = HumanoidSpeciesBinding.resolve(entity);
-        if (binding == null) {
+        HumanoidSpecies species = HumanoidSpeciesHooks.claimed(entity).orElse(null);
+        if (species == null) {
             return unbound(response);
         }
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
@@ -77,7 +77,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             // 实体正文尚未读完时不允许附属抢先创建身体。
             return unbound(response);
         }
-        return handleBoundEntity(request, response, entity, binding.species());
+        return handleBoundEntity(request, response, entity, species);
     }
 
     private static LivingEntity findSubject(String subjectId) {
@@ -174,14 +174,5 @@ public final class HumanoidHealthHost implements BodyHealthHost {
                 .setCode(code)
                 .build();
         return HealthHostProtobuf.encodeResponse(response.setFailure(failure).build());
-    }
-
-    private record HumanoidSpeciesBinding(dev.kizuna.meridian.humanoid.server.HumanoidSpecies species) {
-        static HumanoidSpeciesBinding resolve(net.minecraft.world.entity.LivingEntity entity) {
-            // 实体类型 ID 是唯一认领条件，未知来源的同类实体仍按类型进入同一规则。
-            String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-            return dev.kizuna.meridian.humanoid.server.HumanoidSpecies.fromEntityId(id)
-                    .map(HumanoidSpeciesBinding::new).orElse(null);
-        }
     }
 }

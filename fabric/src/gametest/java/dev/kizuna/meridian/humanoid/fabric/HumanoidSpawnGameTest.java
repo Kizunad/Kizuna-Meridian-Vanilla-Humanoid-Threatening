@@ -191,7 +191,7 @@ public final class HumanoidSpawnGameTest {
         context.assertTrue(suggestions(source, "give @s meridian_humanoid:").size() == EGG_COUNT, "give 未补全十四个蛋");
         var output = new RecordedOutput();
         var observed = source.withSource(output);
-        for (String command : List.of(SPAWN + "zombie true_qi", SPAWN + "vindicator invalid")) {
+        for (String command : List.of(SPAWN + "species_test:unregistered true_qi", SPAWN + "vindicator invalid")) {
             output.messages.clear();
             context.assertTrue(run(observed, command) == 0 && !output.messages.isEmpty(),
                     "非法命令没有错误反馈");
@@ -200,6 +200,26 @@ public final class HumanoidSpawnGameTest {
         int lowPermission = run(observed.withPermission(LevelBasedPermissionSet.MODERATOR),
                 SPAWN + "vindicator true_qi");
         context.assertTrue(lowPermission == 0 && !output.messages.isEmpty(), "低权限命令没有拒绝");
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void spawnReportsTheTierProducedByTheSpeciesFactory(GameTestHelper context) {
+        // 工厂在游炁境生成全未开脉的身体，即使指定游炁档，实际档位仍为凡人。
+        var output = new RecordedOutput();
+        var source = source(context).withSource(output);
+        context.assertTrue(run(source, SPAWN + "strider wandering_qi") == 1, "自定义物种生成失败");
+        String feedback = output.messages.getLast();
+        var id = UUID.fromString(feedback.substring(feedback.lastIndexOf('：') + 1));
+        var entity = context.getLevel().getEntity(id);
+        context.assertTrue(entity != null && entity.getType() == EntityTypes.STRIDER, "反馈未指向新生个体");
+        try {
+            var body = ((HumanoidEntityAccess) entity).meridian$humanoidBody().snapshot();
+            context.assertTrue(HumanoidTier.of(body) == HumanoidTier.MORTAL, "测试工厂出生档位错误");
+            context.assertTrue(feedback.contains("（凡人）"), "反馈未使用实际出生档位：" + feedback);
+        } finally {
+            entity.discard();
+        }
         context.succeed();
     }
 

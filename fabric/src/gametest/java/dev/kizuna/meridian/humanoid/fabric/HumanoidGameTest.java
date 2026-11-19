@@ -642,7 +642,7 @@ public final class HumanoidGameTest {
         context.succeed();
     }
 
-    private static HealthHostMessages.HealthHostResponse inspect(LivingEntity entity) {
+    static HealthHostMessages.HealthHostResponse inspect(LivingEntity entity) {
         // 使用公开字节协议触发只读健康查询。
         String subjectId = entity.getStringUUID();
         return exchange(HealthHostMessages.HealthHostRequest.newBuilder()

@@ -31,9 +31,7 @@ public final class HumanoidTempo {
         var body = bodyState.currentBody();
         if (body.modifiers().isEmpty()) {
             // 无修正的闲置生物不遍历肌肉；曾经投影过倍率的实体仍须归一。
-            if (arms.remove(mob) != null) {
-                movement(mob, 1);
-            }
+            clear(mob);
             return;
         }
         HumanLimbTempo index = index(mob, body);
@@ -45,6 +43,13 @@ public final class HumanoidTempo {
         var multipliers = index.at(body, side, millis);
         arms.put(mob, multipliers.arm());
         movement(mob, multipliers.movement());
+    }
+
+    static void clear(Mob mob) {
+        if (arms.remove(mob) != null) {
+            mob.getAttribute(Attributes.MOVEMENT_SPEED).removeModifier(MODIFIER);
+            indices.remove(mob);
+        }
     }
 
     private static HumanLimbTempo index(Mob mob, BodySnapshot body) {

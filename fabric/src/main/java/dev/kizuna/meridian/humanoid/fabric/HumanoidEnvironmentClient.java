@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.RegionInventory;
+import dev.kizuna.meridian.humanoid.server.SpeciesBodyRules;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
@@ -159,7 +160,7 @@ final class HumanoidEnvironmentClient {
         return new Unavailable(message, code, cause);
     }
 
-    record RegionSnapshot(RegionInventory inventory, String sourceId) {
+    record RegionSnapshot(RegionInventory inventory, String sourceId) implements SpeciesBodyRules.Region {
         RegionSnapshot {
             // 区域缺席用显式 absent 库存表示，快照字段本身不能为空。
             if (inventory == null || sourceId == null) {

@@ -8,7 +8,6 @@ import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfigLoader;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfigLoader;
-import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.protocol.pb.AddonMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -76,9 +75,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidEvokerSpells.initialize();
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
         TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
-        content = installContent();
-        variants = QiVariantRegistry.load(content, QiVariantsContent.catalog());
-        generator = new HumanoidBodyGenerator(variants, config);
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> initializeContent());
         environment = new HumanoidEnvironmentClient();
         ServerLifecycleEvents.SERVER_STARTED.register(HumanoidFabric::startServer);
         ServerLifecycleEvents.AFTER_SAVE.register(HumanoidFabric::saveWorld);
@@ -246,17 +243,15 @@ public final class HumanoidFabric implements ModInitializer {
         return null;
     }
 
-    static boolean isClaimed(LivingEntity entity) {
-        // 认领范围只由固定实体类型 ID 决定。
-        return HumanoidSpecies.fromEntityId(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
-                .getKey(entity.getType()).toString()).isPresent();
+    public static boolean isClaimed(LivingEntity entity) {
+        return HumanoidSpeciesHooks.claimed(entity).isPresent();
     }
 
     private static void onEntityUnloaded(Entity entity) {
         // 区块卸载和生物过传送门不经过 Entity.remove，只有这个事件收得到；会话和大脑状态按 UUID 存，
         // 不清的话读档出来的同 UUID 新对象会沿用旧状态，不再装大脑的 Goal。
         // 死亡和丢弃已经在 onEntityRemoved 里清过，这里再清一次什么都不做。
-        if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
+        if (!(entity instanceof LivingEntity living)) {
             return;
         }
         try {
@@ -268,7 +263,7 @@ public final class HumanoidFabric implements ModInitializer {
 
     public static void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         // 区块卸载和跨维度只移除运行时对象，身体仍由实体 NBT 承载；只有真正离开世界才释放。
-        if (!(entity instanceof LivingEntity living) || !isClaimed(living)) {
+        if (!(entity instanceof LivingEntity living)) {
             return;
         }
         try {
@@ -376,6 +371,14 @@ public final class HumanoidFabric implements ModInitializer {
                 + " 区域=" + (source.isBlank() ? "无" : source));
     }
 
+    private static void initializeContent() {
+        if (content == null) {
+            content = installContent();
+            variants = QiVariantRegistry.load(content, QiVariantsContent.catalog());
+            generator = new HumanoidBodyGenerator(variants, config);
+        }
+    }
+
     private static AddonRegistry installContent() {
         // Host 能力完整声明后再加载 Human 模板、动作、配方和开脉规则，确保依赖缺失显式失败。
         AddonMessages.AddonHostProfile host = AddonMessages.AddonHostProfile.newBuilder()
@@ -396,6 +399,7 @@ public final class HumanoidFabric implements ModInitializer {
                 .setHost(host)
                 .addBundles(HumanContent.bundle())
                 .addBundles(QiVariantsContent.bundle())
+                .addAllBundles(HumanoidSpeciesHooks.freezeContent())
                 .build();
         return AddonRegistry.load(registration);
     }

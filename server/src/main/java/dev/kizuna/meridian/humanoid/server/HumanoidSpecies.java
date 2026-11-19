@@ -22,14 +22,24 @@ public final class HumanoidSpecies {
     public static final HumanoidSpecies ILLUSIONER = new HumanoidSpecies("ILLUSIONER", "minecraft:illusioner", null);
     private static final List<HumanoidSpecies> BUILT_IN = List.of(VILLAGER, WANDERING_TRADER, PILLAGER, VINDICATOR,
             EVOKER, WITCH, ILLUSIONER);
-    private static final Map<String, HumanoidSpecies> REGISTERED = new ConcurrentHashMap<>();
+    private static final Map<String, HumanoidSpecies> BY_ID = new ConcurrentHashMap<>();
+
+    static {
+        BUILT_IN.forEach(species -> BY_ID.put(species.entityId, species));
+    }
 
     private final String name;
     private final String entityId;
     private final HumanoidSpeciesDefinition definition;
+    private final SpeciesBodyRules bodyRules;
 
     private HumanoidSpecies(String name, String entityId, HumanoidSpeciesDefinition definition) {
-        // 内置物种没有登记定义，出生画像来自 meridian-humanoid.toml；登记物种的一切参数来自其定义。
+        this(name, entityId, definition, SpeciesBodyRules.DEFAULT);
+    }
+
+    private HumanoidSpecies(String name, String entityId, HumanoidSpeciesDefinition definition,
+                            SpeciesBodyRules bodyRules) {
+        this.bodyRules = bodyRules;
         this.name = name;
         this.entityId = entityId;
         this.definition = definition;
@@ -42,20 +52,22 @@ public final class HumanoidSpecies {
 
     public static List<HumanoidSpecies> registered() {
         // 运行时登记的物种，按实体 ID 排序，便于命令和日志输出稳定。
-        return REGISTERED.values().stream()
+        return BY_ID.values().stream()
+                .filter(species -> species.definition != null)
                 .sorted(Comparator.comparing(HumanoidSpecies::entityId))
                 .toList();
     }
 
     public static HumanoidSpecies register(HumanoidSpeciesDefinition definition) {
+        return HumanoidSpeciesDefinitions.register(definition);
+    }
+
+    static HumanoidSpecies register(HumanoidSpeciesDefinition definition, SpeciesBodyRules rules) {
         // 同一实体 ID 只能登记一次，也不能覆盖内置物种；应在世界加载前的模组初始化阶段调用。
         Objects.requireNonNull(definition, "definition");
         String id = definition.entityId();
-        if (BUILT_IN.stream().anyMatch(species -> species.entityId.equals(id))) {
-            throw HumanoidErrors.invalid(HumanoidErrors.SPECIES + ": 不能覆盖内置物种 " + id);
-        }
-        var created = new HumanoidSpecies(id, id, definition);
-        if (REGISTERED.putIfAbsent(id, created) != null) {
+        var created = new HumanoidSpecies(id, id, definition, rules);
+        if (BY_ID.putIfAbsent(id, created) != null) {
             throw HumanoidErrors.invalid(HumanoidErrors.SPECIES + ": 重复登记 " + id);
         }
         return created;
@@ -66,13 +78,7 @@ public final class HumanoidSpecies {
         if (entityId == null) {
             return Optional.empty();
         }
-        Optional<HumanoidSpecies> builtIn = BUILT_IN.stream()
-                .filter(species -> species.entityId.equals(entityId))
-                .findFirst();
-        if (builtIn.isPresent()) {
-            return builtIn;
-        }
-        return Optional.ofNullable(REGISTERED.get(entityId));
+        return Optional.ofNullable(BY_ID.get(entityId));
     }
 
     public String name() {
@@ -88,6 +94,10 @@ public final class HumanoidSpecies {
     public Optional<HumanoidSpeciesDefinition> definition() {
         // 内置物种没有登记定义。
         return Optional.ofNullable(definition);
+    }
+
+    public SpeciesBodyRules bodyRules() {
+        return bodyRules;
     }
 
     public boolean brainManaged() {

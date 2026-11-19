@@ -2,7 +2,7 @@
 def reproMode = providers.gradleProperty('reproMode').getOrElse('full')
 def reproClasses = [
         full: ['HumanoidGameTest', 'HumanoidActivityGameTest', 'HumanoidCharmGameTest', 'HumanoidCharmAllyGameTest',
-               'HumanoidWitchBrewGameTest',
+               'SpeciesHookGameTest', 'HumanoidWitchBrewGameTest',
                'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
                'HumanoidWitchVanillaGameTest',
                'HumanoidTechniqueGameTest', 'HumanoidLeapEstimateGameTest',
@@ -18,6 +18,7 @@ def reproClasses = [
                'HumanoidFieldNotesGameTest', 'HumanoidCrisisGameTest',
                'HumanoidCrisisFeudGameTest', 'HumanoidOriginTalentGameTest', 'HumanoidCrisisRaidGameTest',
                'HumanoidCrisisOutcomeGameTest', 'HumanoidCrisisOmenGameTest', 'HumanoidVolumeSourcesGameTest'],
+        species: ['SpeciesHookGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
         cache: ['HumanoidBodyCacheGameTest'],
         // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。
@@ -68,6 +69,9 @@ tasks.named('processGametestResources') {
         // 批次环境类型在任何模式都要登记，否则环境数据无法加载。
         document.entrypoints.main = ['dev.kizuna.meridian.humanoid.fabric.AuditReproBootstrap',
                                      'dev.kizuna.meridian.humanoid.fabric.HumanoidBrainTestEnvironments']
+        if ('SpeciesHookGameTest' in reproClasses[reproMode]) {
+            document.entrypoints.main << 'dev.kizuna.meridian.humanoid.fabric.SpeciesHookFixture'
+        }
         document.entrypoints['fabric-gametest'] = reproClasses[reproMode].collect {
             "dev.kizuna.meridian.humanoid.fabric.${it}".toString()
         }

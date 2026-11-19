@@ -9,7 +9,7 @@ final class HumanoidErrors {
     static final String CRISIS = "招敌配置无效";
     static final String CRISIS_RECORD = "招敌记录无效";
     static final String ORIGIN = "出身天赋无效";
-    static final String TEMPLATE = "类人实体必须使用 human:adult 模板";
+    static final String TEMPLATE = "非人体模板缺少出生生成器";
 
     private HumanoidErrors() {
         // 错误常量不持有运行状态。

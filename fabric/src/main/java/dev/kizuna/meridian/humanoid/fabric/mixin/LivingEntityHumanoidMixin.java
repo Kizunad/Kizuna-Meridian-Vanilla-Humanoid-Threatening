@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidFabric;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidWitchHands;
 import net.minecraft.world.damagesource.DamageSource;
 import org.slf4j.Logger;
@@ -61,6 +62,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Override
     public HumanoidBodyState meridian$humanoidBody() {
         // 身体状态随实体对象生命周期存在，不使用全局 UUID 表强引用卸载实体。
+        if (meridian$body != null && !HumanoidFabric.isClaimed((LivingEntity) (Object) this)) {
+            return null;
+        }
         return meridian$body;
     }
 
@@ -68,6 +72,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     public void meridian$humanoidBody(HumanoidBodyState state) {
         // 宿主完成快照校验后才发布实体级引用。
         meridian$body = state;
+        meridian$preservedBodyNbt = null;
         meridian$savedBody = null;
         meridian$savedReceipts = new byte[0][];
         if (state == null) {
@@ -135,11 +140,8 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
 
     @Override
     public void meridian$finishHumanoidLoading() {
-        // 正常读完后释放原始副本；坏档继续保留，供后续实体和区块保存。
+        // 在宿主真正绑定以前保留原标签，包括封存个体的旧字段和回执。
         meridian$loading = false;
-        if (!meridian$loadFailed) {
-            meridian$preservedBodyNbt = null;
-        }
     }
 
     @Override
@@ -232,6 +234,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         UUID savedOwner = meridian$readOwner(stored);
 
         // 所有必需字段通过校验后才更新实体缓存，坏档不能留下半恢复状态。
+        meridian$body = null;
         meridian$savedBody = savedBody;
         meridian$savedReceipts = savedReceipts;
         meridian$savedOwner = savedOwner;

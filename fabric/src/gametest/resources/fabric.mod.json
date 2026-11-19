@@ -5,7 +5,9 @@
   "name": "Meridian Humanoid GameTest",
   "environment": "*",
   "entrypoints": {
+    "main": ["dev.kizuna.meridian.humanoid.fabric.SpeciesHookFixture"],
     "fabric-gametest": [
+      "dev.kizuna.meridian.humanoid.fabric.SpeciesHookGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidActivityGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCharmGameTest",

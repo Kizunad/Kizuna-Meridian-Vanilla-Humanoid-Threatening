@@ -3,7 +3,6 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import java.util.Objects;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 
@@ -30,9 +29,8 @@ public final class HumanoidSpeciesBirths {
         if (!(entity.level() instanceof ServerLevel world)) {
             throw new IllegalStateException("只能在服务端出生类人身体");
         }
-        String entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-        HumanoidSpecies species = HumanoidSpecies.fromEntityId(entityId)
-                .orElseThrow(() -> new IllegalStateException("未登记的类人物种：" + entityId));
+        HumanoidSpecies species = HumanoidSpeciesHooks.claimed(entity)
+                .orElseThrow(() -> new IllegalStateException("未认领的类人实体：" + entity.getUUID()));
         var access = (HumanoidEntityAccess) entity;
         if (access.meridian$humanoidBody() != null || access.meridian$humanoidSavedBody() != null) {
             throw new IllegalStateException("指定出生档位不能覆盖已有身体");

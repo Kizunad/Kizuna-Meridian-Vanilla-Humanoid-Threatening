@@ -80,6 +80,9 @@ public final class HumanoidSpawns {
         }
         mob.snapTo(position.x, position.y, position.z, 0, 0);
         mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, null);
+        if (!HumanoidFabric.isClaimed(mob)) {
+            throw new IllegalStateException("物种未认领此次生成的实体：" + species.entityId());
+        }
         mob.setPersistenceRequired();
         birth.accept(mob);
         if (!world.addFreshEntity(mob)) {

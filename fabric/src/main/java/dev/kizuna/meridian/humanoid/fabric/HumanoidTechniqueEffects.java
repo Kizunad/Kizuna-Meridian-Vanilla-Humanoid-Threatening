@@ -133,27 +133,47 @@ final class HumanoidTechniqueEffects {
             throw new TechniqueErrors.HostRejected(FailureCode.MODULE_UNAVAILABLE);
         }
         // 26.2 的修饰按 ID 识别、不再有名字；ID 路径沿用按施放派生的 UUID，仍是一次施放一个修饰。
-        UUID castUuid = UUID.nameUUIDFromBytes(("meridian_humanoid:technique:" + effect.getCastId())
-                .getBytes(StandardCharsets.UTF_8));
-        Identifier id = Identifier.fromNamespaceAndPath("meridian_humanoid", "technique/" + castUuid);
+        String castId = effect.getCastId();
+        Identifier id = movementId(castId);
         if (effect.getMovement().getAction() == MovementAction.LOCK) {
             if (attribute.getModifier(id) == null) {
                 // 经 Technique 的统一换算：怪物按 √倍率 改属性，实际移速和玩家一样是倍率倍。
                 double multiplier = TechniqueMovement.multiplier(effect.getMovement());
                 attribute.addTransientModifier(TechniqueMovementSpeed.modifier(entity, id, multiplier));
             }
-            castingIds.add(effect.getCastId());
+            castingIds.add(castId);
             stopRangedUse();
         } else {
             attribute.removeModifier(id);
-            castingIds.remove(effect.getCastId());
-            world.finish(effect.getCastId());
-            limbs.finish(effect.getCastId());
-            projectiles.finish(effect.getCastId());
+            castingIds.remove(castId);
+            world.finish(castId);
+            limbs.finish(castId);
+            projectiles.finish(castId);
         }
         if (entity instanceof Mob mob) {
             mob.setAggressive(!castingIds.isEmpty());
         }
+    }
+
+    private static Identifier movementId(String castId) {
+        UUID castUuid = UUID.nameUUIDFromBytes(("meridian_humanoid:technique:" + castId)
+                .getBytes(StandardCharsets.UTF_8));
+        return Identifier.fromNamespaceAndPath("meridian_humanoid", "technique/" + castUuid);
+    }
+
+    void detach() {
+        // 封存时只撤实体上的临时效果，身体中的施放留给重新绑定时的恢复流程。
+        if (!castingIds.isEmpty()) {
+            var attribute = entity.getAttribute(Attributes.MOVEMENT_SPEED);
+            for (String castId : castingIds) {
+                attribute.removeModifier(movementId(castId));
+            }
+            castingIds.clear();
+            if (entity instanceof Mob mob) {
+                mob.setAggressive(false /* aggressive */);
+            }
+        }
+        presentation.stopAll(entity);
     }
 
     private void stopRangedUse() {

@@ -1,12 +1,10 @@
 package dev.kizuna.meridian.humanoid.server;
 
-import dev.kizuna.meridian.human.server.HumanContent;
-
 import java.util.Objects;
 
 /**
  * 登记物种的数据定义：实体 ID、身体模板、命令与放置的默认档位、出生画像，以及死亡规则和大脑开关。
- * 身体生成器目前只支持 Human 成人模板，其他模板在登记时拒绝。
+ * 登记整张表时核对模板所需的出生办法。
  */
 public record HumanoidSpeciesDefinition(String entityId, String template, HumanoidTier defaultTier,
                                         HumanoidConfig.SpeciesProfile profile, Control control) {
@@ -27,8 +25,8 @@ public record HumanoidSpeciesDefinition(String entityId, String template, Humano
         if (entityId == null || !namespaced(entityId)) {
             throw HumanoidErrors.invalid(HumanoidErrors.SPECIES + ": 实体 ID 必须是命名空间 ID");
         }
-        if (!HumanContent.TEMPLATE_ID.equals(template)) {
-            throw HumanoidErrors.invalid(HumanoidErrors.SPECIES + ": " + HumanoidErrors.TEMPLATE);
+        if (template == null || !namespaced(template)) {
+            throw HumanoidErrors.invalid(HumanoidErrors.SPECIES + ": 模板必须是命名空间 ID");
         }
         Objects.requireNonNull(defaultTier, "defaultTier");
         Objects.requireNonNull(profile, "profile");
