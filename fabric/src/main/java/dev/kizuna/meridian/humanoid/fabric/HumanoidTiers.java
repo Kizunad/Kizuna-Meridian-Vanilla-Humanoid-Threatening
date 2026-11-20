@@ -15,7 +15,7 @@ public final class HumanoidTiers {
      */
     public static Optional<HumanoidTier> of(LivingEntity entity) {
         // 准备会话时身体按需出生、按学卷表学卷；档位从身体快照读回，和生成命令、body status 同一口径。
-        if (!HumanoidFabric.isReady() || !HumanoidFabric.isClaimed(entity)) {
+        if (!HumanoidFabric.isReady() || !HumanoidSpeciesHooks.isLivingHumanoid(entity)) {
             return Optional.empty();
         }
         try {

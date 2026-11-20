@@ -8,7 +8,6 @@ import dev.kizuna.meridian.humanoid.server.HumanoidAssessment;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig.ConcurrencyRules;
-import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTactics;
 import dev.kizuna.meridian.humanoid.server.Repertoire;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
@@ -78,7 +77,7 @@ public final class HumanoidBrain {
         if (!(entity instanceof Mob mob) || mob.isNoAi() || !mob.isAlive()) {
             return false;
         }
-        return HumanoidSpeciesHooks.claimed(mob).map(HumanoidSpecies::brainManaged).orElse(false);
+        return HumanoidSpeciesHooks.isLivingHumanoid(mob);
     }
 
     public static void updateBodyProjection(Mob mob, GoalSelector goals, GoalSelector targets) {

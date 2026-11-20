@@ -59,6 +59,11 @@ public final class HumanoidSpeciesHooks {
         return species.isPresent() && excludes(species.get(), entity);
     }
 
+    static boolean isLivingHumanoid(LivingEntity entity) {
+        // 生人身份取自认领物种的登记性质，个体关闭 AI 或正在死亡时也能辨认。
+        return claimed(entity).map(HumanoidSpecies::brainManaged).orElse(false);
+    }
+
     private static boolean excludes(HumanoidSpecies species, LivingEntity entity) {
         var accepts = claims.get(species);
         return accepts != null && !accepts.test(entity);

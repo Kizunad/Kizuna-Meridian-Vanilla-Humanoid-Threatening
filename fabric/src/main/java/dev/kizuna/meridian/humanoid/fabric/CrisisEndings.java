@@ -176,7 +176,7 @@ final class CrisisEndings {
         }
         double radius = rules.heat().rise().witnessRadius();
         boolean seen = !player.level().getEntitiesOfClass(LivingEntity.class, player.getBoundingBox().inflate(radius),
-                other -> other != victim && other.isAlive() && HumanoidFabric.isClaimed(other)
+                other -> other != victim && other.isAlive() && HumanoidSpeciesHooks.isLivingHumanoid(other)
                         && other.distanceTo(player) <= radius && other.hasLineOfSight(player)).isEmpty();
         if (seen) {
             engine.update(player, record -> CrisisHeat.raise(record, rules.heat().rise().witnessedKill()));
@@ -185,7 +185,7 @@ final class CrisisEndings {
 
     private static boolean cultivator(LivingEntity entity) {
         // 档位看它实际的身体：不是生人、没有身体、凡人都不算。
-        if (!HumanoidFabric.isClaimed(entity)) {
+        if (!HumanoidSpeciesHooks.isLivingHumanoid(entity)) {
             return false;
         }
         HumanoidBodyState body = ((HumanoidEntityAccess) entity).meridian$humanoidBody();

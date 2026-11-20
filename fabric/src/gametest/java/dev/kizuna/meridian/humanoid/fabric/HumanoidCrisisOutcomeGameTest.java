@@ -71,6 +71,7 @@ public final class HumanoidCrisisOutcomeGameTest {
     private static final int RELOG_GAP_TICKS = 3;
     private static final double NEAR = 4;
     private static final double EPSILON = 1e-9;
+    private static final int CORPSE_KILL_LANE = 14;
 
     @GameTest(maxTicks = TIMEOUT)
     public void lastStageLeaderDropsTheFoeVolumeAndEndsTheFeud(GameTestHelper context) {
@@ -290,24 +291,51 @@ public final class HumanoidCrisisOutcomeGameTest {
 
     @GameTest(maxTicks = TIMEOUT)
     public void witnessedKillsAndRareVolumesRaiseHeat(GameTestHelper context) {
-        // 没人看见时杀真炁卫道士不涨风声；旁边有村民看着再杀一个，涨 witnessed_kill。
+        // 只有僵尸旁观时杀修士不涨风声，换成村民后同样的击杀涨一次。
         CrisisTestPlayer fixture = CrisisTestPlayer.create(context);
         ServerPlayer player = fixture.player();
         standApart(context, player, 8);
         waitUntil(context, () -> attached(player), () -> {
             CrisisRules.Rise rise = engine().rules().heat().rise();
             List<LivingEntity> around = context.getLevel().getEntitiesOfClass(LivingEntity.class,
-                    player.getBoundingBox().inflate(rise.witnessRadius()), HumanoidFabric::isClaimed);
+                    player.getBoundingBox().inflate(rise.witnessRadius()), HumanoidSpeciesHooks::isLivingHumanoid);
             check(context, around.isEmpty(), "旁边本来就有生人：" + around);
             double before = heat(player);
+            Vec3 nearby = player.position().add(0, 0, NEAR);
+            Mob zombie = spawnAt(context, EntityTypes.ZOMBIE, nearby, mob -> { });
+            check(context, HumanoidFabric.isClaimed(zombie) && zombie.hasLineOfSight(player), "僵尸未认领或看不见玩家");
             cultivator(context, player).die(player.damageSources().playerAttack(player));
-            check(context, heat(player) == before, "没人看见也涨了风声：" + heat(player));
-            Mob witness = spawnAt(context, EntityTypes.VILLAGER, player.position().add(0, 0, NEAR), mob -> { });
+            check(context, heat(player) == before, "只有僵尸见证也涨了风声");
+            zombie.discard();
+            Mob witness = spawnAt(context, EntityTypes.VILLAGER, nearby, mob -> mob.setNoAi(true /* noAi */));
             cultivator(context, player).die(player.damageSources().playerAttack(player));
             check(context, Math.abs(heat(player) - before - rise.witnessedKill()) < EPSILON,
                     "当着村民杀了修炼的卫道士，风声从 " + before + " 到 " + heat(player));
             witness.discard();
             learnsRareVolume(context, fixture, rise);
+        });
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void killingBlackZombieInViewOfVillagerDoesNotRaiseHeat(GameTestHelper context) {
+        // 当着村民杀有游炁身体的黑僵，不能算杀了修炼的生人。
+        CrisisTestPlayer fixture = CrisisTestPlayer.create(context);
+        ServerPlayer player = fixture.player();
+        standApart(context, player, CORPSE_KILL_LANE);
+        waitUntil(context, () -> attached(player), () -> {
+            Mob witness = spawnAt(context, EntityTypes.VILLAGER, player.position().add(0, 0, NEAR), mob -> { });
+            check(context, witness.hasLineOfSight(player), "村民看不见玩家");
+            var corpse = spawnAt(context, EntityTypes.ZOMBIE, player.position().add(NEAR, 0, 0),
+                    mob -> HumanoidSpeciesBirths.birth(mob, HumanoidTier.WANDERING_QI));
+            var body = ((HumanoidEntityAccess) corpse).meridian$humanoidBody();
+            check(context, body != null && HumanoidTier.of(body.snapshot()) == HumanoidTier.WANDERING_QI,
+                    "未生成游炁档黑僵");
+            check(context, HumanoidTiers.of(corpse).isEmpty(), "生人职守查到了黑僵的档位");
+            double before = heat(player);
+            corpse.die(player.damageSources().playerAttack(player));
+            check(context, heat(player) == before, "当着村民击杀黑僵也涨了风声");
+            witness.discard();
+            finish(context, fixture);
         });
     }
 
