@@ -1,4 +1,8 @@
 {
+  "origin.meridian_humanoid.reborn.name": "Reborn",
+  "origin.meridian_humanoid.reborn.story": "You remember a former life.",
+  "origin.meridian_humanoid.reborn.talent.1": "You remember a breathing practice from a later age.",
+  "origin.meridian_humanoid.reborn.talent.2": "You already know how to gather qi with your breath.",
   "itemGroup.meridian_humanoid.humanoids": "Humanoids",
   "item.meridian_humanoid.villager_wandering_qi_spawn_egg": "Villager Spawn Egg (Wandering Qi)",
   "item.meridian_humanoid.villager_true_qi_spawn_egg": "Villager Spawn Egg (True Qi)",

@@ -24,8 +24,13 @@ record CrisisTestPlayer(ServerPlayer player, RecordingConnection connection) imp
 
     static CrisisTestPlayer create(GameTestHelper context) {
         // 新玩家，名字带序号，方便日志里分辨。
+        return create(context, UUID.randomUUID());
+    }
+
+    static CrisisTestPlayer create(GameTestHelper context, UUID id) {
+        // 固定玩家身份时，出身候选仍由正式抽选规则和世界种子决定。
         String name = "crisis_" + Integer.toUnsignedString(NEXT_ID.incrementAndGet(), 36);
-        return logIn(context, new GameProfile(UUID.randomUUID(), name));
+        return logIn(context, new GameProfile(id, name));
     }
 
     CrisisTestPlayer rejoin(GameTestHelper context) {

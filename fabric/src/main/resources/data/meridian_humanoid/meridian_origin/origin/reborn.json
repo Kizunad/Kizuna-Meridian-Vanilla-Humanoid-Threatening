@@ -1,0 +1,17 @@
+{
+  "weight": 10,
+  "icon": "minecraft:clock",
+  "talents": [
+    {
+      "type": "meridian_humanoid:starting_volume",
+      "params": {
+        "volume": "meridian_basic_techniques:later_breathing_volume"
+      }
+    },
+    {
+      "type": "meridian_humanoid:basic_breathing",
+      "params": {}
+    }
+  ],
+  "threats": []
+}

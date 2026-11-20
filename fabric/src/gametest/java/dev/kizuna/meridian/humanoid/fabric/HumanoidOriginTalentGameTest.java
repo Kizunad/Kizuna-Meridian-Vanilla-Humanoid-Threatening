@@ -13,13 +13,19 @@ import dev.kizuna.meridian.humanoid.server.CrisisParty;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.origin.fabric.Origin;
 import dev.kizuna.meridian.origin.fabric.Origins;
+import dev.kizuna.meridian.origin.fabric.OriginNetworking;
+import dev.kizuna.meridian.origin.protocol.pb.OriginMessages.OriginChoice;
+import dev.kizuna.meridian.origin.server.OriginDraw;
+import dev.kizuna.meridian.origin.server.OriginRecords;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SplittableRandom;
+import java.util.UUID;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.locale.Language;
+import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityTypes;
@@ -31,13 +37,85 @@ import net.minecraft.world.entity.npc.villager.Villager;
  */
 public final class HumanoidOriginTalentGameTest {
     private static final int TIMEOUT = 200;
+    private static final int BREATHING_TIMEOUT = 600;
     private static final List<String> ORIGINS = List.of("farmer", "orphan", "apprentice", "disgraced", "merchant");
     private static final List<String> PARTIES = List.of("clan_foes", "recipe_thief", "captors", "highwaymen");
     private static final String NAMESPACE = "meridian_humanoid";
+    private static final String REBORN = NAMESPACE + ":reborn";
+    private static final String REBORN_VOLUME = "meridian_basic_techniques:later_breathing_volume";
     private static final String DOOR_BREAKER_UPPER = "meridian_door_breaker:upper";
     private static final int FARMER_STANDING = 20;
     private static final BlockPos VILLAGER_AT = new BlockPos(1, 2, 1);
     private static final long SEED = 1;
+
+    @GameTest(maxTicks = BREATHING_TIMEOUT)
+    public void firstRebornChoiceGrantsItsVolumeAndRejoinRetainsIt(GameTestHelper context) {
+        // 出身必须在真实候选里，选择包只能发一次；再次登录保留这卷并且不重复记账。
+        var fixture = offeredReborn(context);
+        var player = fixture.player();
+        waitUntil(context, () -> attached(player), () -> {
+            var before = OriginRecords.read(CrisisGameTests.body(player));
+            check(context, before.getOfferedList().contains(REBORN), "新生玩家候选里没有重生");
+            check(context, !CrisisVolumes.known(player.getUUID()).contains(REBORN_VOLUME), "未选出身已获专卷");
+            var choice = OriginChoice.newBuilder().setId(REBORN).build();
+            player.connection.handleCustomPayload(new ServerboundCustomPayloadPacket(
+                    OriginNetworking.CHOOSE.payload(choice.toByteArray())));
+            var selected = OriginRecords.read(CrisisGameTests.body(player));
+            check(context, selected.getChosen().equals(REBORN), "首次选择未保存");
+            check(context, CrisisVolumes.known(player.getUUID()).contains(REBORN_VOLUME), "选择重生没有学卷");
+            RebornFirstBreath.exercise(context, fixture, () -> {
+                fixture.close();
+                var second = fixture.rejoin(context);
+                waitUntil(context, () -> attached(second.player()), () -> {
+                    var returned = OriginRecords.read(CrisisGameTests.body(second.player()));
+                    check(context, returned.getGrantedList().equals(selected.getGrantedList()), "重登重复记账");
+                    check(context, CrisisVolumes.known(second.player().getUUID()).contains(REBORN_VOLUME),
+                            "重登丢卷");
+                    finish(context, second);
+                });
+            });
+        });
+    }
+
+    private static CrisisTestPlayer offeredReborn(GameTestHelper context) {
+        // 筛选第一张就能抽到重生的身份，不改权重、不覆盖候选记录。
+        var candidates = Origins.all().values().stream()
+                .map(origin -> new OriginDraw.Candidate(origin.id().toString(), origin.weight(), origin.group()))
+                .toList();
+        long world = context.getLevel().getServer().overworld().getSeed();
+        check(context, Origins.all().containsKey(Identifier.parse(REBORN)), "未加载重生出身");
+        for (int attempt = 0; attempt < TIMEOUT; attempt++) {
+            var id = UUID.randomUUID();
+            long seed = OriginDraw.seed(world, id, 0);
+            if (OriginDraw.draw(candidates, 1, seed).contains(REBORN)) {
+                return CrisisTestPlayer.create(context, id);
+            }
+        }
+        throw new AssertionError("未找到重生候选身份");
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void existingOriginsAndPoolCannotGrantRebornVolume(GameTestHelper context) {
+        // 每一个原出身走真实授卷入口；卷池中入门和进阶两个位置都不能出现专卷。
+        var fixture = CrisisTestPlayer.create(context);
+        var player = fixture.player();
+        waitUntil(context, () -> attached(player), () -> {
+            for (String origin : ORIGINS) {
+                check(context, choose(context, player, origin) > 0, "无法定出身 " + origin);
+                check(context, !CrisisVolumes.known(player.getUUID()).contains(REBORN_VOLUME),
+                        origin + " 得到专卷");
+            }
+            var pool = HumanoidBrain.config().volumePool();
+            for (var book : pool.books()) {
+                check(context, !book.upper().contains(REBORN_VOLUME), "专卷进入入门卷池");
+                check(context, book.middle().filter(REBORN_VOLUME::equals).isEmpty(), "专卷进入进阶卷池");
+            }
+            var reborn = Origins.all().get(Identifier.parse(REBORN));
+            check(context, reborn.threats().isEmpty() && missingText(reborn).isEmpty(),
+                    "重生数据或文本不完整");
+            finish(context, fixture);
+        });
+    }
 
     @GameTest(maxTicks = TIMEOUT)
     public void firstBatchLoadsWithPartiesAndText(GameTestHelper context) {

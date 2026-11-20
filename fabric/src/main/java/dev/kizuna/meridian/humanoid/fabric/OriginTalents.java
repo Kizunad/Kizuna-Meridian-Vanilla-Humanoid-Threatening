@@ -1,7 +1,9 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import dev.kizuna.meridian.human.fabric.BasicBreathingGrant;
 import dev.kizuna.meridian.humanoid.server.OriginVolumes;
 import dev.kizuna.meridian.origin.fabric.OriginEntrypoint;
 import dev.kizuna.meridian.origin.fabric.OriginRegistrar;
@@ -13,7 +15,9 @@ import java.util.List;
 import java.util.Map;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Unit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,25 +43,39 @@ public final class OriginTalents implements OriginEntrypoint {
     /** 村民声望这一类。 */
     public static final OriginTalentType<VillagerStanding> VILLAGER_STANDING = OriginTalentType.standing(
             Identifier.parse("meridian_humanoid:villager_standing"), STANDING);
+    private static final OriginTalentType<Unit> BASIC_BREATHING = OriginTalentType.standing(
+            Identifier.parse("meridian_humanoid:basic_breathing"), MapCodec.unit(Unit.INSTANCE).codec());
 
     @Override
     public void register(OriginRegistrar registrar) {
         // 出身附属读数据包前收齐各附属的类型。
         registrar.talent(STARTING_VOLUME);
         registrar.talent(VILLAGER_STANDING);
+        registrar.talent(BASIC_BREATHING);
     }
 
     static void initialize() {
         // 开服在第一个 tick 核对（和学卷表一起）；/reload 出身附属重读完再核对一次，不对只记错误，出身已经换成新的了。
         ServerLifecycleEvents.END_DATA_PACK_RELOAD.register(CrisisFabric.AFTER_ORIGINS,
-                (server, resources, success) -> reloaded(success));
+                (server, resources, success) -> {
+                    if (success) {
+                        reloaded(server);
+                    }
+                });
+        Origins.CHOSEN.register((player, origin) -> refreshBreathing(player));
+        Origins.READY.register((player, origin) -> refreshBreathing(player));
     }
 
-    private static void reloaded(boolean success) {
-        // 重载没成就还是旧出身，不用再核对。
-        if (!success) {
-            return;
-        }
+    private static void refreshBreathing(ServerPlayer player) {
+        // 常驻授权只认当前出身，已经学到的卷在改换出身后仍属于玩家。
+        var grant = Origins.talents(player, BASIC_BREATHING).isEmpty()
+                ? BasicBreathingGrant.ABSENT : BasicBreathingGrant.PRESENT;
+        BasicBreathingGrant.CHANGED.invoker().refresh(player, grant);
+    }
+
+    private static void reloaded(MinecraftServer server) {
+        // 出身数据已经换成新定义，在线玩家的常驻授权也要更新。
+        server.getPlayerList().getPlayers().forEach(OriginTalents::refreshBreathing);
         try {
             requireVolumes();
         } catch (RuntimeException invalid) {

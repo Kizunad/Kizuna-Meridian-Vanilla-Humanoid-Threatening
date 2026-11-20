@@ -71,7 +71,7 @@
 
 ## 首批出身
 
-本仓自带五个出身（`fabric/src/main/resources/data/meridian_humanoid/meridian_origin/origin/`）和它们的四张仇家队伍表，
+本仓的出身在 `fabric/src/main/resources/data/meridian_humanoid/meridian_origin/origin/`，其中四个出身带仇家队伍表，
 出身卡和征兆的文字在本仓语言文件的 `origin.meridian_humanoid.*`、`crisis.meridian_humanoid.<队伍表>.*` 下。
 玩家生来就在游炁，所以 `min_realm` 都用默认值：一选定就开始计日。
 
@@ -82,6 +82,7 @@
 | `apprentice` 药铺学徒 | 开局会《炼药卷·熬药》（`meridian_brewing:brewing_basics`）；开局会聚气汤、苦黄膏两张药方 | `recipe_thief`，6–10 天，12–20 天，1 拨 |
 | `disgraced` 罪臣之后 | 开局会《破门斩·木门》（`meridian_door_breaker:upper`） | `captors`，10–16 天，24–36 天，没有了断，`meridian_door_breaker:lower` |
 | `merchant` 行商之后 | 参考负重 ×1.25 | `highwaymen`，5–9 天，10–14 天，没有了断 |
+| `reborn` 重生归来 | 开局会后世吐纳卷，拥有基础吐纳授权 | 没有 |
 
 - 队伍表：`clan_foes` 掠夺者为主，三档各分 0/1/2 拨，一拨比一拨强，第 2 拨头目是真炁精锐；`recipe_thief` 头目是真炁女巫，
   `wandering` 档有时一个人来、有时带一个随从，往上的档随从多些，`true_many` 档她是精锐；`captors` 只有卫道士；
@@ -90,9 +91,9 @@
   所以本仓硬依赖这两个附属：缺了它们出身数据读不进来。
 - 文字由 Gemini 照会话仓 `handoff/origin-lore-20261115/3b/` 的资料写，逐句对过代码；改文字改资料重写，不手改语言文件。
 
-## 开局卷与村民声望
+## 开局卷、基础吐纳与村民声望
 
-本仓还经同一个入口登记两类出身天赋（`fabric/.../OriginTalents.java`）：
+本仓经同一个入口登记以下出身天赋（`fabric/.../OriginTalents.java`）。
 
 - `meridian_humanoid:starting_volume`，一次性，参数 `{"volume": "<卷 ID>"}`：选定出身时经功法服务学会这一卷，已经会了不变。
   身体宿主不在、前置卷没会时这次不算发成，出身附属下次进服再发。一个出身写几条就按写的先后学。
@@ -100,6 +101,8 @@
 - `meridian_humanoid:villager_standing`，常驻，参数 `{"reputation": <-100..100>}`：加在原版 `Villager.getPlayerReputation` 的返回值上
   （`VillagerOriginStandingMixin`），原版打折和铁傀儡认人都读这个数。几条相加；没选出身是 0。
 - 开局卷学会时照常走功法库的「会的卷变了」，但这几卷在学卷表里都是必授的，不算稀有卷，不涨风声。
+- `meridian_humanoid:basic_breathing` 是无参数的常驻天赋。选定、进服和出身数据重载时，按当前出身重新确定基础吐纳授权。
+  已学的卷由功法库保存，书籍阅读进度仍由玩家实际阅读取得。
 
 ## 队伍表
 

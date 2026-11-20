@@ -86,6 +86,7 @@ dependencies {
     // GameTest 显式使用 server 运行依赖，发布产物仍通过 include 嵌套 server JAR。
     gametestRuntimeOnly project(':server')
     gametestImplementation testFixtures('dev.kizuna.meridian.technique:fabric')
+    gametestImplementation 'dev.kizuna.meridian.origin:server'
 }
 
 loom {
