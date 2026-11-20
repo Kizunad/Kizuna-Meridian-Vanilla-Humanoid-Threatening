@@ -31,6 +31,7 @@ public final class HumanoidBrainConfigLoader {
     private static final String VILLAGER = "villager";
     /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
     private static final double MAX_NOTICE_DISTANCE = 128;
+    private static final double FULL_CIRCLE_DEGREES = 360;
     private static final String VOLUMES = "volumes";
     private static final String POOL = "volume_pool";
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
@@ -224,14 +225,42 @@ public final class HumanoidBrainConfigLoader {
     private static HumanoidBrainConfig.ThreatRules threat(TomlTable table) {
         // 记忆时长与各距离都必须为正。
         TOML.checkKeys(table, Set.of("memory_seconds", "ally_radius", "forget_distance", "safe_distance",
-                NOTICE_DISTANCE, ThreatScoringLoader.SCORE), "threat.");
+                NOTICE_DISTANCE, ThreatScoringLoader.SCORE, "guard"), "threat.");
         return new HumanoidBrainConfig.ThreatRules(positive(table, "memory_seconds", "threat"),
                 positive(table, "ally_radius", "threat"),
                 positive(table, "forget_distance", "threat"),
                 positive(table, "safe_distance", "threat"),
                 noticeDistances(table),
                 ThreatScoringLoader.parse(TOML, TOML.table(withDefault(table, ThreatScoringLoader.SCORE),
-                        ThreatScoringLoader.SCORE, "threat." + ThreatScoringLoader.SCORE)));
+                        ThreatScoringLoader.SCORE, "threat." + ThreatScoringLoader.SCORE)), guard(table));
+    }
+
+    private static GuardResponse guard(TomlTable threat) {
+        String path = "threat.guard";
+        TomlTable table = TOML.table(withDefault(threat, "guard"), "guard", path);
+        TOML.checkKeys(table, Set.of("melee_enter", "melee_exit", "ranged", "angle_degrees", "quiet_millis",
+                "rest_millis", "recent_melee_millis", "turn_degrees_per_tick", "mortal", "wandering_qi", "true_qi"),
+                path + ".");
+        var range = new GuardResponse.Range(nonNegative(table, "melee_enter", path),
+                nonNegative(table, "melee_exit", path), nonNegative(table, "ranged", path));
+        if (range.meleeExit() < range.meleeEnter()) {
+            throw TOML.invalid(path + ".melee_exit 不能小于 melee_enter");
+        }
+        double angle = nonNegative(table, "angle_degrees", path);
+        if (angle > FULL_CIRCLE_DEGREES) {
+            throw TOML.invalid(path + ".angle_degrees 不能超过一整圈");
+        }
+        var tiers = new EnumMap<HumanoidTier, GuardResponse.Reaction>(HumanoidTier.class);
+        for (HumanoidTier tier : HumanoidTier.values()) {
+            String tierPath = path + "." + tier.id();
+            var profile = TOML.table(table, tier.id(), tierPath);
+            TOML.checkKeys(profile, Set.of("chance", "delay_millis"), tierPath + ".");
+            tiers.put(tier, new GuardResponse.Reaction(ratio(profile, "chance", tierPath),
+                    millis(profile, "delay_millis", tierPath)));
+        }
+        var timing = new GuardResponse.Timing(millis(table, "recent_melee_millis", path),
+                millis(table, "quiet_millis", path), millis(table, "rest_millis", path));
+        return new GuardResponse(range, angle, nonNegative(table, "turn_degrees_per_tick", path), timing, tiers);
     }
 
     private static TomlTable withDefault(TomlTable threat, String key) {
@@ -421,9 +450,13 @@ public final class HumanoidBrainConfigLoader {
     }
 
     private static long millis(TomlTable table, String key) {
+        return millis(table, key, "response");
+    }
+
+    private static long millis(TomlTable table, String key, String section) {
         // 毫秒只接受非负整数，不通过 double 截断。
         if (!(table.get(List.of(key)) instanceof Long value) || value < 0) {
-            throw TOML.invalid("response." + key + " 必须是非负整数");
+            throw TOML.invalid(section + "." + key + " 必须是非负整数");
         }
         return value;
     }

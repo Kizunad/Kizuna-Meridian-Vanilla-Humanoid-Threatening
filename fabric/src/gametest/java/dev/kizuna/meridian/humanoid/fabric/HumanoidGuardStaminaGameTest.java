@@ -259,7 +259,7 @@ public final class HumanoidGuardStaminaGameTest {
         body.settle(now);
     }
 
-    private static void spend(HumanoidBodyState body, double cost) {
+    static void spend(HumanoidBodyState body, double cost) {
         var current = body.currentBody();
         var activity = BodyActivity.newBuilder()
                 .addAllTissueFatigue(HumanStamina.from(current).cost(cost))
@@ -272,7 +272,7 @@ public final class HumanoidGuardStaminaGameTest {
         body.submitRecovery(UUID.randomUUID().toString(), command);
     }
 
-    private static void restoreTo(HumanoidBodyState body, double fatigue) {
+    static void restoreTo(HumanoidBodyState body, double fatigue) {
         var snapshot = body.snapshot();
         var muscles = HumanStamina.from(body.currentBody()).workingMuscles();
         var relief = RestoreFatigue.newBuilder().setSourceId("meridian_humanoid_test:medicine");
@@ -316,7 +316,7 @@ public final class HumanoidGuardStaminaGameTest {
         close(context, loss.getHp(), dose, "承力剂量");
     }
 
-    private static double available(HumanoidBodyState body) {
+    static double available(HumanoidBodyState body) {
         return HumanStamina.from(body.currentBody()).availableJoules();
     }
 

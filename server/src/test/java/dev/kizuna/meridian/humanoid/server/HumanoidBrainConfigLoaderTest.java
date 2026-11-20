@@ -236,6 +236,19 @@ public class HumanoidBrainConfigLoaderTest {
     }
 
     @Test
+    public void guardChanceCanBeDisabledAndLegacyFilesUseShippedRules() {
+        var defaults = HumanoidBrainConfigLoader.defaults().threat().guard();
+        String old = DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("[threat.guard]"))
+                + DEFAULT_TEXT.substring(DEFAULT_TEXT.indexOf("[assessment]"));
+        assertEquals(defaults, HumanoidBrainConfigLoader.parse(old).threat().guard());
+        String disabled = replace("chance = 0.15, delay_millis", "chance = 0, delay_millis");
+        var profile = HumanoidBrainConfigLoader.parse(disabled).threat().guard().reactions().get(HumanoidTier.MORTAL);
+        assertEquals(0, profile.chance(), TOLERANCE);
+        String inverted = replace("melee_exit = 4", "melee_exit = 1");
+        assertThrows(IllegalArgumentException.class, () -> HumanoidBrainConfigLoader.parse(inverted));
+    }
+
+    @Test
     public void oldFileWithoutThreatScoreRunsOnDefaultAndIsReported() {
         // 旧导出文件没有打分表：按 JAR 默认运行，缺的键列入启动提示。
         String old = DEFAULT_TEXT.substring(0, DEFAULT_TEXT.indexOf("# 选敌打分"))

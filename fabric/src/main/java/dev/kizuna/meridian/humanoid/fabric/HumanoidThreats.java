@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
+import dev.kizuna.meridian.vanilla.fabric.VanillaDamageTypeTags;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -23,6 +24,7 @@ import net.minecraft.world.entity.raid.Raider;
 
 /** 敌意来源：谁以谁为目标、谁打过我或同伴、谁算同伴；只记实体引用、到期刻与受到的伤害，不读身体、不扫描周围。 */
 final class HumanoidThreats {
+    private static final long NO_MELEE_TICK = -1;
     private static final double TICKS_PER_SECOND = 20;
     private static final double SURROUNDED_RADIUS = 3;
     private static final int SURROUNDED_COUNT = 2;
@@ -33,7 +35,7 @@ final class HumanoidThreats {
     enum Faction { RAIDERS, VILLAGE, NONE }
 
     /** 一个攻击者在我这里的记录：最近一次伤害后的累计量与时刻，以及保持为敌人的到期刻。 */
-    private record Hostility(double damage, long damagedAt, long expiry) { }
+    private record Hostility(double damage, long damagedAt, long expiry, long lastMeleeTick) { }
 
     private HumanoidThreats() {
         // 登记表按实体弱引用保存，实体卸载后自然释放。
@@ -63,14 +65,19 @@ final class HumanoidThreats {
         var rules = config.threat();
         long now = victim.level().getGameTime();
         long expiry = now + memoryTicks(rules);
-        remember(victim, attacker, new Hostility(event.input().damageAfterEffects(), now, expiry), rules);
+        var source = event.source();
+        long melee = NO_MELEE_TICK;
+        if (source.getDirectEntity() == attacker && source.is(VanillaDamageTypeTags.MELEE)) {
+            melee = now;
+        }
+        remember(victim, attacker, new Hostility(event.input().damageAfterEffects(), now, expiry, melee), rules);
         if (faction(victim) == Faction.NONE) {
             return;
         }
         var box = victim.getBoundingBox().inflate(rules.allyRadius());
         for (Mob ally : victim.level().getEntitiesOfClass(Mob.class, box,
                 other -> other != victim && allied(victim, other) && HumanoidBrain.managed(other))) {
-            remember(ally, attacker, new Hostility(0, now, expiry), rules);
+            remember(ally, attacker, new Hostility(0, now, expiry, NO_MELEE_TICK), rules);
         }
     }
 
@@ -85,11 +92,12 @@ final class HumanoidThreats {
         }
         long expiry = Math.max(old.expiry(), hit.expiry());
         if (hit.damage() <= 0) {
-            remembered.put(attacker, new Hostility(old.damage(), old.damagedAt(), expiry));
+            remembered.put(attacker, new Hostility(old.damage(), old.damagedAt(), expiry, old.lastMeleeTick()));
             return;
         }
         double kept = decayed(old, hit.damagedAt(), rules);
-        remembered.put(attacker, new Hostility(kept + hit.damage(), hit.damagedAt(), expiry));
+        long melee = Math.max(old.lastMeleeTick(), hit.lastMeleeTick());
+        remembered.put(attacker, new Hostility(kept + hit.damage(), hit.damagedAt(), expiry, melee));
     }
 
     private static double decayed(Hostility hostility, long now, HumanoidBrainConfig.ThreatRules rules) {
@@ -111,6 +119,17 @@ final class HumanoidThreats {
             return 0;
         }
         return decayed(hostility, victim.level().getGameTime(), rules);
+    }
+
+    static boolean recentMelee(Mob victim, LivingEntity attacker, long windowMillis) {
+        var remembered = attackers.get(victim);
+        if (remembered == null) {
+            return false;
+        }
+        var hostility = remembered.get(attacker);
+        return hostility != null && hostility.lastMeleeTick() != NO_MELEE_TICK && windowMillis > 0
+                && (victim.level().getGameTime() - hostility.lastMeleeTick()) * HumanoidArmGuard.MILLIS_PER_TICK
+                <= windowMillis;
     }
 
     static Optional<LivingEntity> choose(Mob mob, HumanoidBrainConfig.ThreatRules rules,

@@ -110,3 +110,26 @@ loom {
 }
 
 apply from: 'persistence-tests.gradle'
+
+sourceSets {
+    clienttest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+loom {
+    mods {
+        meridian_humanoid_clienttest { sourceSet sourceSets.clienttest }
+    }
+    runs {
+        guardClient {
+            client()
+            source sourceSets.clienttest
+            runDir providers.gradleProperty('clienttestRunDir').getOrElse('build/guard-client')
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=meridian_humanoid_clienttest'
+            programArgs '--width', '960', '--height', '540'
+        }
+    }
+}

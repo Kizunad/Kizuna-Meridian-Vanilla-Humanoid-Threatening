@@ -41,6 +41,14 @@ public abstract class MobTechniqueMixin {
         }
     }
 
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void meridian$finishGuardTurn(CallbackInfo callback) {
+        Mob mob = (Mob) (Object) this;
+        if (!mob.level().isClientSide()) {
+            HumanoidBrain.finishGuardTurn(mob);
+        }
+    }
+
     @Inject(method = "serverAiStep", at = @At("HEAD"), cancellable = true)
     private void meridian$humanoidBrain(CallbackInfo callback) {
         // 在原版 Goal 与村民大脑之前决策；未接管的物种（含 brain = false）在入口即跳过。

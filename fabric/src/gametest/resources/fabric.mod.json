@@ -28,6 +28,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidDutyGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidGuardGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidGuardStaminaGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidArmGuardGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidEnclosedArenaGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerAiGameTest",

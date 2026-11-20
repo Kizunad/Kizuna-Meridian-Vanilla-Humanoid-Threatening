@@ -40,6 +40,7 @@ final class HumanoidMind {
     private HumanoidPressure.Sighting sighting;
     private long unpressedSinceMillis;
     private String lastFailure = "";
+    final HumanoidArmGuard guard = new HumanoidArmGuard();
 
     Optional<Vec3> retreatPoint() {
         return retreatPoint;

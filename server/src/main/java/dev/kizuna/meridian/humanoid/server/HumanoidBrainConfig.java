@@ -14,7 +14,7 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
 
     /** 敌意记忆秒数、同伴受击时共同敌对的半径、放下敌人的距离、撤退要拉开到的安全距离、按实体 ID 的盯上距离，以及选敌打分。 */
     public record ThreatRules(double memorySeconds, double allyRadius, double forgetDistance, double safeDistance,
-                              Map<String, Double> noticeDistances, ThreatScoring scoring) {
+                              Map<String, Double> noticeDistances, ThreatScoring scoring, GuardResponse guard) {
         public ThreatRules {
             // 盯上距离表由加载器校验；这里只冻结副本，运行中不被外部改写。
             noticeDistances = Map.copyOf(noticeDistances);

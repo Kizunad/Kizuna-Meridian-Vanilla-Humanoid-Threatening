@@ -106,6 +106,14 @@ public final class HumanoidBrain {
             return;
         }
         HumanoidGoalAdapter.install(mob, mind, goals, targets);
+        try {
+            if (mind.guard.tick(mob, config.threat().guard())) {
+                mind.clearCastPlan();
+                return;
+            }
+        } catch (HumanoidEnvironmentClient.Unavailable unavailable) {
+            HumanoidFabric.report(mob, unavailable);
+        }
         if (checkCastPlan(mob, mind)) {
             return;
         }
@@ -575,7 +583,7 @@ public final class HumanoidBrain {
         return HumanoidTechniqueHost.prepare(mob).body().currentBody();
     }
 
-    private static Optional<TechniqueService.Observation> observe(LivingEntity entity) {
+    static Optional<TechniqueService.Observation> observe(LivingEntity entity) {
         // 同一服务器 tick 内同一对手只观察一次。
         long tick = HumanoidFabric.server().getTickCount();
         if (tick != observedTick) {
@@ -728,13 +736,25 @@ public final class HumanoidBrain {
 
     public static boolean blocksRanged(Mob mob) {
         // 原版弓弩拉弦和射击不能与行矢效果重复；结束、打断和卸载后自然恢复。
-        return HumanoidRestrictions.locked(mob) || HumanoidTechniqueHost.castingWayfarer(mob)
+        return HumanoidRestrictions.locked(mob) || HumanoidTechniqueHost.castingGuard(mob)
+                || HumanoidTechniqueHost.castingWayfarer(mob)
                 || mob instanceof Witch && HumanoidTechniqueHost.hasActiveCast(mob);
     }
 
     static List<HumanoidMind.Logged> decisions(UUID entity) {
         // 最近的决策记录，GameTest 与排查用。
         return Optional.ofNullable(minds.get(entity)).map(HumanoidMind::log).orElse(List.of());
+    }
+
+    static HumanoidArmGuard guard(Mob mob) {
+        return minds.get(mob.getUUID()).guard;
+    }
+
+    public static void finishGuardTurn(Mob mob) {
+        var mind = minds.get(mob.getUUID());
+        if (mind != null && managed(mob)) {
+            mind.guard.face(mob, config.threat().guard());
+        }
     }
 
     static Optional<HumanoidMotion.Directive> directive(UUID entity) {
@@ -767,6 +787,7 @@ public final class HumanoidBrain {
         // 切换指挥来源时撤旧目标和倒排计划，保留已经安装的 Goal，避免重复安装。
         HumanoidMind mind = minds.get(entity);
         if (mind != null) {
+            mind.guard.releaseControl(entity);
             mind.disengage();
             mind.clearCastPlan();
             mind.release();

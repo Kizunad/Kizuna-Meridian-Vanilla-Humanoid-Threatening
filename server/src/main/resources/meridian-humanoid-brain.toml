@@ -39,6 +39,20 @@ min_hold_seconds = 2           # 换过对手后这么多秒内不再换；当�
 [threat.score.species."minecraft:pillager"]
 distance = 0.4                 # 远射手不必挑近的
 
+[threat.guard]
+melee_enter = 3.5
+melee_exit = 4
+ranged = 24
+angle_degrees = 120
+turn_degrees_per_tick = 10
+recent_melee_millis = 1500
+quiet_millis = 1000
+rest_millis = 1000
+# chance 为零时该档不自行起式；成功后仍须走正式功法起手。
+mortal = { chance = 0.15, delay_millis = 400 }
+wandering_qi = { chance = 0.30, delay_millis = 300 }
+true_qi = { chance = 0.55, delay_millis = 150 }
+
 [assessment]
 # 战力 = 境界档 × realm + 会可施放打击式 × strike + 持武器 × armed
 #      + min(完好率, 较强一臂力量比) × body + 真元占容 × qi + 正在施放 × casting

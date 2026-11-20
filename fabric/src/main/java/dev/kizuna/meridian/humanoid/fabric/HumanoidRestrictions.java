@@ -70,7 +70,8 @@ public final class HumanoidRestrictions {
 
     public static boolean blocksUse(LivingEntity entity, ItemStack stack) {
         // 生物喝药和普通吃喝同一门禁，普通受击不会拦截使用。
-        return entity instanceof Mob && (locked(entity) || BrewNausea.blocks(entity, stack));
+        return entity instanceof Mob && (locked(entity) || HumanoidTechniqueHost.castingGuard(entity)
+                || BrewNausea.blocks(entity, stack));
     }
 
     public static boolean blocksDrinking(LivingEntity entity) {

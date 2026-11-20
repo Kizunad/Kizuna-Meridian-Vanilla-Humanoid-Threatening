@@ -56,7 +56,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         }));
     }
 
-    private static Optional<GuardStamina> staminaRules(TechniqueService service, TechniqueReference reference) {
+    static Optional<GuardStamina> staminaRules(TechniqueService service, TechniqueReference reference) {
         return service.registry().find(reference).stream()
                 .flatMap(definition -> definition.getEffectsList().stream())
                 .filter(TechniqueEffect::hasGuard)
@@ -266,6 +266,11 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         return publishedProgress(entity).filter(TechniqueProgress::hasActiveCast)
                 .map(progress -> progress.getActiveCast().getRequest().getTechnique().getId())
                 .filter(id -> id.startsWith(HumanoidWayfarerAi.PREFIX))
+                .isPresent();
+    }
+
+    static boolean castingGuard(LivingEntity entity) {
+        return activeCast(entity).filter(cast -> cast.getRequest().getTechnique().equals(HumanoidArmGuard.GUARD))
                 .isPresent();
     }
 
