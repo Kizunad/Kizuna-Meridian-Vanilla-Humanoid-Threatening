@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
+import dev.kizuna.meridian.human.fabric.HumanGuardStamina;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
@@ -9,6 +10,9 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ActiveCast;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.GuardStamina;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueEffect;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.MovementAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.PresentationAction;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueActivityCommit;
@@ -23,6 +27,7 @@ import dev.kizuna.meridian.technique.server.TechniqueHost;
 import dev.kizuna.meridian.technique.server.TechniqueHostEntrypoint;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueRecoveryHost;
+import dev.kizuna.meridian.technique.server.TechniqueService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +39,59 @@ import net.minecraft.world.entity.LivingEntity;
 /** 类人生物的可信功法入口，活动、知识和冷却均随原身体保存。 */
 public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     private static final Map<UUID, Session> sessions = new HashMap<>();
+
+    static void registerGuardCheck() {
+        TechniqueFabric.SERVICE_STARTED.register(service -> service.addCastCheck((id, request) -> {
+            var reference = request.getTechnique();
+            var rules = staminaRules(service, reference);
+            if (rules.isEmpty()) {
+                return Optional.empty();
+            }
+            var entity = HumanoidFabric.findEntity(id);
+            if (entity == null || !HumanoidFabric.isClaimed(entity)) {
+                return Optional.empty();
+            }
+            var body = prepare(entity).body().currentBody();
+            return HumanGuardStamina.rejection(body, reference.getId(), rules.get());
+        }));
+    }
+
+    private static Optional<GuardStamina> staminaRules(TechniqueService service, TechniqueReference reference) {
+        return service.registry().find(reference).stream()
+                .flatMap(definition -> definition.getEffectsList().stream())
+                .filter(TechniqueEffect::hasGuard)
+                .map(TechniqueEffect::getGuard)
+                .filter(guard -> guard.hasStamina())
+                .map(guard -> guard.getStamina())
+                .findFirst();
+    }
+
+    private static boolean hasGuardStamina(HumanoidBodyState body) {
+        var progress = body.techniqueProgress();
+        if (progress.getActiveCast().getSustained().getGuard().hasStamina()
+                || progress.getGuardBreakEndsCount() > 0) {
+            return true;
+        }
+        return progress.hasLastCast()
+                && staminaRules(TechniqueFabric.service(), progress.getLastCast().getTechnique()).isPresent();
+    }
+
+    static void resumeGuard(LivingEntity entity, HumanoidBodyState body, long now) {
+        // 健康查询也可能是读档后的第一个入口，在发布身体前结清离线时间并清理旧守式。
+        if (hasGuardStamina(body)) {
+            var released = body.resumeGuard(now);
+            if (body.techniqueProgress().getActiveCast().getSustained().getGuard().hasStamina()) {
+                recover(entity, new Session(body, new HumanoidTechniqueEffects(entity)));
+            }
+            HumanoidFabric.enqueueRelease(entity, released);
+        }
+    }
+
+    public static void settleGuardIfNeeded(LivingEntity entity, HumanoidBodyState body) {
+        if (HumanoidFabric.isReady() && !HumanoidFabric.isStopping() && hasGuardStamina(body)) {
+            HumanoidFabric.enqueueRelease(entity, body.settle(HumanoidFabric.now()));
+        }
+    }
 
     @Override
     public byte[] exchange(byte[] payload) {
@@ -149,6 +207,9 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         }
         var created = new Session(body, new HumanoidTechniqueEffects(entity));
         recover(entity, created);
+        var id = entity.getUUID();
+        var service = TechniqueFabric.service();
+        body.bindGuardRelease(snapshot -> service.pendingGuardRelease(id, snapshot));
         sessions.put(entity.getUUID(), created);
         assignVolumes(entity, created);
         return created;
@@ -288,6 +349,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
                 if (!HumanoidFabric.isClaimed(entity)) {
                     session.effects().detach();
                 } else if (HumanoidFabric.isReady() && !HumanoidFabric.isStopping()) {
+                    settleGuardIfNeeded(entity, session.body());
                     recover(entity, session);
                 }
             } finally {

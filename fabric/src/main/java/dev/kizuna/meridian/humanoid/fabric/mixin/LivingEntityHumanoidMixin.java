@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric.mixin;
 
 import dev.kizuna.meridian.humanoid.fabric.BirthVolumes;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
+import dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBirthPlan;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidFabric;
@@ -221,6 +222,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
             ownerId = meridian$humanoidSavedOwner();
             regionSource = meridian$savedRegionSource;
         } else {
+            HumanoidTechniqueHost.settleGuardIfNeeded((LivingEntity) (Object) this, meridian$body);
             body = meridian$body.encodeBody();
             receipts = meridian$body.encodeReceipts();
             ownerId = ((Entity) (Object) this).getUUID();

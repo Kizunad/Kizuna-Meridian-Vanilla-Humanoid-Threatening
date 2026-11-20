@@ -5,6 +5,7 @@ import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.core.BodyTimeAdvancement;
 import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.core.TimeCursor;
+import dev.kizuna.meridian.human.fabric.HumanGuardStamina;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
@@ -33,11 +34,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.random.RandomGenerator;
 
 /** 单个已加载类人实体的身体事务包装；权威状态仍由 Framework Store 持有。 */
 public final class HumanoidBodyState {
     private static final int MAX_SAVED_RECEIPTS = 32;
+    private static final long MILLIS_PER_TICK = 50;
     private static final String DEBUG_CALLER_ID = "meridian_debug:command";
     /** 类人身体的老化倍率：身体时钟走一秒，年龄长一秒。 */
     private static final double AGING_RATE = 1;
@@ -48,6 +51,8 @@ public final class HumanoidBodyState {
     private final String bodyId;
     private final String regionSource;
     private long targetMillis;
+    private MeridianMessages.TimeAdvanceMode timeMode = MeridianMessages.TimeAdvanceMode.ACTIVE;
+    private Function<BodySnapshot, Optional<TechniqueHost.Submission>> pendingRelease = body -> Optional.empty();
     private String trustedActivityCaller;
     /**
      * 按已提交身体缓存的协议消息和功法进度。Store 每提交一次命令就换上一份新的不可变快照（版本加一），
@@ -89,15 +94,14 @@ public final class HumanoidBodyState {
                     return Optional.empty();
                 },
                 (caller, command, body) -> true,
-                (caller, body) -> timeAdvancePlan(body, this.targetMillis),
+                (caller, body) -> timeAdvancePlan(body),
                 store, (caller, receipt, before, after) -> { /* 实体写回 NBT 时保存已提交快照。 */ },
                 installedContent.recipes(), (caller, body, plan) -> Optional.empty(),
                 installedContent.actions(), installedContent.openings(), DEBUG_CALLER_ID::equals,
                 HumanoidDamagePolicy.forSpecies(species));
     }
 
-    private static MeridianMessages.TimeAdvancePlan timeAdvancePlan(
-            BodySnapshot body, long targetMillis) {
+    private MeridianMessages.TimeAdvancePlan timeAdvancePlan(BodySnapshot body) {
         // 时间计划跟随查询或健康效果更新的目标，不能倒退已结算游标。
         var settledAt = body.settledAt();
         BodyMessages.TimeCursor target = BodyProtobuf.toTime(settledAt).toBuilder()
@@ -105,7 +109,7 @@ public final class HumanoidBodyState {
                 .build();
         return MeridianMessages.TimeAdvancePlan.newBuilder()
                 .setTarget(target)
-                .setMode(MeridianMessages.TimeAdvanceMode.ACTIVE)
+                .setMode(timeMode)
                 .setBiologicalSecondsPerSimulationSecond(AGING_RATE)
                 .build();
     }
@@ -262,7 +266,101 @@ public final class HumanoidBodyState {
         if (!sameClock(now)) {
             throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
-        targetMillis = Math.max(targetMillis, now.getElapsedMillis());
+        long target = Math.max(targetMillis, now.getElapsedMillis());
+        var before = currentBody();
+        if (HumanGuardStamina.holding(before).isEmpty()) {
+            return advance(target);
+        }
+        long saved = before.settledAt().elapsedMillis();
+        targetMillis = saved;
+        if (target > saved) {
+            pendingRelease.apply(before).ifPresent(release ->
+                    guardActivity(release.requestId(), release.expectedRevision(), release.activity()));
+        }
+        var releases = new ArrayList<QiInventory>();
+        while (true) {
+            settleGuard();
+            var body = currentBody();
+            long clock = body.settledAt().elapsedMillis();
+            if (clock >= target || body.vitality().dead()) {
+                return BodyProtobuf.toInventory(QiInventory.combine(releases));
+            }
+            long boundary = guardBoundary(body, clock, target);
+            var released = advance(boundary);
+            if (released.getEntriesCount() > 0) {
+                releases.add(BodyProtobuf.fromInventory(released));
+            }
+        }
+    }
+
+    private static long guardBoundary(BodySnapshot body, long clock, long target) {
+        var holding = HumanGuardStamina.holding(body);
+        if (holding.isEmpty()) {
+            return target;
+        }
+        long boundary = HumanGuardStamina.boundary(body, holding.get(), target);
+        if (body.modifiers().isEmpty()) {
+            return boundary;
+        }
+        // 有能力曲线时，每拍按当时的可用耐力重新计算耗尽点。
+        return clock + Math.min(MILLIS_PER_TICK, boundary - clock);
+    }
+
+    private void settleGuard() {
+        var body = currentBody();
+        HumanGuardStamina.holding(body).flatMap(guard -> HumanGuardStamina.payment(body, guard))
+                .ifPresent(activity -> guardActivity(UUID.randomUUID().toString(), body.revision(), activity));
+    }
+
+    void bindGuardRelease(Function<BodySnapshot, Optional<TechniqueHost.Submission>> pending) {
+        pendingRelease = pending;
+    }
+
+    private void guardActivity(String requestId, long revision, ActivityMessages.BodyActivity activity) {
+        var command = MeridianMessages.BodyCommand.newBuilder()
+                .setBodyId(bodyId)
+                .setExpectedRevision(revision)
+                .setExecuteActivity(activity)
+                .build();
+        submitRecovery(requestId, command);
+    }
+
+    BodyMessages.QiInventory resumeGuard(long now) {
+        // 卸载期间的疲劳与破防剩余时间冻结，仍由身体时钟处理寿元终点。
+        var body = currentBody();
+        long saved = body.settledAt().elapsedMillis();
+        if (now <= saved || body.vitality().dead()) {
+            return BodyMessages.QiInventory.getDefaultInstance();
+        }
+        timeMode = MeridianMessages.TimeAdvanceMode.LIFESPAN_ONLY;
+        BodyMessages.QiInventory released;
+        try {
+            released = advance(now);
+        } finally {
+            timeMode = MeridianMessages.TimeAdvanceMode.ACTIVE;
+        }
+        var resumed = currentBody();
+        if (!resumed.vitality().dead()) {
+            var progress = techniqueProgress();
+            var shifted = progress.toBuilder();
+            progress.getGuardBreakEndsMap().forEach((id, end) -> {
+                if (end > saved) {
+                    shifted.putGuardBreakEnds(id, Math.addExact(now, end - saved));
+                }
+            });
+            var updated = shifted.build();
+            if (!updated.equals(progress)) {
+                var activity = ActivityMessages.BodyActivity.newBuilder()
+                        .putProgress(TechniqueState.KEY, TechniqueState.pack(updated))
+                        .build();
+                guardActivity(UUID.randomUUID().toString(), resumed.revision(), activity);
+            }
+        }
+        return released;
+    }
+
+    private BodyMessages.QiInventory advance(long target) {
+        targetMillis = target;
         BodySnapshot body = currentBody();
         if (body.settledAt().elapsedMillis() >= targetMillis || body.vitality().dead()) {
             return BodyMessages.QiInventory.getDefaultInstance();

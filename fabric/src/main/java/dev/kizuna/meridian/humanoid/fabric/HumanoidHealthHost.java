@@ -39,6 +39,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         BodyMessages.TimeCursor now = HumanoidFabric.now();
         HumanoidBodyState state = bodyState(entity, species, now);
         try {
+            HumanoidTechniqueHost.settleGuardIfNeeded(entity, state);
             state.debugQi(request, now);
         } catch (HumanoidBodyState.HumanoidHealthFailure rejected) {
             return rejected.code();
@@ -150,6 +151,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             var savedBody = new HumanoidBodyState.SavedBody(access.meridian$humanoidSavedOwner(), saved,
                     access.meridian$humanoidSavedReceipts(), access.meridian$humanoidSavedRegionSource());
             created = HumanoidBodyState.restore(entityId, savedBody, now, species);
+            HumanoidTechniqueHost.resumeGuard(entity, created, now.getElapsedMillis());
         } else {
             var region = HumanoidFabric.region(entity);
             long worldSeed = ((ServerLevel) entity.level()).getSeed();
