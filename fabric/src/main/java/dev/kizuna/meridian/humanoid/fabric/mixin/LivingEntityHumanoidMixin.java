@@ -114,7 +114,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     public void meridian$humanoidBody(HumanoidBodyState state) {
         // 宿主完成快照校验后才发布实体级引用。
         meridian$body = state;
-        if (state != null) {
+        if (state != null && meridian$birthPlan != null && !meridian$birthPlan.recordsExplicitEggBirth()) {
             meridian$birthPlan = null;
         }
         meridian$preservedBodyNbt = null;
@@ -249,19 +249,15 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         meridian$beginHumanoidLoading();
         // 26.2 实体存档经 ValueInput 读取；身体仍整体读成复合标签，字段校验沿用标签写法。
         Optional<CompoundTag> saved = input.read("meridian_humanoid", CompoundTag.CODEC);
-        meridian$birthPlan = null;
+        meridian$birthPlan = meridian$readBirthPlan(input);
         if (saved.isEmpty()) {
             if (input.getBooleanOr(meridian$PENDING_VOLUMES, false /* fallback */)) {
                 meridian$awaitingVolumeBirth = true;
             }
-            try {
-                meridian$birthPlan = input.read(meridian$BIRTH_KEY, CompoundTag.CODEC)
-                        .map(HumanoidBirthPlan::load).orElse(null);
-            } catch (IllegalArgumentException | NoSuchElementException invalid) {
-                meridian$LOGGER.warn("实体出生事实无效，按未知来源建身 subject={}",
-                        ((Entity) (Object) this).getStringUUID(), invalid);
-            }
             return;
+        }
+        if (meridian$birthPlan != null && !meridian$birthPlan.recordsExplicitEggBirth()) {
+            meridian$birthPlan = null;
         }
         CompoundTag stored = saved.get();
         meridian$preservedBodyNbt = stored.copy();
@@ -276,6 +272,17 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
                 meridian$LOGGER.error("类人实体身体 NBT 加载失败，保留原始数据 subject={}",
                         entity.getStringUUID(), failure);
             }
+        }
+    }
+
+    @Unique
+    private HumanoidBirthPlan meridian$readBirthPlan(ValueInput input) {
+        try {
+            return input.read(meridian$BIRTH_KEY, CompoundTag.CODEC).map(HumanoidBirthPlan::load).orElse(null);
+        } catch (IllegalArgumentException | NoSuchElementException invalid) {
+            meridian$LOGGER.warn("实体出生事实无效，按未知来源建身 subject={}",
+                    ((Entity) (Object) this).getStringUUID(), invalid);
+            return null;
         }
     }
 

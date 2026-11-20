@@ -3,7 +3,6 @@ package dev.kizuna.meridian.humanoid.fabric;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,12 +22,12 @@ import net.minecraft.world.phys.Vec3;
 /** 刷怪蛋与管理命令共用的指定档位出生入口；登记物种可以提供自己的放置钩子。 */
 public final class HumanoidSpawns {
     private static final Map<HumanoidSpecies, Placement> PLACEMENTS = new ConcurrentHashMap<>();
-    private static final Map<HumanoidSpecies, Supplier<SpawnGroupData>> COMMAND_GROUPS = new ConcurrentHashMap<>();
+    private static final Map<HumanoidSpecies, Supplier<SpawnGroupData>> SPAWN_GROUPS = new ConcurrentHashMap<>();
 
-    /** 指令放置可指定原版生成组数据，例如只生成能被该物种认领的成年个体。 */
+    /** 指令和分档蛋共用物种的原版生成组，例如只生成能被该物种认领的成年个体。 */
     public static void registerCommandGroup(HumanoidSpecies species, Supplier<SpawnGroupData> group) {
-        if (COMMAND_GROUPS.putIfAbsent(species, group) != null) {
-            throw new IllegalStateException("物种的指令生成组已登记：" + species.entityId());
+        if (SPAWN_GROUPS.putIfAbsent(species, group) != null) {
+            throw new IllegalStateException("物种的生成组已登记：" + species.entityId());
         }
     }
 
@@ -58,9 +57,17 @@ public final class HumanoidSpawns {
     }
 
     static Mob spawn(ServerLevel world, Selection selection, Vec3 position, EntitySpawnReason reason) {
-        // 刷怪蛋与测试按选定的物种和变体出生。
-        HumanoidTier tier = HumanoidTier.of(selection.variant());
+        // 刷怪蛋与测试按选定的物种和档位出生。
+        HumanoidTier tier = selection.tier();
         return spawnMob(world, selection.species(), mob -> HumanoidSpeciesBirths.birth(mob, tier), position, reason);
+    }
+
+    public static SpawnGroupData spawnGroup(HumanoidSpecies species) {
+        var factory = SPAWN_GROUPS.get(species);
+        if (factory == null) {
+            return null;
+        }
+        return factory.get();
     }
 
     static LivingEntity command(ServerLevel world, HumanoidSpecies species, Optional<HumanoidTier> tier,
@@ -96,12 +103,14 @@ public final class HumanoidSpawns {
         }
         mob.snapTo(position.x, position.y, position.z, 0, 0);
         SpawnGroupData group = null;
-        var groupFactory = COMMAND_GROUPS.get(species);
-        if (reason == EntitySpawnReason.COMMAND && groupFactory != null) {
-            group = groupFactory.get();
+        if (reason == EntitySpawnReason.COMMAND || reason == EntitySpawnReason.SPAWN_ITEM_USE) {
+            group = spawnGroup(species);
         }
         mob.finalizeSpawn(world, world.getCurrentDifficultyAt(mob.blockPosition()), reason, group);
         if (!HumanoidFabric.isClaimed(mob)) {
+            if (reason == EntitySpawnReason.SPAWN_ITEM_USE) {
+                return null;
+            }
             throw new IllegalStateException("物种未认领此次生成的实体：" + species.entityId());
         }
         mob.setPersistenceRequired();
@@ -118,7 +127,20 @@ public final class HumanoidSpawns {
         return BuiltInRegistries.ENTITY_TYPE.getValue(Identifier.parse(species.entityId()));
     }
 
-    public record Selection(HumanoidSpecies species, HumanoidVariant variant) {
+    public record Selection(HumanoidSpecies species, HumanoidTier tier) {
+        public Selection {
+            Objects.requireNonNull(species, "species");
+            Objects.requireNonNull(tier, "tier");
+        }
+
+        public Selection(HumanoidSpecies species, HumanoidVariant variant) {
+            this(species, HumanoidTier.of(variant));
+        }
+
+        public HumanoidVariant variant() {
+            return tier.variant();
+        }
+
         public EntityType<?> entityType() {
             // 实体仍是原版类型，不注册十四种平行实体身份。
             return HumanoidSpawns.entityType(species);
@@ -127,7 +149,7 @@ public final class HumanoidSpawns {
         public String path() {
             // 物品身份由固定物种与档位组成，原版 give 可直接补全。
             String speciesPath = Identifier.parse(species.entityId()).getPath();
-            return speciesPath + "_" + variant.name().toLowerCase(Locale.ROOT) + "_spawn_egg";
+            return speciesPath + "_" + tier.id() + "_spawn_egg";
         }
     }
 }

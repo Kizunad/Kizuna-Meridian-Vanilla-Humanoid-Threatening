@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
 import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.minecraft.core.Registry;
@@ -11,6 +12,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** 类人专用创造页与十四个分档刷怪蛋。 */
@@ -30,8 +32,7 @@ public final class HumanoidSpawnEggs {
             for (HumanoidVariant variant : HumanoidVariant.values()) {
                 var selection = new HumanoidSpawns.Selection(species, variant);
                 var id = Identifier.fromNamespaceAndPath(NAMESPACE, selection.path());
-                var item = new HumanoidSpawnEggItem(id, selection);
-                Registry.register(BuiltInRegistries.ITEM, id, item);
+                var item = register(id, species, selection.tier());
                 registered.put(id, item);
             }
         }
@@ -44,6 +45,21 @@ public final class HumanoidSpawnEggs {
                 .displayItems((context, entries) -> eggs.values().forEach(entries::accept))
                 .build();
         Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, GROUP_ID, group);
+    }
+
+    /** 在模组初始化中为已登记物种注册一枚蛋，出生使用该物种的工厂和生成组。 */
+    public static HumanoidSpawnEggItem register(Identifier id, HumanoidSpecies species, HumanoidTier tier) {
+        return register(id, species, tier, List.of());
+    }
+
+    public static HumanoidSpawnEggItem register(Identifier id, HumanoidSpecies species, HumanoidTier tier,
+                                                 List<Component> tooltip) {
+        if (HumanoidSpecies.fromEntityId(species.entityId()).orElse(null) != species) {
+            throw new IllegalArgumentException("未登记的刷怪蛋物种：" + species.entityId());
+        }
+        var selection = new HumanoidSpawns.Selection(species, tier);
+        var item = new HumanoidSpawnEggItem(id, selection, tooltip);
+        return Registry.register(BuiltInRegistries.ITEM, id, item);
     }
 
     public static Map<Identifier, HumanoidSpawnEggItem> eggs() {

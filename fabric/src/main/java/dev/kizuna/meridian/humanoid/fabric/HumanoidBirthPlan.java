@@ -32,6 +32,24 @@ public record HumanoidBirthPlan(Spawn spawn, Optional<HumanoidTier> selected) {
         access.meridian$birthPlan(new HumanoidBirthPlan(spawn, selected));
     }
 
+    public static void captureSpawner(Mob mob, DifficultyInstance difficulty, HumanoidTier tier) {
+        var access = (HumanoidEntityAccess) mob;
+        if (access.meridian$humanoidSavedBody() != null || access.meridian$humanoidBody() != null) {
+            return;
+        }
+        HumanoidSpeciesHooks.claimed(mob).ifPresent(species -> {
+            var choice = Optional.of(tier);
+            var spawn = new Spawn(species.entityId(), EntitySpawnReason.SPAWNER.name(),
+                    difficulty.getEffectiveDifficulty(), choice);
+            access.meridian$birthPlan(new HumanoidBirthPlan(spawn, choice));
+        });
+    }
+
+    public boolean recordsExplicitEggBirth() {
+        return spawn.requested().isPresent() && (spawn.reason().equals(EntitySpawnReason.SPAWN_ITEM_USE.name())
+                || spawn.reason().equals(EntitySpawnReason.SPAWNER.name()));
+    }
+
     static HumanoidBirthPlan unknown(HumanoidSpecies species) {
         var spawn = new Spawn(species.entityId(), "UNKNOWN", 0, Optional.empty());
         return new HumanoidBirthPlan(spawn, Optional.empty());

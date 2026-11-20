@@ -18,8 +18,10 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -32,6 +34,9 @@ import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -57,6 +62,8 @@ public final class HumanoidSpawnGameTest {
     private static final String BODY_STATUS = "meridian body status ";
     private static final String TECHNIQUE_PREFIX = "meridian_door_breaker:";
     private static final int COMMAND_FAILED = 0;
+    private static final int SPAWNER_RANGE = 4;
+    private static final int SPAWNER_ATTEMPTS = 64;
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void humanoidCreativeGroupContainsFourteenEggsSeparateFromScrolls(GameTestHelper context) {
@@ -68,7 +75,9 @@ public final class HumanoidSpawnGameTest {
         group.buildContents(display);
         var eggs = HumanoidSpawnEggs.eggs();
         context.assertTrue(eggs.size() == EGG_COUNT, "类人蛋数量不是十四个");
-        context.assertTrue(itemIds(group.getDisplayItems()).equals(eggs.keySet()), "类人栏展示内容错误");
+        var displayed = group.getDisplayItems().stream()
+                .map(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem())).toList();
+        context.assertTrue(displayed.equals(List.copyOf(eggs.keySet())), "类人栏展示内容或顺序错误");
         context.assertTrue(itemIds(group.getSearchTabDisplayItems()).equals(eggs.keySet()), "类人栏搜索内容错误");
         var techniqueGroup = TechniqueScrollItems.group();
         techniqueGroup.buildContents(display);
@@ -77,6 +86,71 @@ public final class HumanoidSpawnGameTest {
         context.assertTrue(SpawnEggItem.byId(EntityTypes.VINDICATOR).map(Holder::value)
                         .filter(Items.VINDICATOR_SPAWN_EGG::equals).isPresent(), "分档蛋覆盖了原版卫道士刷怪蛋");
         context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void humanoidEggRetargetsSpawnerWithExplicitRank(GameTestHelper context) {
+        var world = context.getLevel();
+        var pos = context.absolutePos(new BlockPos(POSITION, POSITION, POSITION));
+        var player = context.makeMockServerPlayerInLevel();
+        var rules = world.getGameRules();
+        boolean wasEnabled = rules.get(GameRules.SPAWNER_BLOCKS_WORK);
+        try {
+            rules.set(GameRules.SPAWNER_BLOCKS_WORK, true /* enabled */, world.getServer());
+            player.setGameMode(GameType.SURVIVAL);
+            player.setPos(Vec3.atCenterOf(pos.east(SPAWNER_RANGE)));
+            world.setBlockAndUpdate(pos, Blocks.SPAWNER.defaultBlockState());
+            var cage = (SpawnerBlockEntity) world.getBlockEntity(pos);
+            var egg = new HumanoidSpawns.Selection(HumanoidSpecies.VINDICATOR, HumanoidTier.TRUE_QI);
+            var id = Identifier.fromNamespaceAndPath(HumanoidSpawnEggs.NAMESPACE, egg.path());
+            var stack = new ItemStack(HumanoidSpawnEggs.eggs().get(id));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            var hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false /* insideBlock */);
+            var result = stack.useOn(new UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+            context.assertTrue(result == InteractionResult.SUCCESS && stack.isEmpty(), "生人分档蛋未改笼");
+            assertSpawnerBirth(context, cage);
+        } finally {
+            rules.set(GameRules.SPAWNER_BLOCKS_WORK, wasEnabled, world.getServer());
+            world.getServer().getPlayerList().remove(player);
+        }
+        context.succeed();
+    }
+
+    private static void assertSpawnerBirth(GameTestHelper context, SpawnerBlockEntity cage) {
+        var world = context.getLevel();
+        var pos = cage.getBlockPos();
+        var area = new AABB(pos).inflate(SPAWNER_RANGE);
+        context.assertTrue(world.getEntitiesOfClass(Vindicator.class, area, Vindicator::isAlive).isEmpty(),
+                "生人蛋改笼时直接生成了卫道士");
+        var saved = cage.saveWithoutMetadata(world.registryAccess());
+        saved.putShort("Delay", (short) 0);
+        saved.putInt("SpawnCount", 1);
+        saved.getCompound("SpawnData").orElseThrow().put("custom_spawn_rules", new CompoundTag());
+        var input = TagValueInput.create(ProblemReporter.DISCARDING, world.registryAccess(), saved);
+        cage.loadWithComponents(input);
+        for (int attempt = 0; attempt < SPAWNER_ATTEMPTS; attempt++) {
+            cage.getSpawner().serverTick(world, pos);
+            var mobs = world.getEntitiesOfClass(Vindicator.class, area, Vindicator::isAlive);
+            if (mobs.size() == 1) {
+                var mob = mobs.getFirst();
+                try {
+                    var access = (HumanoidEntityAccess) mob;
+                    var plan = access.meridian$birthPlan();
+                    context.assertTrue(plan != null, "生人笼缺出生事实");
+                    var spawn = plan.spawn();
+                    context.assertTrue(spawn.reason().equals(EntitySpawnReason.SPAWNER.name()), "生人笼出生来路错误");
+                    context.assertTrue(spawn.requested().orElse(null) == HumanoidTier.TRUE_QI,
+                            "生人笼缺指定出生档位");
+                    var body = HumanoidHealthHost.bodyState(mob, HumanoidSpecies.VINDICATOR, HumanoidFabric.now())
+                            .snapshot();
+                    context.assertTrue(HumanoidTier.of(body) == HumanoidTier.TRUE_QI, "卫道士档位错误");
+                    return;
+                } finally {
+                    mob.discard();
+                }
+            }
+        }
+        context.fail("改过的刷怪笼未产出卫道士");
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
