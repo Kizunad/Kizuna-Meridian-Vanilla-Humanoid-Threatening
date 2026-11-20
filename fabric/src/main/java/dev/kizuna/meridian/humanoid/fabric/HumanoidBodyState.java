@@ -227,7 +227,10 @@ public final class HumanoidBodyState {
                 || !domain.equals(now.getDomain()) || !epoch.equals(now.getEpoch())) {
             throw new IllegalArgumentException("类人实体身体时钟域不匹配");
         }
-        return new HumanoidBodyState(body, List.copyOf(receipts), saved.regionSource(), now.getElapsedMillis(), species);
+        // 登记方可更新旧身体的物种参数；回执与区域来源仍沿用这份存档。
+        var restored = species.bodyRules().restore().apply(body);
+        return new HumanoidBodyState(restored, List.copyOf(receipts), saved.regionSource(),
+                now.getElapsedMillis(), species);
     }
 
     private static BodyMessages.BodySnapshot decodeBody(byte[] bodyBytes) {

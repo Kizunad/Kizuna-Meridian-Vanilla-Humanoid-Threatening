@@ -6,13 +6,19 @@ import dev.kizuna.meridian.protocol.pb.HealthMessages.DamageResolution;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
+import java.util.function.UnaryOperator;
 
 /** 空的办法分别沿用人体生成器和物种表里的死亡规则。 */
-public record SpeciesBodyRules(BirthFactory birth, DeathVerdict death, SpawnRoll spawnRoll) {
+public record SpeciesBodyRules(BirthFactory birth, DeathVerdict death, SpawnRoll spawnRoll,
+                               UnaryOperator<BodySnapshot> restore) {
     public static final SpeciesBodyRules DEFAULT = new SpeciesBodyRules(null, null);
 
     public SpeciesBodyRules(BirthFactory birth, DeathVerdict death) {
         this(birth, death, null);
+    }
+
+    public SpeciesBodyRules(BirthFactory birth, DeathVerdict death, SpawnRoll spawnRoll) {
+        this(birth, death, spawnRoll, UnaryOperator.identity());
     }
 
     public interface Region {
