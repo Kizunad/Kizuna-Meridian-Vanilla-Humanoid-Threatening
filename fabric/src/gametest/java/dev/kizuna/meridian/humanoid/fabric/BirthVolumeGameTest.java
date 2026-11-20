@@ -133,7 +133,8 @@ public final class BirthVolumeGameTest {
         try {
             use(original, ALWAYS_FIST);
             var first = born(context);
-            var expected = new BirthVolumes(HumanoidTier.WANDERING_QI, List.of(FIST), BirthVolumes.Equipment.PENDING);
+            var expected = new BirthVolumes(HumanoidTier.WANDERING_QI, List.of(FIST),
+                    BirthVolumes.Equipment.NOT_REQUIRED);
             context.assertTrue(expected.equals(((HumanoidEntityAccess) first).meridian$birthVolumes()), "出生未选外家");
             context.assertTrue(knows(first, AXE) && knows(first, FIST), "同一身体缺本系或外来卷");
             context.assertTrue(first.getMainHandItem().isEmpty(), "外卷授予修改了原有空手");
@@ -224,7 +225,7 @@ public final class BirthVolumeGameTest {
         return known.containsAll(registry.findVolume(volume).orElseThrow().getTechniquesList());
     }
 
-    private static void use(HumanoidBrainConfig original, VolumePool pool) {
+    static void use(HumanoidBrainConfig original, VolumePool pool) {
         var config = new HumanoidBrainConfig(original.schedule(), original.threat(), original.assessment(),
                 original.response(), original.volumes(), original.concurrency(), original.villager(), pool);
         HumanoidBrain.configure(config);

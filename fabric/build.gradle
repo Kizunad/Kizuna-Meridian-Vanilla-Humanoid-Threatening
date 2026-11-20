@@ -20,6 +20,7 @@ dependencies {
     implementation 'dev.kizuna.meridian:fabric'
     // 类人身体快照登记为 Human 的 /meridian body status 视图；只在编译期取 Human Fabric 模块本身，运行时由完整装配装入。
     compileOnly('dev.kizuna.meridian.human:fabric') { transitive = false }
+    compileOnly('dev.kizuna.meridian.inventory:fabric') { transitive = false }
 
     implementation project(':server')
     // 出身附属是硬依赖：招敌引擎登记出身的仇家威胁类型；运行时由完整装配装入。

@@ -158,8 +158,9 @@ public final class HumanoidGameTest {
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
     public void firstQueryCreatesBodyAndHumanUnboundDoesNotCreateOne(GameTestHelper context) throws Exception {
-        // 首次查询负责创建，缺少区域服务时不能留下半创建状态。
-        LivingEntity fresh = context.spawn(EntityTypes.VILLAGER, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        // 无出生资格的旧实体仍由首次查询建身，缺区域服务时不能留下半创建状态。
+        var firstPos = new BlockPos(SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity fresh = loadedVillager(context, firstPos);
         disableAi(fresh);
         context.assertTrue(((HumanoidEntityAccess) fresh).meridian$humanoidBody() == null,
                 "健康查询前不应预先创建身体");
@@ -167,10 +168,16 @@ public final class HumanoidGameTest {
         context.assertTrue(created.hasBody(), "首次健康查询未创建身体 response=" + created
                 + " ready=" + HumanoidFabric.isReady());
 
-        LivingEntity blocked = context.spawn(EntityTypes.VILLAGER, SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        var secondPos = new BlockPos(SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        LivingEntity blocked = loadedVillager(context, secondPos);
         disableAi(blocked);
         Object delegate = setHumanDelegate(null);
+        Villager deferred;
         try {
+            deferred = context.spawn(EntityTypes.VILLAGER, secondPos, EntitySpawnReason.NATURAL);
+            disableAi(deferred);
+            context.assertTrue(((HumanoidEntityAccess) deferred).meridian$awaitingVolumeBirth(),
+                    "区域不可用时出生资格被消耗");
             HealthHostMessages.HealthHostResponse response = inspect(blocked);
             context.assertTrue(response.hasFailure()
                             && response.getFailure().getCode() == MeridianMessages.FailureCode.ENVIRONMENT_UNAVAILABLE,
@@ -180,7 +187,11 @@ public final class HumanoidGameTest {
         } finally {
             restoreHumanDelegate(delegate);
         }
-        context.succeed();
+        context.succeedWhen(() -> {
+            var access = (HumanoidEntityAccess) deferred;
+            context.assertTrue(access.meridian$birthVolumes() != null && !access.meridian$awaitingVolumeBirth(),
+                    "区域恢复后没有自动完成出生");
+        });
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
@@ -566,9 +577,9 @@ public final class HumanoidGameTest {
     }
 
     private static Villager strikeUnboundVillager(GameTestHelper context) {
-        // 不查询健康宿主，确保无身体村民仍能执行原版女巫转化。
-        Villager villager = (Villager) context.spawn(EntityTypes.VILLAGER,
-                SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        // 读档后尚未建身的村民仍能执行原版女巫转化。
+        var position = new BlockPos(SECOND_SPAWN_X, SPAWN_Y, SPAWN_Z);
+        Villager villager = loadedVillager(context, position);
         disableAi(villager);
         HumanoidEntityAccess access = (HumanoidEntityAccess) villager;
         context.assertTrue(access.meridian$humanoidBody() == null, "雷击前无身体村民被提前创建了身体");
@@ -576,6 +587,15 @@ public final class HumanoidGameTest {
         context.assertTrue(villager.isRemoved(), "无身体村民雷击后没有按原版移除");
         context.assertTrue(access.meridian$humanoidBody() == null && !access.meridian$humanoidReleaseQueued(),
                 "无身体村民雷击时错误创建或释放了身体");
+        return villager;
+    }
+
+    private static Villager loadedVillager(GameTestHelper context, BlockPos position) {
+        // 原版 GameTest 生成器始终以 STRUCTURE 创建实体，只把指定原因传给 finalizeSpawn。
+        var level = context.getLevel();
+        var villager = EntityTypes.VILLAGER.create(level, EntitySpawnReason.LOAD);
+        villager.snapTo(context.absolutePos(position), 0, 0);
+        context.assertTrue(level.addFreshEntity(villager), "旧村民没有加入世界");
         return villager;
     }
 

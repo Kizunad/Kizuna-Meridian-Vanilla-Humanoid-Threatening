@@ -6,7 +6,7 @@ def reproClasses = [
                'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
                'HumanoidWitchVanillaGameTest',
                'HumanoidTechniqueGameTest', 'HumanoidLeapEstimateGameTest',
-               'HumanoidBrainGameTest', 'HumanoidSpawnGameTest', 'BirthVolumeGameTest',
+               'HumanoidBrainGameTest', 'HumanoidSpawnGameTest', 'BirthVolumeGameTest', 'BirthEquipmentGameTest',
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
                'HumanoidPeddlerGameTest', 'HumanoidLimbStrikeGameTest', 'HumanoidTierTagGameTest',
                'HumanoidDutyGameTest', 'HumanoidGuardGameTest', 'HumanoidGuardStaminaGameTest',
@@ -20,6 +20,9 @@ def reproClasses = [
                'HumanoidCrisisOutcomeGameTest', 'HumanoidCrisisOmenGameTest', 'HumanoidVolumeSourcesGameTest'],
         species: ['SpeciesHookGameTest'],
         pool: ['BirthVolumeGameTest'],
+        equipment: ['BirthEquipmentGameTest'],
+        'equipment-save': ['BirthEquipmentRestartGameTest'],
+        'equipment-load': ['BirthEquipmentRestartGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
         cache: ['HumanoidBodyCacheGameTest'],
         // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。
@@ -41,6 +44,9 @@ if (reproMode != 'full') {
 }
 if (reproMode.startsWith('release-')) {
     reproRunDirectory = 'build/repro-release'
+}
+if (reproMode in ['equipment-save', 'equipment-load']) {
+    reproRunDirectory = 'build/repro-equipment-restart'
 }
 def isolatedRunDirectory = providers.gradleProperty('gametestRunDir')
 if (isolatedRunDirectory.isPresent()) {

@@ -25,6 +25,7 @@
     "fabric-api": "*",
     "kizuna_players_animation_mobs": "*",
     "meridian_framework": "*",
+    "meridian_mob_inventory": "*",
     "meridian_human_host": "*",
     "meridian_brewing": "*",
     "meridian_burden": "*",

@@ -18,7 +18,7 @@ import net.minecraft.world.entity.LivingEntity;
 /** 同一具新身体只决定一次的外卷和配装进度。空卷也有明确的出生档位。 */
 public record BirthVolumes(HumanoidTier tier, List<String> volumes, Equipment equipment) {
     private static final Codec<List<String>> VOLUMES = Codec.STRING.listOf();
-    public enum Equipment { NONE, PENDING }
+    public enum Equipment { NONE, PENDING, NOT_REQUIRED, ALREADY_CARRIED, PACKED, NO_ROOM, NO_MATCH }
 
     public BirthVolumes {
         volumes = List.copyOf(volumes);

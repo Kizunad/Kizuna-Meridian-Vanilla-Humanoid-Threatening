@@ -123,14 +123,25 @@ public final class HumanoidBrainConfigLoader {
             source = TOML.parse(TOML.resource(DEFAULT_RESOURCE));
         }
         var table = TOML.table(source, POOL, POOL);
-        TOML.checkKeys(table, Set.of("wandering_chance", "true_chance", "middle_chance", "books"), POOL);
+        TOML.checkKeys(table, Set.of("wandering_chance", "true_chance", "middle_chance", "books",
+                "wandering_iron_chance", "diamond_chance"), POOL);
         var books = TOML.table(table, "books", POOL + ".books");
         var entries = new ArrayList<VolumePool.Book>();
         for (String id : books.keySet()) {
             entries.add(poolBook(id, TOML.table(books, id, POOL + ".books." + id)));
         }
+        var defaults = VolumePool.Materials.DEFAULT;
+        var materials = new VolumePool.Materials(poolChance(table, "wandering_iron_chance",
+                defaults.wanderingIronChance()), poolChance(table, "diamond_chance", defaults.diamondChance()));
         return new VolumePool(ratio(table, "wandering_chance", POOL), ratio(table, "true_chance", POOL),
-                ratio(table, "middle_chance", POOL), entries);
+                ratio(table, "middle_chance", POOL), entries, materials);
+    }
+
+    private static double poolChance(TomlTable table, String key, double defaultValue) {
+        if (!table.contains(key)) {
+            return defaultValue;
+        }
+        return ratio(table, key, POOL);
     }
 
     private static VolumePool.Book poolBook(String id, TomlTable table) {

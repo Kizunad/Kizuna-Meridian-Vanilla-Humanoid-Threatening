@@ -90,6 +90,9 @@ kick_start_distance = 3.0      # 腿法走到这么近才起脚（格）；腿�
 wandering_chance = 0.20
 true_chance = 0.40
 middle_chance = 0.50
+# 需要分材质的兵器先掷钻石；余下的真炁取铁，游炁按此概率取铁，其余取石。
+diamond_chance = 0.005
+wandering_iron_chance = 0.50
 
 # 每部书只占一份权重。先在身体能用的书里选书，再在这本书能用的入门卷里挑一卷。
 [volume_pool.books."meridian_wayfarer:wayfarer"]

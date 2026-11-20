@@ -10,7 +10,14 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 /** 出生外卷的加权书目。只在合用的书之间比权重，同书的两种入门卷平分该书的机会。 */
-public record VolumePool(double wanderingChance, double trueChance, double middleChance, List<Book> books) {
+public record VolumePool(double wanderingChance, double trueChance, double middleChance, List<Book> books,
+                         Materials materials) {
+    public record Materials(double wanderingIronChance, double diamondChance) {
+        private static final double DEFAULT_WANDERING_IRON_CHANCE = 0.50;
+        private static final double DEFAULT_DIAMOND_CHANCE = 0.005;
+        static final Materials DEFAULT = new Materials(DEFAULT_WANDERING_IRON_CHANCE, DEFAULT_DIAMOND_CHANCE);
+    }
+
     public static final VolumePool DISABLED = new VolumePool(0, 0, 0, List.of());
 
     public record Book(String id, String nativeSpecies, int weight, List<String> upper, Optional<String> middle) {
@@ -21,6 +28,10 @@ public record VolumePool(double wanderingChance, double trueChance, double middl
 
     public VolumePool {
         books = books.stream().sorted(Comparator.comparing(Book::id)).toList();
+    }
+
+    public VolumePool(double wanderingChance, double trueChance, double middleChance, List<Book> books) {
+        this(wanderingChance, trueChance, middleChance, books, Materials.DEFAULT);
     }
 
     public List<String> draw(UUID entity, String species, HumanoidTier tier, Predicate<String> usable) {
@@ -62,7 +73,7 @@ public record VolumePool(double wanderingChance, double trueChance, double middl
         return List.copyOf(volumes);
     }
 
-    private static double sample(UUID entity, String key) {
+    public static double sample(UUID entity, String key) {
         // 分开抽命中、书、入门卷和进阶，不推进身体生成器的随机序列。
         var bytes = (entity + "/" + key).getBytes(StandardCharsets.UTF_8);
         long seed = UUID.nameUUIDFromBytes(bytes).getMostSignificantBits();

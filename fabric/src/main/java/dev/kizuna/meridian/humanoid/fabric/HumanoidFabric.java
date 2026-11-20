@@ -61,6 +61,7 @@ public final class HumanoidFabric implements ModInitializer {
     public void onInitialize() {
         // 内容目录在服务端启动时固定；缺少 Human 或 Qi-Variants 登记会直接阻止接线。
         HumanoidSpawnEggs.register();
+        BirthEquipment.initialize();
         var configDirectory = FabricLoader.getInstance().getConfigDir();
         config = HumanoidConfigLoader.load(configDirectory.resolve("meridian-humanoid.toml"));
         var brainConfig = HumanoidBrainConfigLoader.load(configDirectory.resolve("meridian-humanoid-brain.toml"));

@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.human.fabric.HumanProjectileItems;
+import dev.kizuna.meridian.inventory.MobInventories;
 import dev.kizuna.meridian.technique.fabric.world.TechniqueWorldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.HeldItems;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ProjectileWeaponCategory;
@@ -28,6 +29,11 @@ final class HumanoidWayfarerWeapons {
         // 只在新身体出生时补一把弓，读档不会重复补发，也不覆盖原版库存物品。
         if (!(entity instanceof Pillager pillager) || tier != HumanoidTier.TRUE_QI
                 || holds(pillager, BOWS) || reserve(pillager, BOWS).isPresent()) {
+            return;
+        }
+        var pack = MobInventories.state(pillager);
+        if (pack.diagnostic().isPresent() || pack.inventory().snapshot().stream()
+                .anyMatch(stack -> HumanProjectileItems.category(stack) == BOWS)) {
             return;
         }
         var inventory = pillager.getInventory();
