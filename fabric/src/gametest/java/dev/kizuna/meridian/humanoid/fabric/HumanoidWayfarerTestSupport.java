@@ -53,6 +53,8 @@ final class HumanoidWayfarerTestSupport {
     static Pillager pillager(GameTestHelper context, HumanoidTier tier) {
         // 加入世界前固定档位；用原版主手弩启动，备用弓走正式出生挂点。
         Pillager mob = EntityTypes.PILLAGER.create(context.getLevel(), EntitySpawnReason.COMMAND);
+        // 行矢专用夹具只比较本系招式，额外功法会改变同一局势的候选和权重。
+        ((HumanoidEntityAccess) mob).meridian$skipVolumeBirth();
         Vec3 position = Vec3.atBottomCenterOf(context.absolutePos(new BlockPos(ORIGIN, ORIGIN, ORIGIN)));
         mob.snapTo(position.x, position.y, position.z, 0, 0);
         mob.setNoAi(true /* aiDisabled */);

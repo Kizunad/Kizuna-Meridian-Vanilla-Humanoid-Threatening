@@ -86,6 +86,40 @@ kick_start_distance = 3.0      # 腿法走到这么近才起脚（格）；腿�
 # 卷可以来自任何已安装的功法目录；七种原版类人必须全部出现，也可加其他实体 ID。
 # 概率按实体 UUID 与卷 ID 确定性分桶，同一实体每次分配结果相同。
 
+[volume_pool]
+wandering_chance = 0.20
+true_chance = 0.40
+middle_chance = 0.50
+
+# 每部书只占一份权重。先在身体能用的书里选书，再在这本书能用的入门卷里挑一卷。
+[volume_pool.books."meridian_wayfarer:wayfarer"]
+native = "minecraft:pillager"
+weight = 1
+upper = ["meridian_wayfarer:bow_upper", "meridian_wayfarer:crossbow"]
+
+[volume_pool.books."meridian_door_breaker:door_breaker"]
+native = "minecraft:vindicator"
+weight = 1
+upper = ["meridian_door_breaker:upper"]
+middle = "meridian_door_breaker:middle"
+
+[volume_pool.books."meridian_evoker:five_organs"]
+native = "minecraft:evoker"
+weight = 1
+upper = ["meridian_evoker:nourish"]
+middle = "meridian_evoker:infuse"
+
+[volume_pool.books."meridian_peddler:legwork"]
+native = "minecraft:wandering_trader"
+weight = 1
+upper = ["meridian_peddler:road"]
+middle = "meridian_peddler:ambush"
+
+[volume_pool.books."meridian_villager:sleeve_fist"]
+native = "minecraft:villager"
+weight = 1
+upper = ["meridian_villager:outer"]
+
 [volumes."minecraft:villager"]
 wandering_qi = [
   { volume = "meridian_basic_techniques:breath_volume", chance = 1.0 },

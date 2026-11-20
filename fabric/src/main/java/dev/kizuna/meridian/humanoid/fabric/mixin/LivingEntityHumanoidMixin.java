@@ -1,10 +1,13 @@
 package dev.kizuna.meridian.humanoid.fabric.mixin;
 
+import dev.kizuna.meridian.humanoid.fabric.BirthVolumes;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBodyState;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidBirthPlan;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidEntityAccess;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidFabric;
 import dev.kizuna.meridian.humanoid.fabric.HumanoidWitchHands;
+import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.damagesource.DamageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +37,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private static final Logger meridian$LOGGER = LoggerFactory.getLogger("meridian_humanoid_host");
     @Unique private HumanoidBodyState meridian$body;
     @Unique private HumanoidBirthPlan meridian$birthPlan;
+    @Unique private BirthVolumes meridian$birthVolumes;
+    @Unique private boolean meridian$awaitingVolumeBirth = true;
+    @Unique private static final String meridian$PENDING_VOLUMES = "meridian_humanoid_pending_volumes";
     @Unique private static final String meridian$BIRTH_KEY = "meridian_humanoid_birth";
     @Unique private byte[] meridian$savedBody;
     @Unique private byte[][] meridian$savedReceipts = new byte[0][];
@@ -44,6 +50,27 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private boolean meridian$loadFailed;
     @Unique private boolean meridian$loadFailureLogged;
     @Unique private boolean meridian$releaseQueued;
+
+    @Override
+    public boolean meridian$awaitingVolumeBirth() {
+        return meridian$awaitingVolumeBirth;
+    }
+
+    @Override
+    public void meridian$skipVolumeBirth() {
+        meridian$awaitingVolumeBirth = false;
+    }
+
+    @Override
+    public BirthVolumes meridian$birthVolumes() {
+        return meridian$birthVolumes;
+    }
+
+    @Override
+    public void meridian$birthVolumes(BirthVolumes volumes) {
+        meridian$birthVolumes = volumes;
+        meridian$awaitingVolumeBirth = false;
+    }
 
     @Inject(method = "die", at = @At("HEAD"))
     private void meridian$restoreWitchHand(DamageSource source, CallbackInfo callback) {
@@ -203,6 +230,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         stored.putByteArray("body", body);
         stored.store("owner_uuid", UUIDUtil.CODEC, ownerId);
         stored.putString("region_source", regionSource);
+        if (meridian$birthVolumes != null) {
+            stored.put("volume_grant", meridian$birthVolumes.save());
+        }
         ListTag receiptList = new ListTag();
         for (byte[] receipt : receipts) {
             receiptList.add(new ByteArrayTag(receipt));
@@ -219,6 +249,9 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         Optional<CompoundTag> saved = input.read("meridian_humanoid", CompoundTag.CODEC);
         meridian$birthPlan = null;
         if (saved.isEmpty()) {
+            if (input.getBooleanOr(meridian$PENDING_VOLUMES, false /* fallback */)) {
+                meridian$awaitingVolumeBirth = true;
+            }
             try {
                 meridian$birthPlan = input.read(meridian$BIRTH_KEY, CompoundTag.CODEC)
                         .map(HumanoidBirthPlan::load).orElse(null);
@@ -257,8 +290,14 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         }
         byte[][] savedReceipts = meridian$readReceipts(stored);
         UUID savedOwner = meridian$readOwner(stored);
+        BirthVolumes savedGrant = null;
+        if (stored.contains("volume_grant")) {
+            savedGrant = BirthVolumes.load(stored.getCompound("volume_grant").orElseThrow());
+        }
 
         // 所有必需字段通过校验后才更新实体缓存，坏档不能留下半恢复状态。
+        meridian$awaitingVolumeBirth = false;
+        meridian$birthVolumes = savedGrant;
         meridian$body = null;
         meridian$savedBody = savedBody;
         meridian$savedReceipts = savedReceipts;
@@ -321,6 +360,13 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         // 快照与回执同属实体复合标签，确保区块卸载不会只保存一半身体。
         // 26.2 实体存档经 ValueOutput 写入；先组成与旧版相同的复合标签，再整体存入同一个键。
         CompoundTag holder = new CompoundTag();
+        if (meridian$awaitingVolumeBirth && meridian$body == null && meridian$savedBody == null) {
+            Entity entity = (Entity) (Object) this;
+            String id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+            if (HumanoidSpecies.fromEntityId(id).filter(HumanoidSpecies.values()::contains).isPresent()) {
+                output.putBoolean(meridian$PENDING_VOLUMES, true /* awaitingBirth */);
+            }
+        }
         if (meridian$birthPlan != null) {
             output.store(meridian$BIRTH_KEY, CompoundTag.CODEC, meridian$birthPlan.save());
         }

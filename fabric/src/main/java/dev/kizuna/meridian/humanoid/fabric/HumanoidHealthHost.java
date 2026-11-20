@@ -159,6 +159,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             var subject = new HumanoidBodyState.BirthSubject(species, entityId, tagged,
                     HumanoidBodyState.BirthGrade.ORDINARY, plan);
             created = HumanoidBodyState.born(subject, worldSeed, region, now);
+            BirthVolumes.select(entity, species, created);
             HumanoidWayfarerWeapons.equipAtBirth(entity, HumanoidTier.of(created.snapshot()));
         }
         access.meridian$humanoidBody(created);

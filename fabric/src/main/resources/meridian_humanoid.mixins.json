@@ -6,6 +6,6 @@
     "MobTechniqueMixin", "VillagerHumanoidBrainMixin", "BrainHumanoidInvoker", "PanicTaskHumanoidMixin",
     "LivingEntityWayfarerUseMixin", "PillagerWayfarerAttackMixin", "MeleeTempoMixin", "RangedTempoMixin",
     "CrossbowTempoMixin", "WitchUseMixin", "SpellcasterSpellGoalMixin", "EvokerWololoGoalMixin",
-    "ServerPlayerCrisisMixin", "VillagerOriginStandingMixin"],
+    "ServerPlayerCrisisMixin", "VillagerOriginStandingMixin", "EntityTypeVolumeBirthMixin"],
   "injectors": {"defaultRequire": 1}
 }

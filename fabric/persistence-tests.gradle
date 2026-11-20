@@ -6,7 +6,7 @@ def reproClasses = [
                'HumanoidWitchDecisionGameTest', 'HumanoidWitchLifecycleGameTest', 'HumanoidWitchRaidGameTest',
                'HumanoidWitchVanillaGameTest',
                'HumanoidTechniqueGameTest', 'HumanoidLeapEstimateGameTest',
-               'HumanoidBrainGameTest', 'HumanoidSpawnGameTest',
+               'HumanoidBrainGameTest', 'HumanoidSpawnGameTest', 'BirthVolumeGameTest',
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
                'HumanoidPeddlerGameTest', 'HumanoidLimbStrikeGameTest', 'HumanoidTierTagGameTest',
                'HumanoidDutyGameTest', 'HumanoidGuardGameTest',
@@ -19,6 +19,7 @@ def reproClasses = [
                'HumanoidCrisisFeudGameTest', 'HumanoidOriginTalentGameTest', 'HumanoidCrisisRaidGameTest',
                'HumanoidCrisisOutcomeGameTest', 'HumanoidCrisisOmenGameTest', 'HumanoidVolumeSourcesGameTest'],
         species: ['SpeciesHookGameTest'],
+        pool: ['BirthVolumeGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
         cache: ['HumanoidBodyCacheGameTest'],
         // 性能基准单独跑，不进常规回归：20 只类人混战，量每 tick 耗时。

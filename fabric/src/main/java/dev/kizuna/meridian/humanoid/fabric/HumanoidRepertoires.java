@@ -369,6 +369,19 @@ final class HumanoidRepertoires {
         return ready;
     }
 
+    static boolean combatAtBirth(BodySnapshot body, TechniqueDefinition definition) {
+        // 训练式不能使一部外卷入池。物品在选卷后另配，身体须能支付实际战斗式或辅助式。
+        var hints = definition.getAiHints();
+        if (TechniqueSelector.isOrdinarySupport(definition)) {
+            return true;
+        }
+        if (definition.getId().startsWith(PEDDLER_PREFIX)
+                && HumanoidFighters.unhurtLegForceNewtons(body) < PEDDLER_MINIMUM_LEG_FORCE) {
+            return false;
+        }
+        return hints.getCategoryWeight().getValue() > 0 && firstStrike(definition).isPresent();
+    }
+
     static boolean payable(BodySnapshot body, TechniqueDefinition definition, TechniqueBinding binding) {
         // 读候选共用的身体预检：真元付得起，组织和器官也做得了这一式的功；
         // 腿肌累了出不了功的式不进候选，免得照选照失败、攒够连续失败次数被暂停。

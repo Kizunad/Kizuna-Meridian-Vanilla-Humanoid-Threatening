@@ -5,7 +5,7 @@ import java.util.Map;
 /** 类人大脑配置：决策节奏、敌意记忆、威胁评估、应对阈值与学卷表。 */
 public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,
                                   ResponseRules response, VolumeTable volumes, ConcurrencyRules concurrency,
-                                  VillagerRules villager) {
+                                  VillagerRules villager, VolumePool volumePool) {
     /** 决策是否逐条写日志。 */
     public enum DecisionLog { QUIET, VERBOSE }
 
@@ -82,7 +82,13 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
 
     public HumanoidBrainConfig withVolumes(VolumeTable next) {
         // 其余各节不动，只换学卷表。
-        return new HumanoidBrainConfig(schedule, threat, assessment, response, next, concurrency, villager);
+        return new HumanoidBrainConfig(schedule, threat, assessment, response, next, concurrency, villager, volumePool);
+    }
+
+    public HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,
+                               ResponseRules response, VolumeTable volumes, ConcurrencyRules concurrency,
+                               VillagerRules villager) {
+        this(schedule, threat, assessment, response, volumes, concurrency, villager, VolumePool.DISABLED);
     }
 
     public HumanoidBrainConfig(Schedule schedule, ThreatRules threat, AssessmentRules assessment,

@@ -144,6 +144,7 @@ public final class HumanoidFabric implements ModInitializer {
         var volumes = HumanoidBrain.config().volumes();
         volumes.requireInstalled(volume -> registry.findVolume(volume).isPresent());
         volumes.requireOrdered(volume -> registry.findVolume(volume).orElseThrow().getPrerequisiteVolumeIdsList());
+        BirthVolumes.validate(HumanoidBrain.config().volumePool(), registry);
         OriginTalents.requireVolumes();
         volumesChecked = true;
     }

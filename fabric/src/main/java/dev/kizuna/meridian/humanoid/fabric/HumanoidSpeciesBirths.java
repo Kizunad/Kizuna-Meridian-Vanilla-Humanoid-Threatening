@@ -47,6 +47,7 @@ public final class HumanoidSpeciesBirths {
         var subject = new HumanoidBodyState.BirthSubject(species, entity.getUUID(), tier, grade, plan);
         var body = HumanoidBodyState.born(subject, world.getSeed(), HumanoidFabric.region(entity),
                 HumanoidFabric.now());
+        BirthVolumes.select(entity, species, body);
         access.meridian$humanoidBody(body);
         HumanoidWayfarerWeapons.equipAtBirth(entity, tier);
     }

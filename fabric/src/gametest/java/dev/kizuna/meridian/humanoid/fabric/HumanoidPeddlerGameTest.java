@@ -505,6 +505,8 @@ public final class HumanoidPeddlerGameTest {
         // 在加入世界前固定出生档位，避免测试依赖随机卷表分配。
         floor(context);
         WanderingTrader trader = EntityTypes.WANDERING_TRADER.create(context.getLevel(), EntitySpawnReason.COMMAND);
+        // 这里验仅有腿法时的进退决策，其他系的打击不能参加抽选。
+        ((HumanoidEntityAccess) trader).meridian$skipVolumeBirth();
         BlockPos relative = new BlockPos(x, ORIGIN_Y, z);
         var position = Vec3.atBottomCenterOf(context.absolutePos(relative));
         trader.snapTo(position.x, position.y, position.z, 0, 0);

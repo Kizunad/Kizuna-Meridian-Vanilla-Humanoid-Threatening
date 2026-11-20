@@ -11,6 +11,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.lang.System.Logger;
@@ -31,6 +32,7 @@ public final class HumanoidBrainConfigLoader {
     /** 原版视线判定在这个距离外一律不成立，盯上距离再远也看不见。 */
     private static final double MAX_NOTICE_DISTANCE = 128;
     private static final String VOLUMES = "volumes";
+    private static final String POOL = "volume_pool";
     private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
     private static final Logger LOGGER = System.getLogger("meridian_humanoid_brain_config");
 
@@ -98,7 +100,7 @@ public final class HumanoidBrainConfigLoader {
         // 版本只向前兼容一个小版本；旧配置缺少并行节时使用稳定默认策略。
         var parsed = TOML.parse(text);
         TOML.checkKeys(parsed, Set.of("config_version", "decision_interval_ticks", "log_decisions", "threat",
-                "assessment", "response", VOLUMES, "concurrency", VILLAGER), "");
+                "assessment", "response", VOLUMES, "concurrency", VILLAGER, POOL), "");
         int version = TOML.integer(parsed, "config_version", "config_version");
         if (version < MIN_SUPPORTED_CONFIG_VERSION || version > CURRENT_CONFIG_VERSION) {
             throw TOML.invalid("config_version 必须位于 " + MIN_SUPPORTED_CONFIG_VERSION + "～"
@@ -112,7 +114,54 @@ public final class HumanoidBrainConfigLoader {
         var volumes = volumes(TOML.table(parsed, VOLUMES, VOLUMES));
         var concurrency = concurrency(parsed);
         return new HumanoidBrainConfig(schedule, threat, assessment, response, volumes, concurrency,
-                villager(parsed));
+                villager(parsed), volumePool(parsed));
+    }
+
+    private static VolumePool volumePool(TomlTable parsed) {
+        var source = parsed;
+        if (!parsed.contains(POOL)) {
+            source = TOML.parse(TOML.resource(DEFAULT_RESOURCE));
+        }
+        var table = TOML.table(source, POOL, POOL);
+        TOML.checkKeys(table, Set.of("wandering_chance", "true_chance", "middle_chance", "books"), POOL);
+        var books = TOML.table(table, "books", POOL + ".books");
+        var entries = new ArrayList<VolumePool.Book>();
+        for (String id : books.keySet()) {
+            entries.add(poolBook(id, TOML.table(books, id, POOL + ".books." + id)));
+        }
+        return new VolumePool(ratio(table, "wandering_chance", POOL), ratio(table, "true_chance", POOL),
+                ratio(table, "middle_chance", POOL), entries);
+    }
+
+    private static VolumePool.Book poolBook(String id, TomlTable table) {
+        requireId(id, POOL);
+        TOML.checkKeys(table, Set.of("native", "weight", "upper", "middle"), id);
+        var nativeId = table.getString("native");
+        if (HumanoidSpecies.values().stream().noneMatch(species -> species.entityId().equals(nativeId))) {
+            throw TOML.invalid(id + ".native 必须是七种生人之一");
+        }
+        var weight = table.getLong("weight");
+        if (weight == null || weight < 0 || weight > Integer.MAX_VALUE) {
+            throw TOML.invalid(id + ".weight 必须是非负整数");
+        }
+        var upper = table.getArray("upper");
+        if (upper == null || upper.isEmpty()) {
+            throw TOML.invalid(id + ".upper 必须列出入门卷");
+        }
+        var ids = new ArrayList<String>();
+        for (Object value : upper.toList()) {
+            if (!(value instanceof String volume)) {
+                throw TOML.invalid(id + ".upper 必须是卷 ID");
+            }
+            requireId(volume, id);
+            ids.add(volume);
+        }
+        var middle = Optional.ofNullable(table.getString("middle"));
+        middle.ifPresent(volume -> requireId(volume, id));
+        if (Set.copyOf(ids).size() != ids.size() || middle.filter(ids::contains).isPresent()) {
+            throw TOML.invalid(id + " 重复列卷");
+        }
+        return new VolumePool.Book(id, nativeId, weight.intValue(), ids, middle);
     }
 
     private static HumanoidBrainConfig.VillagerRules villager(TomlTable parsed) {

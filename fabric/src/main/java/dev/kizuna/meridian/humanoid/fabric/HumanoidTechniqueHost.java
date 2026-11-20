@@ -178,6 +178,12 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         for (String volume : HumanoidBrain.config().volumes().volumes(entityId, tier, entity.getUUID())) {
             service.learn(entity.getUUID(), volume);
         }
+        var grant = ((HumanoidEntityAccess) entity).meridian$birthVolumes();
+        if (grant != null) {
+            for (String volume : grant.volumes()) {
+                service.learn(entity.getUUID(), volume);
+            }
+        }
     }
 
     static boolean knowsRole(LivingEntity entity, AiRole role) {
