@@ -6,6 +6,8 @@ import dev.kizuna.meridian.human.server.HumanStamina;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.ActivityMessages.BodyActivity;
+import dev.kizuna.meridian.protocol.pb.ActivityMessages.TissueFatigueIncrease;
+import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.HealthMessages.FatigueRelief;
 import dev.kizuna.meridian.protocol.pb.HealthMessages.RestoreFatigue;
@@ -22,6 +24,7 @@ import dev.kizuna.meridian.vanilla.VanillaDamageBridge.CommitResult;
 import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import java.util.List;
 import java.util.UUID;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -32,6 +35,8 @@ import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.portal.TeleportTransition;
+import net.minecraft.world.phys.Vec3;
 
 import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
 
@@ -50,13 +55,17 @@ public final class HumanoidGuardStaminaGameTest {
     private static final double ALMOST_ONE_SECOND = 9995;
     private static final double HIT_COST = 9000;
     private static final int MUSCLES = 18;
+    private static final int TARGET_READY_TICKS = 10;
     private static final int OFFLINE_TICKS = 40;
+    private static final int RECOVERY_WAIT_TICKS = 10;
     private static final int SAVE_TICK = 12;
     private static final int SPAWN_COORD = 2;
     private static final int DOSE = 10;
     private static final int GUARDED_DOSE = 7;
     private static final double EXACT_FATIGUE = 80;
+    private static final double DIAPHRAGM_FATIGUE_POINTS = 10;
     private static final double EPSILON = 1e-6;
+    private static final String DIAPHRAGM = "diaphragm";
     private static final List<String> FOREARMS = List.of("left_forearm", "right_forearm");
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)
@@ -171,20 +180,129 @@ public final class HumanoidGuardStaminaGameTest {
         context.runAfterDelay(SAVE_TICK, () -> {
             var body = body(mob);
             checkHolding(context, mob);
+            addFatigue(body, DIAPHRAGM, DIAPHRAGM_FATIGUE_POINTS);
             var saved = HumanoidEntityNbt.save(mob);
+            var savedBody = body.snapshot();
             double balance = available(body);
+            double savedAge = savedBody.getVitality().getAgeSeconds();
+            double savedDiaphragmFatigue = fatigue(savedBody, DIAPHRAGM);
             mob.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
             context.runAfterDelay(OFFLINE_TICKS, () -> {
                 var restored = EntityTypes.WITCH.create(context.getLevel(), EntitySpawnReason.LOAD);
                 HumanoidEntityNbt.load(restored, saved);
                 context.assertTrue(context.getLevel().addFreshEntity(restored), "女巫重载失败");
                 var snapshot = AuditReproSupport.inspect(restored).getBody();
-                close(context, joules(snapshot), balance, "女巫离线仍扣费或回力");
+                close(context, snapshot.getVitality().getAgeSeconds(), savedAge, "女巫卸载期间年龄增长");
+                context.assertTrue(fatigue(snapshot, DIAPHRAGM) < savedDiaphragmFatigue,
+                        "女巫其他组织没有按身体时钟恢复");
+                close(context, joules(snapshot), balance, "女巫离线重复扣持守体力");
                 var resumed = body(restored);
                 context.assertTrue(!resumed.techniqueProgress().hasActiveCast(), "健康查询恢复了旧守窗");
                 context.assertTrue(BodyActions.usedTissues(resumed.currentBody()).isEmpty(), "读档残留占用");
                 context.succeed();
             });
+        });
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void completedGuardTraceDoesNotFreezeUnloadRecovery(GameTestHelper context) {
+        var mob = raised(context, EntityTypes.WANDERING_TRADER);
+        context.runAfterDelay(SAVE_TICK, () -> {
+            var body = body(mob);
+            body.settle(HumanoidFabric.now());
+            var active = body.techniqueProgress().getActiveCast();
+            var release = EndActiveRequest.newBuilder()
+                    .setBodyId(body.snapshot().getId())
+                    .setCastId(active.getRequest().getCastId())
+                    .build();
+            var ended = TechniqueFabric.service().endActive(mob.getUUID(), release);
+            context.assertTrue(ended.getPhase() == CastPhase.RECOVERING, "守式松手没有进入收势");
+            context.runAfterDelay(RECOVERY_WAIT_TICKS,
+                    () -> unloadCompletedGuardTrace(context, mob, body));
+        });
+    }
+
+    private static void unloadCompletedGuardTrace(GameTestHelper context, Mob mob, HumanoidBodyState body) {
+        body.settle(HumanoidFabric.now());
+        var progress = body.techniqueProgress();
+        context.assertTrue(progress.hasLastCast()
+                        && progress.getLastCast().getTechnique().getId().equals(GUARD)
+                        && !progress.hasActiveCast(),
+                "测试身体没有留下已结束的守式记录");
+        addFatigue(body, DIAPHRAGM, DIAPHRAGM_FATIGUE_POINTS);
+        ServerEntityEvents.ENTITY_UNLOAD.invoker().onUnload(mob, context.getLevel());
+        var saved = HumanoidEntityNbt.save(mob);
+        var savedBody = body.snapshot();
+        double savedAge = savedBody.getVitality().getAgeSeconds();
+        double savedStamina = available(body);
+        double savedDiaphragmFatigue = fatigue(savedBody, DIAPHRAGM);
+        mob.setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        context.runAfterDelay(OFFLINE_TICKS, () -> reloadCompletedGuardTrace(context, saved, savedAge,
+                savedStamina, savedDiaphragmFatigue));
+    }
+
+    private static void reloadCompletedGuardTrace(GameTestHelper context, net.minecraft.nbt.CompoundTag saved,
+                                                  double savedAge, double savedStamina,
+                                                  double savedDiaphragmFatigue) {
+        var restored = EntityTypes.WANDERING_TRADER.create(context.getLevel(), EntitySpawnReason.LOAD);
+        HumanoidEntityNbt.load(restored, saved);
+        context.assertTrue(context.getLevel().addFreshEntity(restored), "游商重载失败");
+        var snapshot = AuditReproSupport.inspect(restored).getBody();
+        close(context, snapshot.getVitality().getAgeSeconds(), savedAge, "已结束守式的卸载年龄增长");
+        double recoveredStamina = joules(snapshot);
+        context.assertTrue(recoveredStamina > savedStamina,
+                "上一式为格挡时持守耐力没有按身体时钟恢复");
+        context.assertTrue(fatigue(snapshot, DIAPHRAGM) < savedDiaphragmFatigue,
+                "上一式是守式时冻结了其他组织恢复");
+        restored.discard();
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void pillagerGuardPaysOnceAcrossRealDimensionTransfer(GameTestHelper context) {
+        // 原版跨维传送在 restoreFrom 前结清源实体，目标首次查询不能重复扣持守体力。
+        var source = raised(context, EntityTypes.PILLAGER);
+        context.runAfterDelay(OFFLINE_TICKS, () -> {
+            try {
+                var beforeTransfer = AuditReproSupport.inspect(source).getBody();
+                context.assertTrue(TechniqueFabric.service().activeGuard(source.getUUID()).isPresent(),
+                        "跨维前没有进入持守");
+                double beforeStamina = joules(beforeTransfer);
+                long transferMillis = HumanoidFabric.now().getElapsedMillis();
+                var nether = source.level().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+                var destination = BlockPos.containing(source.position());
+                nether.getChunkAt(destination);
+                var transition = new TeleportTransition(nether, Vec3.atCenterOf(destination), Vec3.ZERO,
+                        source.getYRot(), source.getXRot(), java.util.Set.of(),
+                        TeleportTransition.PLACE_PORTAL_TICKET);
+                var transferred = source.teleport(transition);
+                context.assertTrue(transferred instanceof Mob, "生人没有实际跨维传送");
+                Mob target = (Mob) transferred;
+                context.assertTrue(target.level() == nether, "生人没有进入下界");
+                context.runAfterDelay(TARGET_READY_TICKS, () -> {
+                    try {
+                        var targetResponse = AuditReproSupport.inspect(target);
+                        context.assertTrue(targetResponse.hasBody(),
+                                "跨维目标身体恢复失败：" + targetResponse);
+                        var afterTransfer = targetResponse.getBody();
+                        long settledMillis = afterTransfer.getSettledAt().getElapsedMillis();
+                        long paidMillis = settledMillis - beforeTransfer.getSettledAt().getElapsedMillis();
+                        double expectedPayment = paidMillis / (double) SECOND * HOLD_COST;
+                        double actualPayment = beforeStamina - joules(afterTransfer);
+                        close(context, actualPayment, expectedPayment, "跨维交接持守费用没有只结算一次");
+                        context.assertTrue(afterTransfer.getSettledAt().getElapsedMillis() >= transferMillis,
+                                "首次查询身体时钟早于维度交接时刻");
+                        context.assertTrue(TechniqueFabric.service().activeGuard(target.getUUID()).isEmpty(),
+                                "跨维后仍残留持守窗口");
+                        context.succeed();
+                    } finally {
+                        target.discard();
+                    }
+                });
+            } catch (Throwable failure) {
+                source.discard();
+                throw failure;
+            }
         });
     }
 
@@ -196,7 +314,11 @@ public final class HumanoidGuardStaminaGameTest {
             var body = body(mob);
             spend(body, available(body));
             context.assertTrue(TechniqueFabric.service().activeGuard(mob.getUUID()).isEmpty(), "零余力未破防");
+            addFatigue(body, DIAPHRAGM, DIAPHRAGM_FATIGUE_POINTS);
             var saved = HumanoidEntityNbt.save(mob);
+            var savedBody = body.snapshot();
+            double savedAge = savedBody.getVitality().getAgeSeconds();
+            double savedDiaphragmFatigue = fatigue(savedBody, DIAPHRAGM);
             long remaining = body.techniqueProgress().getGuardBreakEndsOrThrow(GUARD)
                     - body.currentBody().settledAt().elapsedMillis();
             mob.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
@@ -205,7 +327,11 @@ public final class HumanoidGuardStaminaGameTest {
                 HumanoidEntityNbt.load(restored, saved);
                 context.assertTrue(context.getLevel().addFreshEntity(restored), "幻术师重载失败");
                 var snapshot = AuditReproSupport.inspect(restored).getBody();
-                close(context, joules(snapshot), 0, "离线期间破防疲劳恢复");
+                close(context, snapshot.getVitality().getAgeSeconds(), savedAge,
+                        "有破防守式记录的卸载区间增长年龄");
+                context.assertTrue(fatigue(snapshot, DIAPHRAGM) < savedDiaphragmFatigue,
+                        "有破防守式记录时其他组织没有按身体时钟恢复");
+                context.assertTrue(joules(snapshot) > 0, "破防记录路径没有按身体时钟恢复体力");
                 var resumed = body(restored);
                 long deadline = resumed.techniqueProgress().getGuardBreakEndsOrThrow(GUARD);
                 context.assertTrue(deadline - snapshot.getSettledAt().getElapsedMillis() == remaining,
@@ -270,6 +396,31 @@ public final class HumanoidGuardStaminaGameTest {
                 .setExecuteActivity(activity)
                 .build();
         body.submitRecovery(UUID.randomUUID().toString(), command);
+    }
+
+    private static void addFatigue(HumanoidBodyState body, String tissueId, double points) {
+        var increase = TissueFatigueIncrease.newBuilder()
+                .setTissueId(tissueId)
+                .setPoints(points)
+                .build();
+        var activity = BodyActivity.newBuilder()
+                .addTissueFatigue(increase)
+                .build();
+        var current = body.currentBody();
+        var command = BodyCommand.newBuilder()
+                .setBodyId(current.id().value())
+                .setExpectedRevision(current.revision())
+                .setExecuteActivity(activity)
+                .build();
+        body.submitRecovery(UUID.randomUUID().toString(), command);
+    }
+
+    private static double fatigue(BodyMessages.BodySnapshot body, String tissueId) {
+        return body.getTissueStatesList().stream()
+                .filter(tissue -> tissue.getId().equals(tissueId))
+                .findFirst()
+                .orElseThrow()
+                .getFatigue();
     }
 
     static void restoreTo(HumanoidBodyState body, double fatigue) {

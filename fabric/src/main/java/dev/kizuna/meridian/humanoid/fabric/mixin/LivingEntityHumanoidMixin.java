@@ -51,6 +51,8 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Unique private boolean meridian$loadFailed;
     @Unique private boolean meridian$loadFailureLogged;
     @Unique private boolean meridian$releaseQueued;
+    @Unique private boolean meridian$dimensionTransferred;
+    @Unique private long meridian$loadedAtMillis = HumanoidEntityAccess.NO_LOAD_TIMESTAMP;
 
     @Override
     public boolean meridian$awaitingVolumeBirth() {
@@ -114,6 +116,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     public void meridian$humanoidBody(HumanoidBodyState state) {
         // 宿主完成快照校验后才发布实体级引用。
         meridian$body = state;
+        meridian$dimensionTransferred = false;
         if (state != null && meridian$birthPlan != null && !meridian$birthPlan.recordsExplicitEggBirth()) {
             meridian$birthPlan = null;
         }
@@ -173,6 +176,30 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     public boolean meridian$humanoidLoadFailed() {
         // 坏身体标签只允许原样保存，健康宿主必须继续拒绝使用这具身体。
         return meridian$loadFailed;
+    }
+
+    @Override
+    public boolean meridian$dimensionTransferred() {
+        // 跨维度复制的身体沿用传送时刻，不能套用区块卸载暂停。
+        return meridian$dimensionTransferred;
+    }
+
+    @Override
+    public void meridian$markDimensionTransferred() {
+        // restoreFrom 先标记目标，身体宿主绑定成功后会清除此运行态标记。
+        meridian$dimensionTransferred = true;
+    }
+
+    @Override
+    public long meridian$loadedAtMillis() {
+        // 没有从实体载入事件取得边界时保留哨兵值。
+        return meridian$loadedAtMillis;
+    }
+
+    @Override
+    public void meridian$loadedAtMillis(long millis) {
+        // 区块读档后记录在线恢复边界，首次健康查询可以补算加载后的时间。
+        meridian$loadedAtMillis = millis;
     }
 
     @Override
@@ -379,6 +406,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         if (meridian$birthPlan != null) {
             output.store(meridian$BIRTH_KEY, CompoundTag.CODEC, meridian$birthPlan.save());
         }
+        HumanoidFabric.beforeEntitySave((LivingEntity) (Object) this);
         meridian$writeHumanoidNbt(holder);
         holder.getCompound("meridian_humanoid")
                 .ifPresent(stored -> output.store("meridian_humanoid", CompoundTag.CODEC, stored));

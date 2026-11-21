@@ -6,6 +6,7 @@ import dev.kizuna.meridian.core.BodyTimeAdvancement;
 import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.core.TimeCursor;
 import dev.kizuna.meridian.human.fabric.HumanGuardStamina;
+import dev.kizuna.meridian.human.server.HumanAgingRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidDamagePolicy;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
@@ -42,8 +43,9 @@ public final class HumanoidBodyState {
     private static final int MAX_SAVED_RECEIPTS = 32;
     private static final long MILLIS_PER_TICK = 50;
     private static final String DEBUG_CALLER_ID = "meridian_debug:command";
-    /** 类人身体的老化倍率：身体时钟走一秒，年龄长一秒。 */
-    private static final double AGING_RATE = 1;
+    /** 主世界年龄倍率，实际身体会在首次绑定实体维度时切换。 */
+    private static final double AGING_RATE = HumanAgingRules.GAME_DAY_AGE_SECONDS_PER_SIMULATION_SECOND
+            * HumanAgingRules.DEFAULT_OVERWORLD_MULTIPLIER;
     private static final long NO_LIFESPAN_END = Long.MAX_VALUE;
 
     private final InMemoryBodyStore store;
@@ -51,6 +53,9 @@ public final class HumanoidBodyState {
     private final String bodyId;
     private final String regionSource;
     private long targetMillis;
+    private double agingRate = AGING_RATE;
+    private String dimensionId;
+    private Long resumeAgingAtMillis;
     private MeridianMessages.TimeAdvanceMode timeMode = MeridianMessages.TimeAdvanceMode.ACTIVE;
     private Function<BodySnapshot, Optional<TechniqueHost.Submission>> pendingRelease = body -> Optional.empty();
     private String trustedActivityCaller;
@@ -110,7 +115,7 @@ public final class HumanoidBodyState {
         return MeridianMessages.TimeAdvancePlan.newBuilder()
                 .setTarget(target)
                 .setMode(timeMode)
-                .setBiologicalSecondsPerSimulationSecond(AGING_RATE)
+                .setBiologicalSecondsPerSimulationSecond(agingRate)
                 .build();
     }
 
@@ -293,6 +298,54 @@ public final class HumanoidBodyState {
         }
     }
 
+    void selectDimension(String selectedDimensionId, BodyMessages.TimeCursor now) {
+        // 维度交接先结清源维度，目标维度从同一世界时钟继续计算。
+        if (selectedDimensionId == null || selectedDimensionId.isBlank()) {
+            throw new IllegalArgumentException("类人实体维度不能为空");
+        }
+        if (dimensionId == null) {
+            dimensionId = selectedDimensionId;
+            agingRate = HumanAgingRules.configured().agingRate(selectedDimensionId);
+            lifespanBody = null;
+            return;
+        }
+        if (dimensionId.equals(selectedDimensionId)) {
+            return;
+        }
+        settle(now);
+        dimensionId = selectedDimensionId;
+        agingRate = HumanAgingRules.configured().agingRate(selectedDimensionId);
+        lifespanBody = null;
+    }
+
+    void prepareDimensionTransfer(String sourceDimensionId, BodyMessages.TimeCursor now) {
+        // 保存源实体前确保最后一段仍按源维度倍率结清。
+        selectDimension(sourceDimensionId, now);
+        settle(now);
+    }
+
+    void pauseAging(BodyMessages.TimeCursor now) {
+        // 先结清仍在加载期间的区间，再冻结卸载期间的自然年龄。
+        settle(now);
+        agingRate = 0;
+        lifespanBody = null;
+    }
+
+    void beginUnloadResume() {
+        // 首次恢复结算前冻结缺少卸载边界的历史年龄。
+        agingRate = 0;
+        resumeAgingAtMillis = null;
+        lifespanBody = null;
+    }
+
+    void resumeAfterUnload(BodyMessages.TimeCursor now, String selectedDimensionId) {
+        // 延迟推进到加载边界，保留刚恢复的快照并排除卸载期间的年龄。
+        dimensionId = selectedDimensionId;
+        agingRate = 0;
+        resumeAgingAtMillis = now.getElapsedMillis();
+        lifespanBody = null;
+    }
+
     private static long guardBoundary(BodySnapshot body, long clock, long target) {
         var holding = HumanGuardStamina.holding(body);
         if (holding.isEmpty()) {
@@ -326,19 +379,13 @@ public final class HumanoidBodyState {
     }
 
     BodyMessages.QiInventory resumeGuard(long now) {
-        // 卸载期间的疲劳与破防剩余时间冻结，仍由身体时钟处理寿元终点。
+        // 卸载时年龄倍率为零，其他身体过程仍按活动时间补算。
         var body = currentBody();
         long saved = body.settledAt().elapsedMillis();
         if (now <= saved || body.vitality().dead()) {
             return BodyMessages.QiInventory.getDefaultInstance();
         }
-        timeMode = MeridianMessages.TimeAdvanceMode.LIFESPAN_ONLY;
-        BodyMessages.QiInventory released;
-        try {
-            released = advance(now);
-        } finally {
-            timeMode = MeridianMessages.TimeAdvanceMode.ACTIVE;
-        }
+        BodyMessages.QiInventory released = advance(now);
         var resumed = currentBody();
         if (!resumed.vitality().dead()) {
             var progress = techniqueProgress();
@@ -360,6 +407,29 @@ public final class HumanoidBodyState {
     }
 
     private BodyMessages.QiInventory advance(long target) {
+        Long resumeAgingAt = resumeAgingAtMillis;
+        if (resumeAgingAt == null) {
+            return advanceSegment(target);
+        }
+
+        BodyMessages.QiInventory pausedRelease = BodyMessages.QiInventory.getDefaultInstance();
+        BodySnapshot body = currentBody();
+        if (body.settledAt().elapsedMillis() < resumeAgingAt) {
+            pausedRelease = advanceSegment(resumeAgingAt);
+        }
+        resumeAgingAtMillis = null;
+        agingRate = HumanAgingRules.configured().agingRate(dimensionId);
+        lifespanBody = null;
+
+        if (target <= resumeAgingAt || currentBody().vitality().dead()) {
+            return pausedRelease;
+        }
+        BodyMessages.QiInventory onlineRelease = advanceSegment(target);
+        return BodyProtobuf.toInventory(QiInventory.combine(List.of(
+                BodyProtobuf.fromInventory(pausedRelease), BodyProtobuf.fromInventory(onlineRelease))));
+    }
+
+    private BodyMessages.QiInventory advanceSegment(long target) {
         targetMillis = target;
         BodySnapshot body = currentBody();
         if (body.settledAt().elapsedMillis() >= targetMillis || body.vitality().dead()) {
@@ -406,7 +476,7 @@ public final class HumanoidBodyState {
     private long lifespanEndMillis(BodySnapshot body) {
         // 寿元终点只由这份快照的年龄、寿命和已结清游标决定，同一份快照只算一次。
         if (body != lifespanBody) {
-            lifespanEndMillis = BodyTimeAdvancement.nextLifespanBoundary(body, AGING_RATE)
+            lifespanEndMillis = BodyTimeAdvancement.nextLifespanBoundary(body, agingRate)
                     .map(TimeCursor::elapsedMillis)
                     .orElse(NO_LIFESPAN_END);
             lifespanBody = body;

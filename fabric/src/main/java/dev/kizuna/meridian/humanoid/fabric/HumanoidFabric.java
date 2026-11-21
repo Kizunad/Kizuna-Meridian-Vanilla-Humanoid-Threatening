@@ -8,6 +8,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidBodyGenerator;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfigLoader;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidConfigLoader;
+import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.protocol.pb.AddonMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -85,6 +86,7 @@ public final class HumanoidFabric implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> stopping(true));
         ServerLifecycleEvents.SERVER_STOPPED.register(HumanoidFabric::stopServer);
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, level) -> onEntityUnloaded(entity));
+        ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> onEntityLoaded(entity));
         registerCommands();
     }
 
@@ -250,6 +252,88 @@ public final class HumanoidFabric implements ModInitializer {
         return HumanoidSpeciesHooks.claimed(entity).isPresent();
     }
 
+    public static void beforeDimensionTransfer(Entity source, Entity target) {
+        // Entity.restoreFrom 在复制源实体 NBT 前调用，先提交源维度最后一段年龄。
+        if (source.level().isClientSide() || source.level() == target.level()
+                || !(source instanceof LivingEntity living)
+                || !(living instanceof HumanoidEntityAccess access)) {
+            return;
+        }
+        MinecraftServer server = source.level().getServer();
+        if (server == null || !server.isSameThread() || !isReady()
+                || access.meridian$humanoidLoading() || access.meridian$humanoidLoadFailed()) {
+            return;
+        }
+        HumanoidSpecies species = HumanoidSpeciesHooks.claimed(living).orElse(null);
+        if (species == null) {
+            return;
+        }
+        if (target instanceof HumanoidEntityAccess targetAccess) {
+            targetAccess.meridian$markDimensionTransferred();
+        }
+        try {
+            BodyMessages.TimeCursor now = now();
+            HumanoidBodyState body = access.meridian$humanoidBody();
+            byte[] saved = access.meridian$humanoidSavedBody();
+            if (body == null && saved != null && saved.length > 0) {
+                body = HumanoidHealthHost.bodyState(living, species, now);
+            }
+            if (body != null) {
+                String sourceDimensionId = source.level().dimension().identifier().toString();
+                body.prepareDimensionTransfer(sourceDimensionId, now);
+            }
+        } catch (RuntimeException failure) {
+            report(living, failure);
+        }
+    }
+
+    private static void onEntityLoaded(Entity entity) {
+        // 只给已有身体的已认领实体记录载入边界，不在区块加载时创建新身体。
+        if (!(entity instanceof LivingEntity living) || !isReady()
+                || !(living instanceof HumanoidEntityAccess access)
+                || access.meridian$humanoidLoading() || access.meridian$humanoidLoadFailed()
+                || !isClaimed(living)) {
+            return;
+        }
+        byte[] savedBody = access.meridian$humanoidSavedBody();
+        if (savedBody == null || savedBody.length == 0) {
+            return;
+        }
+        try {
+            access.meridian$loadedAtMillis(now().getElapsedMillis());
+        } catch (RuntimeException failure) {
+            report(living, failure);
+        }
+    }
+
+    public static void beforeEntitySave(LivingEntity living) {
+        // 先把已绑定身体推进到写盘时刻；普通自动保存不会冻结在线年龄。
+        if (!isReady() || !activeServer.isSameThread() || !(living instanceof HumanoidEntityAccess access)
+                || access.meridian$humanoidLoading() || access.meridian$humanoidLoadFailed()) {
+            return;
+        }
+        if (!isClaimed(living)) {
+            return;
+        }
+        try {
+            BodyMessages.TimeCursor now = now();
+            HumanoidBodyState body = access.meridian$humanoidBody();
+            if (body == null) {
+                HumanoidSpecies species = HumanoidSpeciesHooks.claimed(living).orElse(null);
+                byte[] savedBody = access.meridian$humanoidSavedBody();
+                if (species == null || savedBody == null || savedBody.length == 0) {
+                    return;
+                }
+                body = HumanoidHealthHost.bodyState(living, species, now);
+            }
+            String dimensionId = living.level().dimension().identifier().toString();
+            body.selectDimension(dimensionId, now);
+            enqueueRelease(living, body.settle(now));
+        } catch (RuntimeException failure) {
+            report(living, failure);
+        }
+    }
+
     private static void onEntityUnloaded(Entity entity) {
         // 区块卸载和生物过传送门不经过 Entity.remove，只有这个事件收得到；会话和大脑状态按 UUID 存，
         // 不清的话读档出来的同 UUID 新对象会沿用旧状态，不再装大脑的 Goal。
@@ -258,6 +342,7 @@ public final class HumanoidFabric implements ModInitializer {
             return;
         }
         try {
+            pauseAging(living);
             HumanoidTechniqueHost.removed(living);
         } catch (RuntimeException failure) {
             report(living, failure);
@@ -274,9 +359,11 @@ public final class HumanoidFabric implements ModInitializer {
         } catch (RuntimeException failure) {
             report(living, failure);
         }
-        if (reason == Entity.RemovalReason.UNLOADED_TO_CHUNK
-                || reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER
-                || reason == Entity.RemovalReason.CHANGED_DIMENSION) {
+        boolean bodyPersists = preservesBody(reason);
+        if (bodyPersists) {
+            pauseAging(living);
+        }
+        if (bodyPersists) {
             return;
         }
         if (!(living instanceof HumanoidEntityAccess access)) {
@@ -294,6 +381,27 @@ public final class HumanoidFabric implements ModInitializer {
             enqueueRelease(entity, released);
         } catch (RuntimeException failure) {
             LOGGER.error("类人实体移除释放失败 subject={}", entity.getStringUUID(), failure);
+        }
+    }
+
+    private static boolean preservesBody(Entity.RemovalReason reason) {
+        return reason == Entity.RemovalReason.UNLOADED_TO_CHUNK
+                || reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER
+                || reason == Entity.RemovalReason.CHANGED_DIMENSION;
+    }
+
+    private static void pauseAging(LivingEntity living) {
+        if (!isReady() || !(living instanceof HumanoidEntityAccess access)) {
+            return;
+        }
+        HumanoidBodyState body = access.meridian$humanoidBody();
+        if (body == null || !isClaimed(living)) {
+            return;
+        }
+        try {
+            body.pauseAging(now());
+        } catch (RuntimeException failure) {
+            report(living, failure);
         }
     }
 

@@ -68,12 +68,11 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static boolean hasGuardStamina(HumanoidBodyState body) {
         var progress = body.techniqueProgress();
-        if (progress.getActiveCast().getSustained().getGuard().hasStamina()
-                || progress.getGuardBreakEndsCount() > 0) {
-            return true;
-        }
-        return progress.hasLastCast()
+        boolean holding = progress.getActiveCast().getSustained().getGuard().hasStamina();
+        boolean previousGuard = progress.hasLastCast()
                 && staminaRules(TechniqueFabric.service(), progress.getLastCast().getTechnique()).isPresent();
+        boolean breakRecorded = !progress.getGuardBreakEndsMap().isEmpty();
+        return holding || previousGuard || breakRecorded;
     }
 
     static void resumeGuard(LivingEntity entity, HumanoidBodyState body, long now) {

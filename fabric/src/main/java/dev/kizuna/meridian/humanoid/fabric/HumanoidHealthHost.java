@@ -142,6 +142,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
         HumanoidEntityAccess access = (HumanoidEntityAccess) entity;
         HumanoidBodyState existing = access.meridian$humanoidBody();
         if (existing != null) {
+            existing.selectDimension(entity.level().dimension().identifier().toString(), now);
             return existing;
         }
         byte[] saved = access.meridian$humanoidSavedBody();
@@ -151,7 +152,21 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             var savedBody = new HumanoidBodyState.SavedBody(access.meridian$humanoidSavedOwner(), saved,
                     access.meridian$humanoidSavedReceipts(), access.meridian$humanoidSavedRegionSource());
             created = HumanoidBodyState.restore(entityId, savedBody, now, species);
-            HumanoidTechniqueHost.resumeGuard(entity, created, now.getElapsedMillis());
+            String dimensionId = entity.level().dimension().identifier().toString();
+            if (access.meridian$dimensionTransferred()) {
+                created.selectDimension(dimensionId, now);
+            } else {
+                created.beginUnloadResume();
+                long loadedAtMillis = access.meridian$loadedAtMillis();
+                if (loadedAtMillis == HumanoidEntityAccess.NO_LOAD_TIMESTAMP) {
+                    loadedAtMillis = now.getElapsedMillis();
+                }
+                BodyMessages.TimeCursor loadedAt = now.toBuilder()
+                        .setElapsedMillis(loadedAtMillis)
+                        .build();
+                HumanoidTechniqueHost.resumeGuard(entity, created, loadedAtMillis);
+                created.resumeAfterUnload(loadedAt, dimensionId);
+            }
         } else {
             var region = HumanoidFabric.region(entity);
             long worldSeed = ((ServerLevel) entity.level()).getSeed();
@@ -161,6 +176,7 @@ public final class HumanoidHealthHost implements BodyHealthHost {
             var subject = new HumanoidBodyState.BirthSubject(species, entityId, tagged,
                     HumanoidBodyState.BirthGrade.ORDINARY, plan);
             created = HumanoidBodyState.born(subject, worldSeed, region, now);
+            created.selectDimension(entity.level().dimension().identifier().toString(), now);
             BirthVolumes.select(entity, species, created);
             HumanoidWayfarerWeapons.equipAtBirth(entity, HumanoidTier.of(created.snapshot()));
         }
