@@ -71,7 +71,8 @@ final class HumanoidMeleeGuard {
             offsetBlocks = targetBox.getCenter().subtract(selfBox.getCenter());
             geometry = MeleeGuardRules.Geometry.BOX;
         }
-        Vec3 relativeBlocksPerTick = velocityBlocksPerTick(target).subtract(velocityBlocksPerTick(mob));
+        Vec3 targetVelocity = canMoveIndependently(target) ? velocityBlocksPerTick(target) : Vec3.ZERO;
+        Vec3 relativeBlocksPerTick = targetVelocity.subtract(velocityBlocksPerTick(mob));
         var motion = new MeleeGuardRules.Motion(vector(offsetBlocks), vector(relativeBlocksPerTick));
         var halfExtents = new MeleeGuardRules.Vector((selfBox.getXsize() + targetBox.getXsize()) * HALF,
                 (selfBox.getYsize() + targetBox.getYsize()) * HALF,
@@ -89,6 +90,16 @@ final class HumanoidMeleeGuard {
             return new Vec3(velocity.x, 0, velocity.z);
         }
         return velocity;
+    }
+
+    private static boolean canMoveIndependently(LivingEntity entity) {
+        if (entity.isPassenger()) {
+            return false;
+        }
+        if (!(entity instanceof Mob mob)) {
+            return true;
+        }
+        return !mob.isNoAi() && !mob.isLeashed();
     }
 
     private static MeleeGuardRules.Vector vector(Vec3 value) {

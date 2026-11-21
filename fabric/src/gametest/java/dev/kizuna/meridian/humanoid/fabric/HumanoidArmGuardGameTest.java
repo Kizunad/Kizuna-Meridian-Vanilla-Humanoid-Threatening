@@ -36,8 +36,6 @@ public final class HumanoidArmGuardGameTest {
     private static final int TIMEOUT = 100;
     private static final int MATRIX_TICKS = 24;
     private static final int MORTAL_DELAY = 8;
-    private static final int WANDERING_DELAY = 6;
-    private static final int TRUE_DELAY = 3;
     private static final int WARMUP_TICKS = 8;
     private static final long MILLIS_PER_TICK = 50;
     private static final int QUIET_TICKS = 20;
@@ -51,7 +49,6 @@ public final class HumanoidArmGuardGameTest {
     // 四组首抽依次约为 0.099、0.281、0.304、0.731；第二抽均低于 0.1。
     private static final long LOW_ROLL = 4112;
     private static final long MIDDLE_ROLL = 6151;
-    private static final long HIGH_ROLL = 6405;
     private static final long MISS_ROLL = 3;
     private static final float REVERSE = 180;
     private static final double HALF_ANGLE = 60;
@@ -80,9 +77,10 @@ public final class HumanoidArmGuardGameTest {
 
     @GameTest(structure = ARENA, maxTicks = TIMEOUT)
     public void pillagerHoldsOnlyWhileArcherAims(GameTestHelper context) {
-        var scene = new Scene(context, EntityTypes.PILLAGER, HumanoidTier.WANDERING_QI, MIDDLE_ROLL);
+        var scene = Scene.mortalTagged(context, EntityTypes.PILLAGER, LOW_ROLL);
+        assertEmptyBirthVolumes(context, scene);
         scene.archer();
-        scene.whenRaised(WANDERING_DELAY, () -> {
+        scene.whenRaised(MORTAL_DELAY, () -> {
             scene.source.stopUsingItem();
             scene.after(1, () -> {
                 scene.lowered();
@@ -93,9 +91,10 @@ public final class HumanoidArmGuardGameTest {
 
     @GameTest(structure = ARENA, maxTicks = TIMEOUT)
     public void vindicatorHoldsBelowSelectionThresholdUntilQuiet(GameTestHelper context) {
-        var scene = new Scene(context, EntityTypes.VINDICATOR, HumanoidTier.TRUE_QI, HIGH_ROLL);
+        var scene = Scene.mortalTagged(context, EntityTypes.VINDICATOR, LOW_ROLL);
+        assertEmptyBirthVolumes(context, scene);
         scene.melee(ENTER);
-        scene.whenRaised(TRUE_DELAY, () -> {
+        scene.whenRaised(MORTAL_DELAY, () -> {
             scene.drain();
             scene.after(1, () -> {
                 scene.holding();
@@ -144,12 +143,13 @@ public final class HumanoidArmGuardGameTest {
 
     @GameTest(structure = ARENA, maxTicks = TIMEOUT)
     public void evokerRechecksFatigueAtDeadline(GameTestHelper context) {
-        var scene = new Scene(context, EntityTypes.EVOKER, HumanoidTier.WANDERING_QI, LOW_ROLL);
+        var scene = Scene.mortalTagged(context, EntityTypes.EVOKER, LOW_ROLL);
+        assertEmptyBirthVolumes(context, scene);
         scene.melee(ENTER);
         scene.after(1, () -> {
             scene.counts(1, 0);
             scene.drain();
-            scene.after(WANDERING_DELAY, () -> {
+            scene.after(MORTAL_DELAY, () -> {
                 scene.counts(1, 0);
                 restoreTo(scene.body, 0);
                 scene.after(MATRIX_TICKS, () -> {
@@ -158,6 +158,13 @@ public final class HumanoidArmGuardGameTest {
                 });
             });
         });
+    }
+
+    private static void assertEmptyBirthVolumes(GameTestHelper context, Scene scene) {
+        var grant = ((HumanoidEntityAccess) scene.mob).meridian$birthVolumes();
+        context.assertTrue(HumanoidTier.of(scene.body.snapshot()) == HumanoidTier.MORTAL,
+                "凡人档标签没有指定出生档");
+        context.assertTrue(grant != null && grant.volumes().isEmpty(), "凡人档生人抽到了出生外卷");
     }
 
     @GameTest(structure = ARENA, maxTicks = TIMEOUT)
