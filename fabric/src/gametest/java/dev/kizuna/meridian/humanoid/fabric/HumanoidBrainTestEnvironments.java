@@ -35,7 +35,8 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
         VILLAGER_WITHOUT_VOLUMES("villager_without_volumes"),
         PILLAGER_WITHOUT_VOLUMES("pillager_without_volumes"),
         PILLAGER_BASIC_VOLUMES("pillager_basic_volumes"),
-        WAYFARER_SHOOTING_WINDOW("wayfarer_shooting_window");
+        WAYFARER_SHOOTING_WINDOW("wayfarer_shooting_window"),
+        DISABLE_AUTOMATIC_GUARD("disable_automatic_guard");
 
         private final String path;
         private final MapCodec<VolumesEnvironment> codec;
@@ -61,6 +62,7 @@ public final class HumanoidBrainTestEnvironments implements ModInitializer {
                                 new VolumeTable.Grant("meridian_basic_techniques:breath_volume", 1),
                                 new VolumeTable.Grant("meridian_basic_techniques:light_step_volume", 1),
                                 new VolumeTable.Grant("meridian_basic_techniques:charge_volume", 1)));
+                case DISABLE_AUTOMATIC_GUARD -> HumanoidBrainTestConfigs.disableAutomaticGuard();
             }
         }
     }

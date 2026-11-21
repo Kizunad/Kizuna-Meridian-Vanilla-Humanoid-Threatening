@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.humanoid.server.GuardResponse;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfig;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.VolumeTable;
@@ -57,6 +58,25 @@ final class HumanoidBrainTestConfigs {
         var concurrency = new HumanoidBrainConfig.ConcurrencyRules(1, current.concurrency().allowRecoveryMovement());
         HumanoidBrain.configure(new HumanoidBrainConfig(current.schedule(), current.threat(), current.assessment(),
                 current.response(), current.volumes(), concurrency));
+    }
+
+    static void disableAutomaticGuard() {
+        // 只关闭大脑自动起格挡，正式格挡功法和体力结算仍由对应测试覆盖。
+        HumanoidBrainConfig current = HumanoidBrain.config();
+        previous = current;
+        var threat = current.threat();
+        var guard = threat.guard();
+        var reactions = new EnumMap<HumanoidTier, GuardResponse.Reaction>(HumanoidTier.class);
+        guard.reactions().forEach((tier, reaction) ->
+                reactions.put(tier, new GuardResponse.Reaction(0, reaction.delayMillis())));
+        var disabledGuard = new GuardResponse(guard.range(), guard.angleDegrees(), guard.turnDegreesPerTick(),
+                guard.timing(), reactions);
+        var disabledThreat = new HumanoidBrainConfig.ThreatRules(threat.memorySeconds(), threat.allyRadius(),
+                threat.forgetDistance(), threat.safeDistance(), threat.noticeDistances(), threat.scoring(),
+                disabledGuard);
+        var disabled = new HumanoidBrainConfig(current.schedule(), disabledThreat, current.assessment(),
+                current.response(), current.volumes(), current.concurrency(), current.villager(), current.volumePool());
+        HumanoidBrain.configure(disabled);
     }
 
     private static VolumeTable doorBreakerVolumes(VolumeTable table) {
