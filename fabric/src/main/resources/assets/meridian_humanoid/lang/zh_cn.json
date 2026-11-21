@@ -1,8 +1,8 @@
 {
   "origin.meridian_humanoid.reborn.name": "重生归来",
-  "origin.meridian_humanoid.reborn.story": "你记得前世的事。",
-  "origin.meridian_humanoid.reborn.talent.1": "你记得后世的一门吐纳法。",
-  "origin.meridian_humanoid.reborn.talent.2": "你还记得如何吐纳。",
+  "origin.meridian_humanoid.reborn.story": "你前世修行过，死后重回少年时。那门后世才研成的吐纳法，仍清楚留在记忆里。",
+  "origin.meridian_humanoid.reborn.talent.1": "初始习得《溯息经·纳息篇》。运功时吐纳纳气更多、呼吸负担更轻，维持时持续消耗真元。",
+  "origin.meridian_humanoid.reborn.talent.2": "获得基础吐纳权限，可直接开始吐纳。",
   "itemGroup.meridian_humanoid.humanoids": "类人",
   "item.meridian_humanoid.villager_wandering_qi_spawn_egg": "村民刷怪蛋（游炁）",
   "item.meridian_humanoid.villager_true_qi_spawn_egg": "村民刷怪蛋（真炁）",
