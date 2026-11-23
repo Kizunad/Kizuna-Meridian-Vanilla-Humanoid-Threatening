@@ -35,6 +35,8 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerProjectileGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerDecisionGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidWayfarerNaturalAiGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidVindicatorWayfarerGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidCrossSpeciesGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidPillagerRangeGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidDebugQiGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidBodyCacheGameTest",

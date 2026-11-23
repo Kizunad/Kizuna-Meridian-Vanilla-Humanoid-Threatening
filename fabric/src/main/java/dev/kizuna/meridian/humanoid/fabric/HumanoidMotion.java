@@ -88,6 +88,16 @@ final class HumanoidMotion {
         // 纯执行，不保存指令。
     }
 
+    static Vec3 autonomousVelocity(LivingEntity entity) {
+        if (entity.isPassenger()) {
+            return Vec3.ZERO;
+        }
+        if (entity instanceof Mob mob && (mob.isNoAi() || mob.isLeashed())) {
+            return Vec3.ZERO;
+        }
+        return entity.getDeltaMovement();
+    }
+
     static void apply(Mob mob, HumanoidMind mind, Directive directive, Speeds speeds) {
         // 有对手时始终看着它；跟随与走点按节奏重算路径，原地时停下导航。
         Optional<LivingEntity> opponent = mind.opponent();

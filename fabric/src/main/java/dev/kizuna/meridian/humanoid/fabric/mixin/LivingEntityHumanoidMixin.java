@@ -78,6 +78,7 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
     @Inject(method = "die", at = @At("HEAD"))
     private void meridian$restoreWitchHand(DamageSource source, CallbackInfo callback) {
         // 掉落计算前恢复原物，临时巫药不能替代原主手掉落。
+        HumanoidTechniqueHost.dying((LivingEntity) (Object) this);
         HumanoidWitchHands.restore((LivingEntity) (Object) this);
     }
 

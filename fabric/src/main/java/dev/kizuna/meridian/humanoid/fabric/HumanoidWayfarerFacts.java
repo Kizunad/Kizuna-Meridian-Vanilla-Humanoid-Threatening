@@ -44,7 +44,7 @@ final class HumanoidWayfarerFacts {
     }
 
     static TechniqueSelector.TargetContext context(Mob mob, Target target) {
-        // 距离使用同一份水平观测；原版生物不耗箭，备用武器来自真实五格库存。
+        // 距离使用同一份水平观测；原版生物不耗箭，备用武器来自类人背囊。
         return new TechniqueSelector.TargetContext(band(target.distance()), target.visibility(),
                 target.speedMetersPerSecond(), target.approach(),
                 TechniqueSelector.Ammunition.AVAILABLE, HumanoidWayfarerWeapons.reserves(mob));

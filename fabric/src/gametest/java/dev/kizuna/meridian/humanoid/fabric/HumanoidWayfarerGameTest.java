@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import dev.kizuna.meridian.inventory.MobInventories;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ProjectileWeaponCategory;
 import dev.kizuna.meridian.technique.server.TechniqueState;
 import java.util.List;
@@ -57,13 +58,58 @@ public final class HumanoidWayfarerGameTest {
         context.assertTrue(preview.getMainHandProjectileWeapon() == ProjectileWeaponCategory.BOW, "预览没有弓");
         context.assertTrue(mob.getMainHandItem() == crossbow, "枚举候选时已经换兵");
         exchange.apply();
-        context.assertTrue(mob.getMainHandItem() == exchange.replacement(), "没有交换到原库存弓");
-        context.assertTrue(mob.getInventory().getItem(exchange.slot()) == crossbow, "弩没有回原库存格");
+        context.assertTrue(ItemStack.isSameItemSameComponents(mob.getMainHandItem(), exchange.replacement()),
+                "没有交换到背囊弓");
+        context.assertTrue(ItemStack.isSameItemSameComponents(
+                MobInventories.inventory(mob).peek(exchange.slot()), crossbow), "弩没有回原背囊格");
         exchange.restore();
-        context.assertTrue(mob.getMainHandItem() == crossbow, "拒绝施放后没有还原弩");
-        context.assertTrue(crossbow.getDamageValue() == ORIGINAL_DAMAGE, "换兵改变了耐久");
-        context.assertTrue(charged.equals(crossbow.get(DataComponents.CHARGED_PROJECTILES)), "换兵改变了上弦内容");
-        context.assertTrue(crossbow.get(DataComponents.CUSTOM_NAME).getString().equals("库存测试弩"), "丢失名称组件");
+        context.assertTrue(ItemStack.isSameItemSameComponents(mob.getMainHandItem(), crossbow),
+                "拒绝施放后没有还原弩");
+        var restoredCrossbow = mob.getMainHandItem();
+        context.assertTrue(restoredCrossbow.getDamageValue() == ORIGINAL_DAMAGE, "换兵改变了耐久");
+        context.assertTrue(charged.equals(restoredCrossbow.get(DataComponents.CHARGED_PROJECTILES)),
+                "换兵改变了上弦内容");
+        context.assertTrue(restoredCrossbow.get(DataComponents.CUSTOM_NAME).getString().equals("库存测试弩"),
+                "丢失名称组件");
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, structure = STRUCTURE)
+    public void rollbackRestoresBirthWeaponMarker(GameTestHelper context) {
+        // 出生兵器换到手上施放后，收势必须把掉率标记带回原背囊槽。
+        Pillager mob = pillager(context, HumanoidTier.TRUE_QI);
+        var inventory = MobInventories.inventory(mob);
+        inventory.extract(0, 1);
+        inventory.insertBirthWeapon(new ItemStack(Items.BOW));
+        var exchange = HumanoidWayfarerWeapons.reserve(mob, HumanoidWayfarerWeapons.BOWS).orElseThrow();
+        context.assertTrue(exchange.birthWeapon(), "备用弓没有保留出生兵器标记");
+        exchange.apply();
+        context.assertTrue(!inventory.isBirthWeapon(exchange.slot()),
+                "换到手上的出生兵器仍占用背囊标记");
+        exchange.restore();
+        context.assertTrue(inventory.isBirthWeapon(exchange.slot()), "还手后没有恢复出生兵器标记");
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, structure = STRUCTURE)
+    public void dyingRestoresChangedBirthWeaponBeforeDrops(GameTestHelper context) {
+        // 死亡掉落前把施放中已损耗的出生弓还回背囊并恢复其掉率标记。
+        Pillager mob = pillager(context, HumanoidTier.TRUE_QI);
+        ItemStack originalCrossbow = mob.getMainHandItem().copy();
+        var inventory = MobInventories.inventory(mob);
+        inventory.extract(0, 1);
+        inventory.insertBirthWeapon(new ItemStack(Items.BOW));
+        var exchange = HumanoidWayfarerWeapons.reserve(mob, HumanoidWayfarerWeapons.BOWS).orElseThrow();
+        exchange.apply();
+        ItemStack wornBow = mob.getMainHandItem();
+        wornBow.setDamageValue(1);
+        HumanoidTechniqueHost.recordExchange(mob, exchange);
+        HumanoidTechniqueHost.dying(mob);
+        ItemStack restoredBow = inventory.peek(exchange.slot());
+        context.assertTrue(ItemStack.isSameItemSameComponents(mob.getMainHandItem(), originalCrossbow),
+                "死亡前没有恢复原弩");
+        context.assertTrue(restoredBow.getDamageValue() == 1, "还手丢失了弓的耐久变化");
+        context.assertTrue(inventory.isBirthWeapon(exchange.slot()), "死亡前没有恢复出生兵器掉率标记");
         context.succeed();
     }
 
@@ -82,7 +128,8 @@ public final class HumanoidWayfarerGameTest {
         context.assertTrue(items.hasMainHandProjectileWeapon() && items.hasOffHandProjectileWeapon(), "漏报双手类别");
         context.assertTrue(items.getOffHandProjectileWeapon() == ProjectileWeaponCategory.BOW, "副手没有弓");
         context.assertTrue(items.getCanFindAmmunition(), "生物无限弹药事实缺失");
-        context.assertTrue(mob.getMainHandItem() == arrows, "交换覆盖了另一手弹药");
+        context.assertTrue(ItemStack.isSameItemSameComponents(mob.getMainHandItem(), arrows),
+                "交换覆盖了另一手弹药");
         context.succeed();
     }
 
@@ -96,12 +143,8 @@ public final class HumanoidWayfarerGameTest {
         HumanoidEntityNbt.load(restored, saved);
         context.assertTrue(context.getLevel().addFreshEntity(restored), "读档实体没有加入世界");
         HumanoidTechniqueHost.prepare(restored);
-        int bows = 0;
-        for (int slot = 0; slot < restored.getInventory().getContainerSize(); slot++) {
-            if (restored.getInventory().getItem(slot).is(Items.BOW)) {
-                bows++;
-            }
-        }
+        long bows = MobInventories.inventory(restored).snapshot().stream()
+                .filter(stack -> stack.is(Items.BOW)).count();
         context.assertTrue(bows == 1, "读档丢失或重复补发备用弓");
         context.succeed();
     }

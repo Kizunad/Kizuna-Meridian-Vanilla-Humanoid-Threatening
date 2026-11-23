@@ -653,7 +653,7 @@ public final class HumanoidBrain {
     }
 
     static void move(Mob mob, HumanoidMotion.Speeds speeds) {
-        // 近战与行矢在出手段结束前站定，近身守卫的地面起手可跟进；收式执行当前指令。
+        // 近战在出手段结束前站定，近身守卫的地面起手可跟进；收式执行当前指令。
         if (HumanoidCharmController.follow(mob)) {
             return;
         }
@@ -690,11 +690,10 @@ public final class HumanoidBrain {
     private static boolean holdsForStrike(Mob mob, HumanoidMind mind) {
         // 近身守卫可在起手时跟进；出手段仍站定，收式照常移动。全程服从目录移动倍率。
         boolean closeStrike = HumanoidTechniqueHost.castingCloseStrike(mob);
-        boolean wayfarer = HumanoidTechniqueHost.castingWayfarer(mob);
-        if (closeStrike && !wayfarer && HumanoidMeleeGuard.followsWarmup(mob, mind)) {
+        if (closeStrike && HumanoidMeleeGuard.followsWarmup(mob, mind)) {
             return false;
         }
-        return (closeStrike || wayfarer) && HumanoidTechniqueHost.beforeRecovery(mob);
+        return closeStrike && HumanoidTechniqueHost.beforeRecovery(mob);
     }
 
     static Optional<LivingEntity> opponent(Mob mob) {

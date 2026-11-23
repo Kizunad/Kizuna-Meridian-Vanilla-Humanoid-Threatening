@@ -202,7 +202,7 @@ public final class BirthEquipmentGameTest {
             context.assertTrue(requirement.create(id, HumanoidTier.WANDERING_QI, AXE).is(Items.IRON_AXE), "游炁缺铁斧");
             var diamond = new VolumePool(1, 1, 0, pool.books(), new VolumePool.Materials(0, 1));
             BirthVolumeGameTest.use(original, diamond);
-            var mob = pending(context, EntityTypes.PILLAGER, AXE);
+            var mob = pending(context, EntityTypes.VINDICATOR, AXE);
             enter(context, mob);
             var issued = MobInventories.inventory(mob).peek(0);
             context.assertTrue(issued.is(Items.DIAMOND_AXE) && !issued.isEnchanted(), "钻石必中仍未发普通钻石斧");

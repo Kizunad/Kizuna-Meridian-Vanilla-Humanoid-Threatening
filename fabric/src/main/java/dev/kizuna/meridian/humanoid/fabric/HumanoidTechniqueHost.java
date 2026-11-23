@@ -21,6 +21,7 @@ import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHost
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueHostResponse;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueProgress;
 import dev.kizuna.meridian.technique.server.TechniqueBodyStamp;
+import dev.kizuna.meridian.technique.server.TechniqueCastEnded;
 import dev.kizuna.meridian.technique.server.TechniqueErrors;
 import dev.kizuna.meridian.technique.server.TechniqueForecasts;
 import dev.kizuna.meridian.technique.server.TechniqueHost;
@@ -54,6 +55,17 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
             var body = prepare(entity).body().currentBody();
             return HumanGuardStamina.rejection(body, reference.getId(), rules.get());
         }));
+    }
+
+    static void registerCastEndListener() {
+        TechniqueFabric.CAST_ENDED.register(HumanoidTechniqueHost::castEnded);
+    }
+
+    private static void castEnded(TechniqueCastEnded event) {
+        Session session = sessions.get(event.entityUuid());
+        if (session != null && event.castId().equals(session.exchangeCastId)) {
+            restoreExchange(session);
+        }
     }
 
     static Optional<GuardStamina> staminaRules(TechniqueService service, TechniqueReference reference) {
@@ -334,11 +346,44 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         return session != null && session.effects().isCasting();
     }
 
+    static void recordExchange(LivingEntity entity, HumanoidWayfarerWeapons.Exchange exchange) {
+        recordExchange(entity, exchange, null);
+    }
+
+    static void recordExchange(LivingEntity entity, HumanoidWayfarerWeapons.Exchange exchange, String castId) {
+        Session session = sessions.get(entity.getUUID());
+        if (session == null) {
+            throw new IllegalStateException("施放换兵缺少类人会话");
+        }
+        session.exchange = exchange;
+        session.exchangeCastId = castId;
+        if (castId != null && !session.body().techniqueProgress().hasActiveCast()) {
+            restoreExchange(session);
+        }
+    }
+
+    static void tick() {
+        for (Session session : sessions.values()) {
+            if (session.exchange != null && !session.body().techniqueProgress().hasActiveCast()) {
+                restoreExchange(session);
+            }
+        }
+    }
+
     static void damaged(LivingEntity entity) {
         // 健康结算后只处理死亡，用可信恢复入口结束残留活动；受击打断由伤害附属按僵直统一判定。
         Session session = sessions.get(entity.getUUID());
         if (session != null && session.body().currentBody().vitality().dead()) {
+            restoreExchange(session);
             recover(entity, session);
+        }
+    }
+
+    public static void dying(LivingEntity entity) {
+        // 原版死亡会在移除事件前结算装备和背囊掉落，先归还临时换出的出生兵器。
+        Session session = sessions.get(entity.getUUID());
+        if (session != null) {
+            restoreExchange(session);
         }
     }
 
@@ -348,6 +393,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         HumanoidBrain.forget(entity.getUUID());
         if (session != null) {
             try {
+                restoreExchange(session);
                 // 停服开始时功法服务已经逐个取消施放、写回身体并关闭，之后世界才存盘、实体才卸载：
                 // 这时再找它恢复只会抛「功法服务不可用」，每只生物一条报错。只放掉会话；身体随实体存档，万一有残留下次绑定时照旧清。
                 if (!HumanoidFabric.isClaimed(entity)) {
@@ -397,6 +443,15 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         });
     }
 
+    private static void restoreExchange(Session session) {
+        if (session.exchange == null) {
+            return;
+        }
+        session.exchange.restore();
+        session.exchange = null;
+        session.exchangeCastId = null;
+    }
+
     private static byte[] failure(TechniqueHostResponse.Builder response, FailureCode code) {
         // 保留 Framework 原始业务失败码。
         var failure = RequestFailure.newBuilder().setCode(code).build();
@@ -411,6 +466,8 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
     static final class Session {
         private final HumanoidBodyState body;
         private final HumanoidTechniqueEffects effects;
+        private HumanoidWayfarerWeapons.Exchange exchange;
+        private String exchangeCastId;
         private boolean volumesAssigned;
         private boolean assigning;
 

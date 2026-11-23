@@ -71,6 +71,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidCharmController.initialize();
         HumanoidRestrictions.initialize();
         HumanoidTechniqueHost.registerGuardCheck();
+        HumanoidTechniqueHost.registerCastEndListener();
         HumanoidStaggerAnimation.initialize();
         HumanoidWitchAi.initialize(configDirectory);
         CrisisFabric.initialize(configDirectory);
@@ -135,6 +136,7 @@ public final class HumanoidFabric implements ModInitializer {
         if (!volumesChecked) {
             checkVolumes();
         }
+        HumanoidTechniqueHost.tick();
         if (worldState == null) {
             return;
         }

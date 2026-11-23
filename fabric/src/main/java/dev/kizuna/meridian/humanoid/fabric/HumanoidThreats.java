@@ -21,6 +21,7 @@ import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.raid.Raider;
+import net.minecraft.world.phys.Vec3;
 
 /** 敌意来源：谁以谁为目标、谁打过我或同伴、谁算同伴；只记实体引用、到期刻与受到的伤害，不读身体、不扫描周围。 */
 final class HumanoidThreats {
@@ -309,8 +310,9 @@ final class HumanoidThreats {
     static boolean pursued(Mob mob, LivingEntity threat) {
         // 双方速度都朝向撤退者时视为追击，撤退通道允许在仍有命中窗口时反击。
         var towardMob = mob.position().subtract(threat.position());
+        Vec3 threatVelocity = threat.getDeltaMovement();
         return towardMob.lengthSqr() > 0
-                && threat.getDeltaMovement().dot(towardMob) > 0
+                && threatVelocity.dot(towardMob) > 0
                 && mob.getDeltaMovement().dot(towardMob) > 0;
     }
 

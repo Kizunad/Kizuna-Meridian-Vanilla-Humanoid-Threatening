@@ -8,6 +8,8 @@ import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpening;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningStage;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
+import dev.kizuna.meridian.protocol.pb.MeridianMessages.SetAddonProgress;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQi;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.DebugQiMode;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
@@ -24,8 +26,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.cow.Cow;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -91,7 +95,7 @@ final class HumanoidWayfarerTestSupport {
         return target;
     }
 
-    static void prepareQi(GameTestHelper context, Pillager mob) {
+    static void prepareQi(GameTestHelper context, Mob mob) {
         // 随机游炁身体可能只开一条手经；射击回归显式提供连弩需要的两条手经，再填充真元。
         var snapshot = HumanoidTechniqueHost.prepare(mob).body().snapshot().toBuilder();
         for (String meridian : REQUIRED_HAND_MERIDIANS) {
@@ -102,7 +106,9 @@ final class HumanoidWayfarerTestSupport {
                 .setMode(DebugQiMode.FILL_LUMENS)
                 .build();
         FailureCode result = HumanoidHealthHost.debugQi(mob, request);
-        context.assertTrue(result == FailureCode.FAILURE_CODE_UNSPECIFIED, "射击夹具真元准备失败：" + result);
+        if (result != FailureCode.FAILURE_CODE_UNSPECIFIED) {
+            throw new IllegalStateException("真元准备失败：" + result);
+        }
         var body = body(mob);
         var definition = definition(mob, "repeater");
         var held = HumanoidWayfarerWeapons.inspect(mob);
@@ -110,6 +116,23 @@ final class HumanoidWayfarerTestSupport {
         context.assertTrue(binding.hasBinding(), "射击夹具必须能绑定连弩：" + binding);
         context.assertTrue(TechniqueAvailability.affordable(body, definition, binding.getBinding()),
                 "射击夹具必须能支付连弩费用");
+    }
+
+    static void clearKnownTechniques(Mob mob) {
+        var session = HumanoidTechniqueHost.prepare(mob);
+        var body = session.body();
+        var cleared = body.techniqueProgress().toBuilder().clearKnown().build();
+        SetAddonProgress update = SetAddonProgress.newBuilder()
+                .setId(TechniqueState.KEY)
+                .setProgress(TechniqueState.pack(cleared))
+                .build();
+        BodyCommand command = BodyCommand.newBuilder()
+                .setBodyId(body.currentBody().id().value())
+                .setExpectedRevision(body.currentBody().revision())
+                .setSetAddonProgress(update)
+                .build();
+        body.submitRecovery(java.util.UUID.randomUUID().toString(), command);
+        HumanoidTechniqueHost.prepare(mob);
     }
 
     private static void openMeridian(BodyMessages.BodySnapshot.Builder snapshot, String id) {
@@ -127,27 +150,28 @@ final class HumanoidWayfarerTestSupport {
         state.setOpening(OPENED);
     }
 
-    static BodySnapshot body(Pillager mob) {
+    static BodySnapshot body(LivingEntity mob) {
         // 测试读取宿主唯一快照，选式与能力判断使用同一身体。
         return BodyProtobuf.fromMessage(HumanoidTechniqueHost.prepare(mob).body().snapshot());
     }
 
-    static void restoreBody(Pillager mob, BodyMessages.BodySnapshot snapshot) {
+    static void restoreBody(Mob mob, BodyMessages.BodySnapshot snapshot) {
         // 通过正式恢复校验绑定唯一身体，不直接改运行中的 Store。
         HumanoidTechniqueHost.removed(mob);
         var saved = new HumanoidBodyState.SavedBody(mob.getUUID(), snapshot.toByteArray(), new byte[0][],
                 HumanoidFabric.region(mob).sourceId());
-        var restored = HumanoidBodyState.restore(mob.getUUID(), saved, HumanoidFabric.now(), HumanoidSpecies.PILLAGER);
+        var species = HumanoidSpeciesHooks.claimed(mob).orElseThrow();
+        var restored = HumanoidBodyState.restore(mob.getUUID(), saved, HumanoidFabric.now(), species);
         ((HumanoidEntityAccess) mob).meridian$humanoidBody(restored);
         HumanoidTechniqueHost.prepare(mob);
     }
 
-    static TechniqueDefinition definition(Pillager mob, String id) {
+    static TechniqueDefinition definition(LivingEntity mob, String id) {
         // 只查询真实已学精确版本，不在测试里重造目录。
         return TechniqueFabric.service().registry().find(reference(mob, id)).orElseThrow();
     }
 
-    static TechniqueReference reference(Pillager mob, String id) {
+    static TechniqueReference reference(LivingEntity mob, String id) {
         // 沿用正式学卷记录中的版本，避免依赖功法库包内构造辅助方法。
         return TechniqueState.read(body(mob)).getKnownList().stream()
                 .map(known -> known.getTechnique())

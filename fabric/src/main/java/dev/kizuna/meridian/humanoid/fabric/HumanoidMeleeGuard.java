@@ -71,8 +71,10 @@ final class HumanoidMeleeGuard {
             offsetBlocks = targetBox.getCenter().subtract(selfBox.getCenter());
             geometry = MeleeGuardRules.Geometry.BOX;
         }
-        Vec3 targetVelocity = canMoveIndependently(target) ? velocityBlocksPerTick(target) : Vec3.ZERO;
-        Vec3 relativeBlocksPerTick = targetVelocity.subtract(velocityBlocksPerTick(mob));
+        Vec3 targetVelocity = HumanoidMotion.autonomousVelocity(target);
+        Vec3 adjustedTargetVelocity = velocityBlocksPerTick(targetVelocity, target);
+        Vec3 adjustedActorVelocity = velocityBlocksPerTick(mob.getDeltaMovement(), mob);
+        Vec3 relativeBlocksPerTick = adjustedTargetVelocity.subtract(adjustedActorVelocity);
         var motion = new MeleeGuardRules.Motion(vector(offsetBlocks), vector(relativeBlocksPerTick));
         var halfExtents = new MeleeGuardRules.Vector((selfBox.getXsize() + targetBox.getXsize()) * HALF,
                 (selfBox.getYsize() + targetBox.getYsize()) * HALF,
@@ -81,25 +83,14 @@ final class HumanoidMeleeGuard {
         return MeleeGuardRules.reaches(motion, strike);
     }
 
-    private static Vec3 velocityBlocksPerTick(LivingEntity entity) {
+    private static Vec3 velocityBlocksPerTick(Vec3 velocity, LivingEntity entity) {
         // 地面碰撞已阻止下落，速度中遗留的向下重力不能外推成持续下落。
-        Vec3 velocity = entity.getDeltaMovement();
         boolean supported = entity.onGround()
                 || !entity.level().noCollision(entity, entity.getBoundingBox().move(0, -GROUND_PROBE_BLOCKS, 0));
         if (supported && velocity.y < 0) {
             return new Vec3(velocity.x, 0, velocity.z);
         }
         return velocity;
-    }
-
-    private static boolean canMoveIndependently(LivingEntity entity) {
-        if (entity.isPassenger()) {
-            return false;
-        }
-        if (!(entity instanceof Mob mob)) {
-            return true;
-        }
-        return !mob.isNoAi() && !mob.isLeashed();
     }
 
     private static MeleeGuardRules.Vector vector(Vec3 value) {

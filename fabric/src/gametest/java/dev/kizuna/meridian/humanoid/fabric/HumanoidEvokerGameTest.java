@@ -314,8 +314,8 @@ public final class HumanoidEvokerGameTest {
                 .orElseThrow();
     }
 
-    private static Evoker born(GameTestHelper context, String name, HumanoidTier tier, String element,
-                               BlockPos relative, UnaryOperator<BodyMessages.BodySnapshot> edit) {
+    static Evoker born(GameTestHelper context, String name, HumanoidTier tier, String element,
+                       BlockPos relative, UnaryOperator<BodyMessages.BodySnapshot> edit) {
         // 单属性区域让主属性固定是这一行，身体走自然出生同一入口、只指定档位；需要时改快照后从快照恢复。
         // AI 照开，固定 UUID 让出生可重复；保留下来的世界里重跑时先移除同 UUID 的旧实体。
         UUID id = UUID.nameUUIDFromBytes(("c6c-evoker-ai/" + name).getBytes(StandardCharsets.UTF_8));

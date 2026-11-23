@@ -2,16 +2,20 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import dev.kizuna.meridian.inventory.MobInventories;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastRequest;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueFailure;
 import dev.kizuna.meridian.technique.server.TechniqueState;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.cow.Cow;
@@ -19,6 +23,7 @@ import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.world.phys.Vec3;
 
 import static dev.kizuna.meridian.humanoid.fabric.HumanoidGameTestTicks.DEFAULT_TIMEOUT;
@@ -36,10 +41,13 @@ public final class HumanoidWayfarerAiGameTest {
     private static final int FULL_DRAW_CHAIN_TICK = 98;
     private static final long FULL_DRAW_ENTRY_MILLIS = 400;
     private static final long CONVERGENCE_ENTRY_MILLIS = 1200;
+    private static final int ORIGINAL_CROSSBOW_DAMAGE = 7;
+    private static final int CROSSBOW_RESTORE_TIMEOUT = 180;
+    private static final String ORIGINAL_CROSSBOW_NAME = "收势还手测试弩";
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT, structure = STRUCTURE)
     public void visibleDistanceBandsAndHeldWeaponChooseTheirTechniques(GameTestHelper context) {
-        // 原版五格里的弓参与候选预览，查询分数本身不改变主手弩。
+        // 背囊里的弓参与候选预览，查询分数本身不改变主手弩。
         Pillager mob = pillager(context, HumanoidTier.TRUE_QI);
         Cow target = target(context, mob, FAR);
         assertChosen(context, mob, target, Set.of("kneeling", "full_draw"));
@@ -87,7 +95,7 @@ public final class HumanoidWayfarerAiGameTest {
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT, structure = STRUCTURE)
     public void rejectedCastRestoresInventoryExchange(GameTestHelper context) {
-        // 候选查询后另一手出现非弹药，真实起手必须拒绝并还原原弩与库存弓。
+        // 候选查询后另一手出现非弹药，真实起手必须拒绝并还原原弩与背囊弓。
         Pillager mob = pillager(context, HumanoidTier.TRUE_QI);
         Cow target = target(context, mob, FAR);
         var snapshot = body(mob);
@@ -102,9 +110,33 @@ public final class HumanoidWayfarerAiGameTest {
         var turn = new HumanoidActions.Turn(mob, mind, snapshot, readout, Optional.of(opponent));
         HumanoidActions.execute(turn, Decision.cast(Decision.Action.STRIKE, PREFIX + "full_draw", "持物改变后起手"));
         context.assertTrue(!TechniqueState.read(body(mob)).hasActiveCast(), "非法另一手仍成功起手");
-        context.assertTrue(mob.getMainHandItem() == original, "起手被拒后没有还原原弩");
-        context.assertTrue(mob.getInventory().getItem(exchange.slot()) == exchange.replacement(), "库存弓没有还原");
+        context.assertTrue(ItemStack.isSameItemSameComponents(mob.getMainHandItem(), original),
+                "起手被拒后没有还原原弩");
+        context.assertTrue(ItemStack.isSameItemSameComponents(
+                MobInventories.inventory(mob).peek(exchange.slot()), exchange.replacement()), "背囊弓没有还原");
         context.succeed();
+    }
+
+    @GameTest(maxTicks = CROSSBOW_RESTORE_TIMEOUT, structure = STRUCTURE)
+    public void completedCastRestoresLoadedCrossbowAndComponents(GameTestHelper context) {
+        // 成功施放收势后，原弩的耐久、名称和装填内容须随主手一起还原。
+        Pillager mob = pillager(context, HumanoidTier.TRUE_QI);
+        prepareQi(context, mob);
+        clearKnownTechniques(mob);
+        TechniqueFabric.service().learn(mob.getUUID(), PREFIX + "bow_upper");
+        TechniqueFabric.service().learn(mob.getUUID(), PREFIX + "repeater");
+        Cow target = target(context, mob, FAR);
+        ItemStack crossbow = mob.getMainHandItem().copy();
+        crossbow.setDamageValue(ORIGINAL_CROSSBOW_DAMAGE);
+        crossbow.set(DataComponents.CUSTOM_NAME, Component.literal(ORIGINAL_CROSSBOW_NAME));
+        ChargedProjectiles charged = ChargedProjectiles.ofNonEmpty(List.of(new ItemStack(Items.SPECTRAL_ARROW)));
+        crossbow.set(DataComponents.CHARGED_PROJECTILES, charged);
+        mob.setItemSlot(EquipmentSlot.MAINHAND, crossbow.copy());
+        var bowExchange = HumanoidWayfarerWeapons.reserve(mob, HumanoidWayfarerWeapons.BOWS).orElseThrow();
+        executeChoice(context, mob, target, "full_draw");
+        context.assertTrue(TechniqueState.read(body(mob)).hasActiveCast(), "满月没有成功起手");
+        var expected = new CrossbowRestore(crossbow, charged, bowExchange.slot());
+        awaitCrossbowRestore(context, mob, expected, CROSSBOW_RESTORE_TIMEOUT);
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT, structure = STRUCTURE)
@@ -124,7 +156,8 @@ public final class HumanoidWayfarerAiGameTest {
             context.assertTrue(active.getClipStartMillis() == FULL_DRAW_ENTRY_MILLIS, "满月未跳过预备段");
             context.assertTrue(HumanoidWayfarerWeapons.holds(mob, HumanoidWayfarerWeapons.BOWS), "没有换出备用弓");
             var reserve = HumanoidWayfarerWeapons.reserve(mob, HumanoidWayfarerWeapons.CROSSBOWS).orElseThrow();
-            context.assertTrue(reserve.replacement() == crossbow, "原弩丢失或被复制");
+            context.assertTrue(ItemStack.isSameItemSameComponents(reserve.replacement(), crossbow),
+                    "原弩丢失或被复制");
             context.succeed();
         });
     }
@@ -160,6 +193,42 @@ public final class HumanoidWayfarerAiGameTest {
         mind.engage(target);
         var turn = new HumanoidActions.Turn(mob, mind, snapshot, readout, Optional.of(opponent));
         HumanoidActions.execute(turn, Decision.cast(Decision.Action.STRIKE, PREFIX + technique, "测试真实行矢施放"));
+    }
+
+    private static void awaitCrossbowRestore(GameTestHelper context, Pillager mob, CrossbowRestore expected,
+                                             int remainingTicks) {
+        var progress = TechniqueState.read(body(mob));
+        if (!progress.hasActiveCast()) {
+            context.assertTrue(progress.hasLastCast()
+                            && progress.getLastCast().getTechnique().getId().equals(PREFIX + "full_draw"),
+                    "没有观察到满月施放收势");
+            context.runAfterDelay(1, () -> assertCrossbowRestored(context, mob, expected));
+            return;
+        }
+        context.assertTrue(remainingTicks > 0, "满月没有在测试时限内收势");
+        context.runAfterDelay(1, () -> awaitCrossbowRestore(context, mob, expected, remainingTicks - 1));
+    }
+
+    private static void assertCrossbowRestored(GameTestHelper context, Pillager mob, CrossbowRestore expected) {
+        ItemStack restoredCrossbow = mob.getMainHandItem();
+        context.assertTrue(ItemStack.isSameItemSameComponents(restoredCrossbow, expected.crossbow()),
+                "收势后原弩或组件没有恢复");
+        context.assertTrue(restoredCrossbow.getDamageValue() == ORIGINAL_CROSSBOW_DAMAGE,
+                "收势后原弩耐久改变");
+        context.assertTrue(expected.charged().equals(restoredCrossbow.get(DataComponents.CHARGED_PROJECTILES)),
+                "收势后原弩装填内容改变");
+        context.assertTrue(restoredCrossbow.get(DataComponents.CUSTOM_NAME).getString()
+                        .equals(ORIGINAL_CROSSBOW_NAME),
+                "收势后原弩名称组件改变");
+        context.assertTrue(HumanoidWayfarerWeapons.holds(mob, HumanoidWayfarerWeapons.CROSSBOWS),
+                "收势后主手没有恢复原弩");
+        context.assertTrue(ItemStack.isSameItemSameComponents(
+                MobInventories.inventory(mob).peek(expected.bowSlot()), new ItemStack(Items.BOW)),
+                "收势后背囊没有保留备用弓");
+        context.succeed();
+    }
+
+    private record CrossbowRestore(ItemStack crossbow, ChargedProjectiles charged, int bowSlot) {
     }
 
     private static void cast(GameTestHelper context, Pillager mob, LivingEntity target, String technique) {

@@ -160,7 +160,8 @@ final class HumanoidActions {
         TechniqueLeaps.Preview leapPreview = preview.orElseThrow();
         long flightMillis = leapPreview.flightMillis();
         // 落地距离用于所有候选的初筛；首击时刻随式不同，选中后另验。
-        Vec3 predictedTarget = predictedTargetPosition(opponent.position(), opponent.getDeltaMovement(), flightMillis);
+        Vec3 opponentVelocity = opponent.getDeltaMovement();
+        Vec3 predictedTarget = predictedTargetPosition(opponent.position(), opponentVelocity, flightMillis);
         double expectedDistance = horizontalDistance(landing, predictedTarget);
         Optional<Repertoire.Strike> strike = chooseStrike(turn, expectedDistance).filter(candidate -> {
             LeapPlan plan = new LeapPlan(candidate, leapPreview, landing, flightMillis,
@@ -210,12 +211,14 @@ final class HumanoidActions {
     private static Optional<HumanoidMotion.Directive> standoff(Turn turn) {
         // 对敌、目标看得见且在八格外（连发放得了的距离）、有连发可放（冷却中也算）时：
         // 站位取连发射程和盯上距离里近的那个，再留余量；远了走近，近了退开，带里停下出式。
-        // 八格内连发放不了，照近身规则出手，不一味往墙角退着挨打；看不见的照旧跟上去找，撤退和无路自卫不走这里。
+        // 八格内静止目标近战出手；逼近时按射程退开，避免贴身截断远程招式。
+        // 看不见的照旧跟上去找，撤退和无路自卫不走这里。
         OptionalDouble reach = turn.readout().volleyReach();
         boolean engaged = turn.mind().stance() == HumanoidAssessment.Stance.ENGAGE;
         boolean volleyable = turn.readout().context().combat().target()
                 .filter(target -> target.visibility() == TechniqueSelector.Visibility.VISIBLE)
-                .filter(target -> target.distanceBand() != TargetDistanceBand.NEAR)
+                .filter(target -> target.distanceBand() != TargetDistanceBand.NEAR
+                        || target.approach() == TechniqueSelector.Approach.APPROACHING)
                 .isPresent();
         if (reach.isEmpty() || !engaged || !volleyable) {
             return Optional.empty();
@@ -370,7 +373,8 @@ final class HumanoidActions {
         LivingEntity opponent = opponentEntity(turn);
         var technique = reference(turn, plan.strike().technique());
         var definition = turn.readout().context().registry().find(technique).orElseThrow();
-        if (!landingStrikeInRange(plan, definition, opponent.position(), opponent.getDeltaMovement())) {
+        Vec3 opponentVelocity = opponent.getDeltaMovement();
+        if (!landingStrikeInRange(plan, definition, opponent.position(), opponentVelocity)) {
             return false;
         }
         long incomingHorizonMillis = flightMillis + firstHitMillis;
@@ -435,6 +439,9 @@ final class HumanoidActions {
             CastOutcome outcome = TechniqueFabric.service().cast(turn.mob().getUUID(), request);
             if (failed(outcome)) {
                 exchange.ifPresent(HumanoidWayfarerWeapons.Exchange::restore);
+            } else {
+                exchange.ifPresent(value -> HumanoidTechniqueHost.recordExchange(
+                        turn.mob(), value, outcome.getCastId()));
             }
             return outcome;
         } catch (RuntimeException failure) {

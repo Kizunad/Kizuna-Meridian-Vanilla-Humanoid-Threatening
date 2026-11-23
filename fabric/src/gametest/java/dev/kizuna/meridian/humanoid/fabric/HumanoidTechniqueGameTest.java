@@ -8,6 +8,8 @@ import dev.kizuna.meridian.humanoid.server.Decision;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.humanoid.server.HumanoidVariant;
+import dev.kizuna.meridian.inventory.MobInventories;
+import dev.kizuna.meridian.inventory.MobInventory;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
@@ -478,6 +480,27 @@ public final class HumanoidTechniqueGameTest {
                 mob.discard();
             }
         }
+        context.succeed();
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT, environment = TECHNIQUE_BATCH)
+    public void foreignDoorBreakerCannotUseBackpackJunk(GameTestHelper context) {
+        // 破门斩只能从背囊取合规斧类，普通方块不能补位。
+        Vindicator mob = prepared(context);
+        MobInventory inventory = MobInventories.inventory(mob);
+        for (int slot = 0; slot < MobInventory.SIZE; slot++) {
+            inventory.extract(slot, 64);
+        }
+        mob.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        context.assertTrue(inventory.insert(new ItemStack(Items.COBBLESTONE)) == 1,
+                "背囊没有放入破门杂物夹具");
+        context.assertTrue(progress(mob).getKnownList().stream()
+                .anyMatch(known -> known.getTechnique().getId().equals(PREFIX + "cleave")),
+                "破门批次没有固定授予破门式");
+        var readout = HumanoidRepertoires.read(mob, body(mob), Optional.empty(), ignored -> false);
+        boolean cleaveAvailable = readout.strikes().stream()
+                .anyMatch(known -> known.getTechnique().getId().equals(PREFIX + "cleave"));
+        context.assertTrue(!cleaveAvailable, "普通方块进入了破门式候选：" + readout.strikes());
         context.succeed();
     }
 

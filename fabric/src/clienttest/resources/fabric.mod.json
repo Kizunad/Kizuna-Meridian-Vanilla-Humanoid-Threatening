@@ -5,6 +5,9 @@
   "name": "Humanoid Guard Client Test",
   "environment": "client",
   "entrypoints": {
-    "fabric-client-gametest": ["dev.kizuna.meridian.humanoid.fabric.HumanoidGuardClientTest"]
+    "fabric-client-gametest": [
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidGuardClientTest",
+      "dev.kizuna.meridian.humanoid.fabric.HumanoidVindicatorWayfarerClientTest"
+    ]
   }
 }

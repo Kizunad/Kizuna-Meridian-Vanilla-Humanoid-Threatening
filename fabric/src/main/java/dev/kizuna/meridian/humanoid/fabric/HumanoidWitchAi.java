@@ -168,12 +168,13 @@ final class HumanoidWitchAi {
         // 重甲逼近优先蚀甲，跑离优先枯竭腿部，其次才在适合环境用招虫水。
         LivingEntity enemy = target.entity();
         Vec3 offset = enemy.position().subtract(witch.position()).multiply(1, 0, 1);
-        Vec3 relative = enemy.getDeltaMovement().subtract(witch.getDeltaMovement()).multiply(1, 0, 1);
+        Vec3 enemyVelocity = enemy.getDeltaMovement();
+        Vec3 relative = enemyVelocity.subtract(witch.getDeltaMovement()).multiply(1, 0, 1);
         if (target.environment().heavyArmor() && offset.dot(relative) < 0) {
             return plan(LOB, BrewKind.ARMOR_ROT, enemy, target.armorGroup());
         }
         if (offset.dot(relative) > 0
-                && enemy.getDeltaMovement().horizontalDistance() >= config.environment().runningSpeedPerTick()) {
+                && enemyVelocity.horizontalDistance() >= config.environment().runningSpeedPerTick()) {
             return plan(LOB, BrewKind.DEPLETION, enemy, BrewPartGroup.LEGS);
         }
         if (!target.environment().water() && !target.environment().rain()

@@ -353,10 +353,15 @@ final class HumanoidRepertoires {
             TechniqueDefinition definition = found.orElseThrow();
             var rules = registry.bookOf(reference).filter(book -> book.hasHeldItemRules())
                     .map(book -> book.getHeldItemRules());
-            var exchange = HumanoidWayfarerWeapons.forTechnique(source.mob(), definition);
+            var exchange = rules.flatMap(held -> HumanoidWayfarerWeapons.forTechnique(
+                    source.mob(), held, definition, items));
             HeldItems preview = exchange.map(value -> value.preview(items)).orElse(items);
             var hand = rules.flatMap(held -> TechniqueHeldItems.find(held, preview, definition));
             if (rules.isPresent() && hand.isEmpty()) {
+                continue;
+            }
+            if (rules.isPresent() && exchange.isEmpty()
+                    && !HumanoidWayfarerWeapons.currentSupports(source.mob(), rules.orElseThrow(), definition, items)) {
                 continue;
             }
             BindingOutcome binding = TechniqueBinder.bind(body, definition,
