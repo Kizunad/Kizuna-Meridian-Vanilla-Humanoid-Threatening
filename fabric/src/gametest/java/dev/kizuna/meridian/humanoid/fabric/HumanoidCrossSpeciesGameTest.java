@@ -60,12 +60,15 @@ public final class HumanoidCrossSpeciesGameTest {
         floor(context, DOOR_FLOOR_X, DOOR_FLOOR_Z);
         Pillager pillager = pillager(context, DOOR_VOLUME, Items.CROSSBOW);
         Cow target = target(context, pillager, DOOR_TARGET_DISTANCE);
+        pillager.setNoAi(true /* aiDisabled */);
+        pillager.setTarget(null);
         pillager.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
         placeDoor(context);
         Set<String> castIds = new LinkedHashSet<>();
         Set<String> activeHands = new LinkedHashSet<>();
         boolean[] axeObserved = {false};
         context.runAfterDelay(10, () -> {
+            pillager.setNoAi(false /* aiDisabled */);
             pillager.setTarget(target);
             poll(context, pillager, target, OBSERVE_TICKS, () -> {
                 if (pillager.getTarget() != target) {
@@ -219,9 +222,10 @@ public final class HumanoidCrossSpeciesGameTest {
     private static Pillager pillager(GameTestHelper context, String technique, net.minecraft.world.item.Item item) {
         Pillager mob = HumanoidWayfarerTestSupport.pillager(context, HumanoidTier.TRUE_QI);
         HumanoidWayfarerTestSupport.clearKnownTechniques(mob);
-        TechniqueFabric.service().learn(mob.getUUID(), technique.equals(DOOR_VOLUME) ? DOOR_VOLUME : technique);
         if (technique.equals(DOOR_VOLUME)) {
             TechniqueFabric.service().learn(mob.getUUID(), DOOR_TECHNIQUE);
+        } else {
+            TechniqueFabric.service().learn(mob.getUUID(), technique);
         }
         HumanoidTechniqueHost.prepare(mob);
         mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(item));

@@ -43,7 +43,7 @@ public final class HumanoidEnclosedArenaGameTest {
     private static final BlockPos FIRST = new BlockPos(2, 1, 2);
     private static final BlockPos SECOND = new BlockPos(7, 1, 7);
     private static final BlockPos CORNER = new BlockPos(1, 1, 1);
-    private static final BlockPos PURSUER = new BlockPos(3, 1, 3);
+    private static final BlockPos PURSUER = new BlockPos(2, 1, 2);
     private static final Set<Decision.Movement> EVASIONS = EnumSet.of(Decision.Movement.RETREAT,
             Decision.Movement.KITE, Decision.Movement.DODGE, Decision.Movement.FACE);
     private static final Set<Decision.Action> PURSUITS = EnumSet.of(Decision.Action.APPROACH,
