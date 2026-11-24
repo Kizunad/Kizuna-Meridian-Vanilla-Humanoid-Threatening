@@ -1,10 +1,9 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.config.TomlFile;
 import dev.kizuna.meridian.humanoid.server.HumanoidBrainConfigLoader;
 import dev.kizuna.meridian.humanoid.server.VolumeTable;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Comparator;
@@ -57,7 +56,7 @@ final class HumanoidAddonVolumes {
                 .filter(path -> value.getAsString().endsWith(".toml"))
                 .orElseThrow(() -> new IllegalArgumentException(source + "：模组内找不到这份 .toml 学卷片段"));
         try {
-            return HumanoidBrainConfigLoader.addonVolumes(Files.readString(file, StandardCharsets.UTF_8));
+            return HumanoidBrainConfigLoader.addonVolumes(TomlFile.read(file));
         } catch (IOException | IllegalArgumentException failure) {
             throw new IllegalArgumentException(source + "：" + failure.getMessage(), failure);
         }

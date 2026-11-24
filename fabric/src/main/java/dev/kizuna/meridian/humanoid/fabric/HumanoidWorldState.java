@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.persistence.DurableStateFile;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
@@ -27,6 +28,8 @@ import java.util.Set;
  */
 final class HumanoidWorldState {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(HumanoidWorldState.class);
+    private static final String VERSION_KEY = "MeridianStateVersion";
+    private static final int FILE_VERSION = 1;
     private final List<EnvironmentHostMessages.RegionRelease> pending = new ArrayList<>();
     private final Set<String> pendingForget = new LinkedHashSet<>();
     private final Set<String> durableForget = new HashSet<>();
@@ -49,6 +52,11 @@ final class HumanoidWorldState {
     static HumanoidWorldState load(Path file) throws IOException {
         // 文件外层是带数据版本的压缩 NBT，正文在 data 字段；缺正文时按空正文校验并拒绝加载。
         CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
+        // 无版本键的旧档使用同一正文结构。有版本键时校验原始标签类型，防止数值转换掩盖坏档。
+        Tag version = root.get(VERSION_KEY);
+        if (version != null && (version.getId() != Tag.TAG_INT || root.getIntOr(VERSION_KEY, 0) != FILE_VERSION)) {
+            throw new IOException(file + "：无法读取存档版本 " + version);
+        }
         return read(root.getCompoundOrEmpty("data"));
     }
 
@@ -224,8 +232,8 @@ final class HumanoidWorldState {
             var root = new CompoundTag();
             root.put("data", save(new CompoundTag()));
             NbtUtils.addCurrentDataVersion(root);
-            DurableStateFile.write(file.toPath(), temporary -> NbtIo.writeCompressed(root, temporary),
-                    directorySync);
+            root.putInt(VERSION_KEY, FILE_VERSION);
+            DurableStateFile.write(file.toPath(), output -> NbtIo.writeCompressed(root, output), directorySync);
             durableForget.clear();
             durableForget.addAll(pendingForget);
             handoffDirty = false;

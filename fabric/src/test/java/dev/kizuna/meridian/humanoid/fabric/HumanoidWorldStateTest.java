@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.persistence.DurableStateFile;
+
 import dev.kizuna.meridian.core.Qi;
 import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionQuery;
@@ -43,16 +45,18 @@ public final class HumanoidWorldStateTest {
             NbtIo.writeCompressed(root, file);
 
             CompoundTag saved = readData(file);
-            HumanoidWorldState restored = HumanoidWorldState.read(saved);
+            HumanoidWorldState restored = HumanoidWorldState.load(file);
             assertFalse(saved.contains("pending_forget"));
             assertTrue(restored.isDirty());
             restored.save(file.toFile());
 
-            CompoundTag upgraded = readData(file);
+            CompoundTag envelope = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
+            assertEquals(1, envelope.getIntOr("MeridianStateVersion", 0));
+            CompoundTag upgraded = envelope.getCompoundOrEmpty("data");
             assertEquals(Optional.of(NEXT_SEQUENCE), upgraded.getLong("next_sequence"));
             assertEquals(legacy.get("pending"), upgraded.get("pending"));
             assertTrue(upgraded.get("pending_forget") instanceof ListTag forget && forget.isEmpty());
-            HumanoidWorldState reloaded = HumanoidWorldState.read(upgraded);
+            HumanoidWorldState reloaded = HumanoidWorldState.load(file);
             assertFalse(reloaded.isDirty());
             assertEquals(upgraded, reloaded.save(new CompoundTag()));
         }

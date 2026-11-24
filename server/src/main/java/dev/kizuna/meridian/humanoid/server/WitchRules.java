@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import org.tomlj.TomlTable;
 
 import java.nio.file.Path;
@@ -9,11 +10,12 @@ import java.util.Set;
 public record WitchRules(Quality quality, Healing healing, Range range, Charm charm,
                          Environment environment, Aim aim, Sound sound, Vanilla vanilla) {
     private static final String DEFAULT_RESOURCE = "/meridian-witch-ai.toml";
-    private static final HumanoidToml TOML = new HumanoidToml("女巫 AI 配置无效");
+    private static final TomlFile TOML =
+            new TomlFile("女巫 AI 配置无效" + " " + DEFAULT_RESOURCE);
 
     public static WitchRules load(Path path) {
         // 首次加载导出默认文件；已有文件只读取，不覆盖运营方调整。
-        return parse(TOML.readOrExport(path, DEFAULT_RESOURCE));
+        return parse(TomlFile.readOrExport(path, WitchRules.class, DEFAULT_RESOURCE));
     }
 
     static WitchRules parse(String text) {
@@ -34,8 +36,8 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
 
     private static Quality quality(TomlTable table) {
         TOML.checkKeys(table, Set.of("wandering", "true_qi"), "quality.");
-        return new Quality(TOML.integer(table, "wandering", "quality.wandering"),
-                TOML.integer(table, "true_qi", "quality.true_qi"));
+        return new Quality(TOML.positiveInteger(table, "wandering", "quality.wandering"),
+                TOML.positiveInteger(table, "true_qi", "quality.true_qi"));
     }
 
     private static Healing healing(TomlTable table) {
@@ -57,16 +59,17 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
         TOML.checkKeys(table, Set.of("residue_trigger_dose", "close_distance", "crowd_radius", "crowd_count",
                 "brain_ceiling", "direct_cooldown_ticks"), "charm.");
         return new Charm(ratio(table, "residue_trigger_dose", "charm"), positive(table, "close_distance", "charm"),
-                positive(table, "crowd_radius", "charm"), TOML.integer(table, "crowd_count", "charm.crowd_count"),
+                positive(table, "crowd_radius", "charm"),
+                TOML.positiveInteger(table, "crowd_count", "charm.crowd_count"),
                 nonNegative(table, "brain_ceiling", "charm"),
-                TOML.integer(table, "direct_cooldown_ticks", "charm.direct_cooldown_ticks"));
+                TOML.positiveInteger(table, "direct_cooldown_ticks", "charm.direct_cooldown_ticks"));
     }
 
     private static Environment environment(TomlTable table) {
         TOML.checkKeys(table, Set.of("running_speed_per_tick", "dark_light_ceiling", "insect_radius",
                 "heavy_armor_defense"), "environment.");
         return new Environment(positive(table, "running_speed_per_tick", "environment"),
-                TOML.integer(table, "dark_light_ceiling", "environment.dark_light_ceiling"),
+                TOML.positiveInteger(table, "dark_light_ceiling", "environment.dark_light_ceiling"),
                 positive(table, "insect_radius", "environment"),
                 nonNegative(table, "heavy_armor_defense", "environment"));
     }
@@ -79,7 +82,7 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
 
     private static Sound sound(TomlTable table) {
         TOML.checkKeys(table, Set.of("celebrate_delay_ticks", "volume", "pitch"), "sound.");
-        return new Sound(TOML.integer(table, "celebrate_delay_ticks", "sound.celebrate_delay_ticks"),
+        return new Sound(TOML.positiveInteger(table, "celebrate_delay_ticks", "sound.celebrate_delay_ticks"),
                 nonNegative(table, "volume", "sound"), positive(table, "pitch", "sound"));
     }
 
@@ -92,7 +95,7 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
     }
 
     private static double ratio(TomlTable table, String key, String section) {
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value < 0 || value > 1) {
             throw TOML.invalid(section + "." + key + " 必须位于 [0, 1]");
         }
@@ -100,7 +103,7 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
     }
 
     private static double positive(TomlTable table, String key, String section) {
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value <= 0) {
             throw TOML.invalid(section + "." + key + " 必须为正");
         }
@@ -108,7 +111,7 @@ public record WitchRules(Quality quality, Healing healing, Range range, Charm ch
     }
 
     private static double nonNegative(TomlTable table, String key, String section) {
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value < 0) {
             throw TOML.invalid(section + "." + key + " 不能为负");
         }

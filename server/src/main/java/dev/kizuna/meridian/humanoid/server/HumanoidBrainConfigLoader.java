@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import org.tomlj.Toml;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlTable;
@@ -34,22 +35,28 @@ public final class HumanoidBrainConfigLoader {
     private static final double FULL_CIRCLE_DEGREES = 360;
     private static final String VOLUMES = "volumes";
     private static final String POOL = "volume_pool";
-    private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.BRAIN);
+    private static final TomlFile TOML =
+            new TomlFile(HumanoidErrors.BRAIN + " " + DEFAULT_RESOURCE);
     private static final Logger LOGGER = System.getLogger("meridian_humanoid_brain_config");
 
     private HumanoidBrainConfigLoader() {
         // 配置加载器不持有服务器实例或可变配置。
     }
 
+    private static TomlTable defaultsTable() {
+        // 旧配置缺项时，从同一份随包资源读取对应规则。
+        return TOML.parse(TomlFile.resource(HumanoidBrainConfigLoader.class, DEFAULT_RESOURCE));
+    }
+
     public static HumanoidBrainConfig defaults() {
         // JAR 资源是默认值唯一来源。
-        return parse(TOML.resource(DEFAULT_RESOURCE));
+        return parse(TomlFile.resource(HumanoidBrainConfigLoader.class, DEFAULT_RESOURCE));
     }
 
     public static HumanoidBrainConfig load(Path path) {
         // 首次加载导出默认文件；已有文件只读取，不覆盖运营方调整。
         boolean existing = path != null && Files.exists(path);
-        String text = TOML.readOrExport(path, DEFAULT_RESOURCE);
+        String text = TomlFile.readOrExport(path, HumanoidBrainConfigLoader.class, DEFAULT_RESOURCE);
         HumanoidBrainConfig loaded = parse(text);
         if (existing) {
             logMissingDefaultKeys(path, missingDefaultKeys(text));
@@ -61,7 +68,7 @@ public final class HumanoidBrainConfigLoader {
     static List<String> missingDefaultKeys(String text) {
         // 默认资源里有、给定文本里缺的键；能加载的文本只会缺可省键。学卷表按卷单独比较。
         TomlTable configured = TOML.parse(text);
-        return TOML.parse(TOML.resource(DEFAULT_RESOURCE)).keyPathSet().stream()
+        return defaultsTable().keyPathSet().stream()
                 .filter(keyPath -> !keyPath.getFirst().equals(VOLUMES))
                 .filter(keyPath -> !configured.contains(keyPath))
                 .map(Toml::joinKeyPath)
@@ -102,13 +109,13 @@ public final class HumanoidBrainConfigLoader {
         var parsed = TOML.parse(text);
         TOML.checkKeys(parsed, Set.of("config_version", "decision_interval_ticks", "log_decisions", "threat",
                 "assessment", "response", VOLUMES, "concurrency", VILLAGER, POOL), "");
-        int version = TOML.integer(parsed, "config_version", "config_version");
+        int version = TOML.positiveInteger(parsed, "config_version", "config_version");
         if (version < MIN_SUPPORTED_CONFIG_VERSION || version > CURRENT_CONFIG_VERSION) {
             throw TOML.invalid("config_version 必须位于 " + MIN_SUPPORTED_CONFIG_VERSION + "～"
                     + CURRENT_CONFIG_VERSION + "，请删除旧文件或按新默认值合并");
         }
         var schedule = new HumanoidBrainConfig.Schedule(
-                TOML.integer(parsed, "decision_interval_ticks", "decision_interval_ticks"), log(parsed));
+                TOML.positiveInteger(parsed, "decision_interval_ticks", "decision_interval_ticks"), log(parsed));
         var threat = threat(TOML.table(parsed, "threat", "threat"));
         var assessment = assessment(TOML.table(parsed, "assessment", "assessment"), threat.safeDistance());
         var response = response(TOML.table(parsed, "response", "response"), threat.safeDistance());
@@ -121,7 +128,7 @@ public final class HumanoidBrainConfigLoader {
     private static VolumePool volumePool(TomlTable parsed) {
         var source = parsed;
         if (!parsed.contains(POOL)) {
-            source = TOML.parse(TOML.resource(DEFAULT_RESOURCE));
+            source = defaultsTable();
         }
         var table = TOML.table(source, POOL, POOL);
         TOML.checkKeys(table, Set.of("wandering_chance", "true_chance", "middle_chance", "books",
@@ -180,7 +187,7 @@ public final class HumanoidBrainConfigLoader {
         // 这一节在旧导出文件里没有：整节缺失时读 JAR 默认资源的同名节，load 启动时另行提示缺键。
         TomlTable source = parsed;
         if (!parsed.contains(VILLAGER)) {
-            source = TOML.parse(TOML.resource(DEFAULT_RESOURCE));
+            source = defaultsTable();
         }
         TomlTable table = TOML.table(source, VILLAGER, VILLAGER);
         TOML.checkKeys(table, Set.of("sortie_distance", "sortie_reconsider_seconds", "outnumbered_weight",
@@ -268,7 +275,7 @@ public final class HumanoidBrainConfigLoader {
         if (threat.contains(key)) {
             return threat;
         }
-        return TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "threat", "threat");
+        return TOML.table(defaultsTable(), "threat", "threat");
     }
 
     private static Map<String, Double> noticeDistances(TomlTable threat) {
@@ -304,7 +311,7 @@ public final class HumanoidBrainConfigLoader {
         var recovery = new AssessmentRules.Recovery(ratio(table, "return_hp_ratio", "assessment"),
                 ratio(table, "return_arm_ratio", "assessment"), safeDistance, returnUnpressedSeconds(table));
         return new AssessmentRules(weights, nonNegative(table, "casting_weight", "assessment"),
-                TOML.number(table, "engage_margin", "assessment.engage_margin"), retreat, recovery);
+                TOML.finiteNumber(table, "engage_margin", "assessment.engage_margin"), retreat, recovery);
     }
 
     private static HumanoidBrainConfig.ResponseRules response(TomlTable table, double safeDistance) {
@@ -323,7 +330,7 @@ public final class HumanoidBrainConfigLoader {
                 positive(defaulted(table, KICK_START_DISTANCE), KICK_START_DISTANCE, "response"));
         return new HumanoidBrainConfig.ResponseRules(tactics,
                 positive(table, "assault_stand_off", "response"),
-                TOML.integer(table, "failure_limit", "response.failure_limit"),
+                TOML.positiveInteger(table, "failure_limit", "response.failure_limit"),
                 millis(table, "failure_block_millis"),
                 positive(defaulted(table, ARMORED_CHEST_ARMOR), ARMORED_CHEST_ARMOR, "response"));
     }
@@ -333,14 +340,14 @@ public final class HumanoidBrainConfigLoader {
         if (table.contains(key)) {
             return table;
         }
-        return TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "response", "response");
+        return TOML.table(defaultsTable(), "response", "response");
     }
 
     private static double returnUnpressedSeconds(TomlTable table) {
         // 这个键在旧导出文件里没有：缺失时读 JAR 默认资源的同名键，load 启动时另行提示。
         TomlTable source = table;
         if (!table.contains(RETURN_UNPRESSED_SECONDS)) {
-            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "assessment", "assessment");
+            source = TOML.table(defaultsTable(), "assessment", "assessment");
         }
         return positive(source, RETURN_UNPRESSED_SECONDS, "assessment");
     }
@@ -349,7 +356,7 @@ public final class HumanoidBrainConfigLoader {
         // 这个键在旧导出文件里没有：缺失时读 JAR 默认资源的同名键，load 启动时另行提示。
         TomlTable source = table;
         if (!table.contains(CORNERED_STAND_DISTANCE)) {
-            source = TOML.table(TOML.parse(TOML.resource(DEFAULT_RESOURCE)), "response", "response");
+            source = TOML.table(defaultsTable(), "response", "response");
         }
         return positive(source, CORNERED_STAND_DISTANCE, "response");
     }
@@ -424,7 +431,7 @@ public final class HumanoidBrainConfigLoader {
 
     private static double ratio(TomlTable table, String key, String section) {
         // 比例与概率位于 [0, 1]。
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value < 0 || value > 1) {
             throw TOML.invalid(section + "." + key + " 必须位于 [0, 1]");
         }
@@ -433,7 +440,7 @@ public final class HumanoidBrainConfigLoader {
 
     private static double nonNegative(TomlTable table, String key, String section) {
         // 权重不能为负。
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value < 0) {
             throw TOML.invalid(section + "." + key + " 不能为负");
         }
@@ -442,7 +449,7 @@ public final class HumanoidBrainConfigLoader {
 
     private static double positive(TomlTable table, String key, String section) {
         // 距离与时长必须为正。
-        double value = TOML.number(table, key, section + "." + key);
+        double value = TOML.finiteNumber(table, key, section + "." + key);
         if (value <= 0) {
             throw TOML.invalid(section + "." + key + " 必须为正");
         }

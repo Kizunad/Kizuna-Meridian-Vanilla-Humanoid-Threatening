@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import dev.kizuna.meridian.human.server.HumanContent;
 import java.util.Objects;
 import org.tomlj.TomlTable;
@@ -10,7 +11,8 @@ import java.util.Set;
 
 /** 物种表读取与登记：其他模组在初始化时交来一份 TOML，全部条目校验通过后才逐一登记。 */
 public final class HumanoidSpeciesDefinitions {
-    private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.SPECIES);
+    private static final TomlFile TOML =
+            new TomlFile(HumanoidErrors.SPECIES);
     private static final Set<String> ENTRY_KEYS = Set.of("template", "default_tier", "death_rule", "brain",
             "profile");
 

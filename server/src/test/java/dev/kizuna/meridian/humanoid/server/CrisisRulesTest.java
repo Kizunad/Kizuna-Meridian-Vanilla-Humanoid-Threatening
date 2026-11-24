@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
@@ -68,6 +69,6 @@ public class CrisisRulesTest {
 
     private static String defaultText() {
         // JAR 里的默认文件本身。
-        return new HumanoidToml("test").resource("/meridian-humanoid-crisis.toml");
+        return TomlFile.resource(CrisisRulesTest.class, "/meridian-humanoid-crisis.toml");
     }
 }

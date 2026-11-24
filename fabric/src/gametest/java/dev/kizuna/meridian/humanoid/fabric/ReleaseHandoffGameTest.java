@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.persistence.DurableStateFile;
+
 import dev.kizuna.meridian.core.Qi;
 import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.EnvironmentHostRequest;

@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.human.server.HumanBirth;
 import dev.kizuna.meridian.human.server.HumanOpening;
@@ -210,7 +211,7 @@ public class HumanoidBodyGeneratorTest {
     @Test
     public void armTrainingConfigurationDoesNotChangeOtherBirthSampling() {
         // 关闭手臂成长后，只有六块臂肌的成长字段改变，不消耗或移动身体随机流。
-        String defaults = new HumanoidToml(HumanoidErrors.CONFIG).resource(HumanoidConfigLoader.DEFAULT_RESOURCE);
+        String defaults = TomlFile.resource(HumanoidBodyGeneratorTest.class, HumanoidConfigLoader.DEFAULT_RESOURCE);
         String disabled = defaults.replace("wandering_qi_arm_training_growth = 0.20",
                         "wandering_qi_arm_training_growth = 0.0")
                 .replace("true_qi_arm_training_growth = 0.35", "true_qi_arm_training_growth = 0.0");
@@ -230,7 +231,7 @@ public class HumanoidBodyGeneratorTest {
     @Test
     public void armTrainingConfigurationRejectsInvalidGrowth() {
         // 成长必须是有限的闭区间比例，不能绕过出生配置校验。
-        String defaults = new HumanoidToml(HumanoidErrors.CONFIG).resource(HumanoidConfigLoader.DEFAULT_RESOURCE);
+        String defaults = TomlFile.resource(HumanoidBodyGeneratorTest.class, HumanoidConfigLoader.DEFAULT_RESOURCE);
         for (String invalid : List.of("-0.1", "1.1", "nan", "inf")) {
             String text = defaults.replace("true_qi_arm_training_growth = 0.35",
                     "true_qi_arm_training_growth = " + invalid);

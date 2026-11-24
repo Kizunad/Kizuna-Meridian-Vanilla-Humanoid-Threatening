@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import org.tomlj.Toml;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlTable;
@@ -22,18 +23,24 @@ public record CrisisRules(boolean enabled, String genericParty, Frequency freque
     /** 招敌的一「天」：玩家在线满这么多 tick。 */
     public static final long DAY_TICKS = 24000;
     private static final String DEFAULT_RESOURCE = "/meridian-humanoid-crisis.toml";
-    private static final HumanoidToml TOML = new HumanoidToml(HumanoidErrors.CRISIS);
+    private static final TomlFile TOML =
+            new TomlFile(HumanoidErrors.CRISIS + " " + DEFAULT_RESOURCE);
     private static final Logger LOGGER = System.getLogger("meridian_humanoid_crisis_config");
+
+    private static TomlTable defaultsTable() {
+        // 旧配置缺项时，从同一份随包资源读取对应规则。
+        return TOML.parse(TomlFile.resource(CrisisRules.class, DEFAULT_RESOURCE));
+    }
 
     public static CrisisRules defaults() {
         // JAR 资源是默认值唯一来源。
-        return parse(TOML.resource(DEFAULT_RESOURCE));
+        return parse(TomlFile.resource(CrisisRules.class, DEFAULT_RESOURCE));
     }
 
     public static CrisisRules load(Path path) {
         // 已有文件缺的键启动时提示一次，程序不改运营方的文件。
         boolean existing = path != null && Files.exists(path);
-        String text = TOML.readOrExport(path, DEFAULT_RESOURCE);
+        String text = TomlFile.readOrExport(path, CrisisRules.class, DEFAULT_RESOURCE);
         CrisisRules rules = parse(text);
         List<String> missing = missingDefaultKeys(text);
         if (existing && !missing.isEmpty()) {
@@ -46,7 +53,7 @@ public record CrisisRules(boolean enabled, String genericParty, Frequency freque
     static List<String> missingDefaultKeys(String text) {
         // 默认资源里有、给定文本里缺的键，按键路径排序。
         TomlTable configured = TOML.parse(text);
-        return TOML.parse(TOML.resource(DEFAULT_RESOURCE)).keyPathSet().stream()
+        return defaultsTable().keyPathSet().stream()
                 .filter(keyPath -> !configured.contains(keyPath))
                 .map(Toml::joinKeyPath)
                 .sorted()
@@ -55,7 +62,7 @@ public record CrisisRules(boolean enabled, String genericParty, Frequency freque
 
     public static CrisisRules parse(String text) {
         // 文本里有的键用文本的值，缺的用默认资源的值；默认资源里没有的键一律拒绝。
-        Values values = new Values(TOML.parse(text), TOML.parse(TOML.resource(DEFAULT_RESOURCE)));
+        Values values = new Values(TOML.parse(text), defaultsTable());
         values.rejectUnknown();
         String party = values.text("generic_party");
         requireId(party, "generic_party");

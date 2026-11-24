@@ -12,6 +12,7 @@ import dev.kizuna.meridian.human.protocol.pb.ControlMessages.ControlReply;
 import dev.kizuna.meridian.human.protocol.pb.ControlMessages.ControlSession;
 import dev.kizuna.meridian.human.server.PlayerControlHost;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import dev.kizuna.meridian.protocol.ProtoWire;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import java.util.HashMap;
 import java.util.Map;
@@ -235,11 +236,12 @@ public final class HumanoidCharmController implements CharmController {
                 .setReason(command.getReason().name())
                 .build();
         try {
-            var reply = ControlReply.parseFrom(players.exchange(PlayerControlHost.CALLER, translated.toByteArray()));
+            byte[] payload = players.exchange(PlayerControlHost.CALLER, translated.toByteArray());
+            var reply = ProtoWire.read(payload, ControlReply.parser());
             if (!reply.getAccepted() || !reply.getSessionId().equals(sessionId)) {
                 throw new IllegalStateException("Human 拒绝受控会话");
             }
-        } catch (InvalidProtocolBufferException invalid) {
+        } catch (IllegalArgumentException invalid) {
             throw new IllegalStateException("Human 控制响应无效", invalid);
         }
     }

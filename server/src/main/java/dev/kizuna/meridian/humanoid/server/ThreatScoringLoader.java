@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import org.tomlj.TomlTable;
 
 import java.util.HashMap;
@@ -22,7 +23,7 @@ final class ThreatScoringLoader {
         // 只有静态读取入口。
     }
 
-    static ThreatScoring parse(HumanoidToml toml, TomlTable table) {
+    static ThreatScoring parse(TomlFile toml, TomlTable table) {
         // 默认表逐键必填；物种表按实体 ID，缺的键继承默认表。
         var allowed = new HashSet<>(KEYS);
         allowed.add(SPECIES);
@@ -43,7 +44,7 @@ final class ThreatScoringLoader {
         return new ThreatScoring(weights(defaults), species);
     }
 
-    private static Map<String, Double> values(HumanoidToml toml, TomlTable table, Map<String, Double> inherited,
+    private static Map<String, Double> values(TomlFile toml, TomlTable table, Map<String, Double> inherited,
                                               String path) {
         // 表里写了的键校验后取值，没写的取继承值；默认表没有继承值，缺键即报错。
         var values = new HashMap<String, Double>();
@@ -52,7 +53,7 @@ final class ThreatScoringLoader {
                 values.put(key, inherited.get(key));
                 continue;
             }
-            double value = toml.number(table, key, path + "." + key);
+            double value = toml.finiteNumber(table, key, path + "." + key);
             if (PENALTIES.contains(key) && value > 0) {
                 throw toml.invalid(path + "." + key + " 是扣分项，不能为正");
             }

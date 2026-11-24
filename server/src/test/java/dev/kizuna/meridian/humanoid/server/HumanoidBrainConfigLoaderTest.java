@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.humanoid.server;
 
+import dev.kizuna.meridian.config.TomlFile;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -21,8 +22,8 @@ import static org.junit.Assert.assertTrue;
 
 /** 类人大脑配置：默认资源、导出与保留、白名单与范围拒绝，以及学卷分桶。 */
 public class HumanoidBrainConfigLoaderTest {
-    private static final String DEFAULT_TEXT = new HumanoidToml(HumanoidErrors.BRAIN)
-            .resource(HumanoidBrainConfigLoader.DEFAULT_RESOURCE);
+    private static final String DEFAULT_TEXT = TomlFile.resource(
+            HumanoidBrainConfigLoaderTest.class, HumanoidBrainConfigLoader.DEFAULT_RESOURCE);
     private static final String VINDICATOR = "minecraft:vindicator";
     private static final String WANDERING_TRADER = "minecraft:wandering_trader";
     private static final String LOWER = "meridian_door_breaker:lower";
