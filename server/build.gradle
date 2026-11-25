@@ -4,7 +4,7 @@ description = '原版生人批次的纯 Java 身体变体生成与配置规则�
 
 dependencies {
     api 'local.meridian:server'
-    api 'dev.kizuna.meridian.qivariants:server:0.1.0-SNAPSHOT'
+    api 'dev.kizuna.meridian.qivariants:server'
     // Human 公开的 server/shared 库在 settings 中以源码组合，编译与测试使用其当前输出。
     api 'dev.kizuna.meridian.human:server'
     api 'dev.kizuna.meridian.human:shared'

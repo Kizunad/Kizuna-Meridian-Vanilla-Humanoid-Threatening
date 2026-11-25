@@ -3,7 +3,13 @@
   "id": "meridian_humanoid_host",
   "version": "${version}",
   "name": "Kizuna's Meridian Vanilla Humanoid Threatening",
-  "description": "原版类人实体批次的 Meridian 经脉健康宿主",
+  "contact": {
+    "homepage": "https://github.com/Kizunad/Kizuna-Meridian-Vanilla-Humanoid-Threatening",
+    "sources": "https://github.com/Kizunad/Kizuna-Meridian-Vanilla-Humanoid-Threatening",
+    "issues": "https://github.com/Kizunad/Kizuna-Meridian-Vanilla-Humanoid-Threatening/issues"
+  },
+  "icon": "assets/meridian_humanoid_host/icon.png",
+  "description": "Gives vanilla humanoid mobs bodies with meridians that respond to injuries.\n让原版类人生物拥有经脉身体，并随受伤情况变化。",
   "authors": ["Kizunad"],
   "license": "PolyForm-Noncommercial-1.0.0",
   "environment": "*",

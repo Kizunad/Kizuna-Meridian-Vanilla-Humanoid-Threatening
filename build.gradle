@@ -6,7 +6,7 @@ plugins {
 
 allprojects {
     group = 'dev.kizuna.meridian.humanoid'
-    version = '0.1.0-SNAPSHOT'
+    version = '0.1.0'
 }
 
 subprojects {
