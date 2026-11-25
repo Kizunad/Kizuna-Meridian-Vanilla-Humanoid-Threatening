@@ -116,5 +116,13 @@
   "crisis.meridian_humanoid.highwaymen.omen.note.2": "把货乖乖留下，老子这就来取。",
   "crisis.meridian_humanoid.highwaymen.omen.note.3": "就在这几日，天一擦黑就来。",
   "crisis.meridian_humanoid.highwaymen.leader_name": "讨货鬼",
-  "crisis.meridian_humanoid.highwaymen.leader_return": "又碰上了？上回算你命大，这回背上的货，可得全留下了。"
+  "crisis.meridian_humanoid.highwaymen.leader_return": "又碰上了？上回算你命大，这回背上的货，可得全留下了。",
+  "origin.meridian_humanoid.reborn.threat.1": "你天生招仇。旧账把人一拨拨引上门。打赢也好，躲开也罢，下一拨还是会来。",
+  "crisis.meridian_humanoid.old_register.omen.rumor.1": "有人正拿着旧簿，沿路打听你。",
+  "crisis.meridian_humanoid.old_register.omen.rumor.2": "那伙人刚把你的名字，同簿上的卒日对过。",
+  "crisis.meridian_humanoid.old_register.omen.note.1": "来人认出了你的名字。",
+  "crisis.meridian_humanoid.old_register.omen.note.2": "这趟上门只为核旧账。",
+  "crisis.meridian_humanoid.old_register.omen.note.3": "天一擦黑就会有人来。",
+  "crisis.meridian_humanoid.old_register.leader_name": "核账头目",
+  "crisis.meridian_humanoid.old_register.leader_return": "又撞见你了！上次那笔旧账，今天再好好核一遍！"
 }

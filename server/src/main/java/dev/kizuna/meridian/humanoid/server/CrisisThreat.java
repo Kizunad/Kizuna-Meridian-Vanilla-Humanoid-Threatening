@@ -4,23 +4,41 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 出身给招敌引擎的一条仇家参数（威胁类型 {@code meridian_humanoid:crisis}），字段照任务单「第 2 段接口草稿」第六条定死。
+ * 出身给招敌引擎的一条仇家参数（威胁类型 {@code meridian_humanoid:crisis}）。
  * 这里只管形状和范围；队伍表和卷在不在，由服务器启动后的核对管。
  *
  * @param party 队伍表 ID
- * @param firstAfterDays 选定出身（并且到了 minRealm）之后过几天来第一拨
- * @param intervalDays 上一拨了结以后隔几天来下一拨
+ * @param timing 首拨与赢、逃、输后下一拨的日期范围
  * @param stages 一共几拨，0 表示没有了断
  * @param minRealm 玩家到这一境才开始计日，只能是游炁或真炁
  * @param foeVolume 最后一拨（stages 为 0 时每一拨）头目必会、必掉的卷
  */
-public record CrisisThreat(String party, DayRange firstAfterDays, DayRange intervalDays, int stages,
-                           HumanoidTier minRealm, Optional<String> foeVolume) {
+public record CrisisThreat(String party, Timing timing, int stages, HumanoidTier minRealm, Optional<String> foeVolume) {
+    public record Timing(DayRange firstAfterDays, DayRange intervalDays, Optional<DayRange> setbackDays) {
+        public Timing {
+            Objects.requireNonNull(firstAfterDays, "first_after_days");
+            Objects.requireNonNull(intervalDays, "interval_days");
+            Objects.requireNonNull(setbackDays, "setback_days");
+        }
+    }
+
+    public CrisisThreat(String party, DayRange firstAfterDays, DayRange intervalDays, int stages,
+                       HumanoidTier minRealm, Optional<String> foeVolume) {
+        this(party, new Timing(firstAfterDays, intervalDays, Optional.empty()), stages, minRealm, foeVolume);
+    }
+
+    public DayRange firstAfterDays() {
+        return timing.firstAfterDays();
+    }
+
+    public DayRange intervalDays() {
+        return timing.intervalDays();
+    }
+
     public CrisisThreat {
         // 字段不对直接拒绝，出身框架把错误连同出身 ID 一起报出来。
         requireId(party, "party");
-        Objects.requireNonNull(firstAfterDays, "first_after_days");
-        Objects.requireNonNull(intervalDays, "interval_days");
+        Objects.requireNonNull(timing, "timing");
         Objects.requireNonNull(minRealm, "min_realm");
         Objects.requireNonNull(foeVolume, "foe_volume");
         if (stages < 0) {

@@ -30,6 +30,32 @@ message CrisisRecord {
   Pending pending = 12;
   // 记仇的人；没有就不设。
   Grudge grudge = 13;
+  // 订阅者接第一场匹配的战果，确认后可订下一场。结算、撤销订阅和留存回执一并保存。
+  map<string, RaidWatch> watches = 14;
+  map<string, RaidReceipt> receipts = 15;
+}
+
+message RaidWatch {
+  string feud = 1;
+  string party = 2;
+}
+
+message FallSite {
+  string dimension = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+message RaidReceipt {
+  string player = 1;
+  int32 encounter = 2;
+  string feud = 3;
+  string party = 4;
+  int32 stage = 5;
+  string outcome = 6;
+  int64 online_ticks = 7;
+  FallSite fall = 8;
 }
 
 // 出身的一条 crisis 威胁。身份是「出身 ID#它在 threats(crisis) 里的下标」。

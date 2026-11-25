@@ -9,6 +9,7 @@ import dev.kizuna.meridian.humanoid.server.CrisisHeat;
 import dev.kizuna.meridian.humanoid.server.CrisisOutcome;
 import dev.kizuna.meridian.humanoid.server.CrisisRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.FallSite;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -91,9 +92,14 @@ final class CrisisEndings {
     }
 
     private CrisisRecord settled(ServerPlayer player, CrisisRecord record, CrisisOutcome.Settlement settlement) {
-        // 种子按了结前的场数算。
-        return CrisisOutcome.settle(record, settlement, engine.feudEntries(player), rules,
+        return settled(player, record, settlement, FallSite.getDefaultInstance());
+    }
+
+    private CrisisRecord settled(ServerPlayer player, CrisisRecord record, CrisisOutcome.Settlement settlement,
+                                 FallSite fall) {
+        CrisisRecord after = CrisisOutcome.settle(record, settlement, engine.feudEntries(player), rules,
                 CrisisEngine.seed(player, record));
+        return CrisisEncounters.retain(player, record.getPending(), after, settlement.ending(), fall);
     }
 
     void died(LivingEntity entity, DamageSource source) {
@@ -124,7 +130,13 @@ final class CrisisEndings {
         CrisisSpoils.drop(level, mob, drops);
         LOGGER.info("玩家 {} 打赢了一场（队伍表 {}），掉了 {} 件", player.get().getScoreboardName(),
                 record.get().getPending().getParty(), drops.size());
-        engine.update(player.get(), present -> settled(player.get(), present, CrisisOutcome.Settlement.win()));
+        FallSite fall = FallSite.newBuilder()
+                .setDimension(level.dimension().identifier().toString())
+                .setX(mob.getX())
+                .setY(mob.getY())
+                .setZ(mob.getZ())
+                .build();
+        engine.update(player.get(), present -> settled(player.get(), present, CrisisOutcome.Settlement.win(), fall));
         CrisisRaiders.dismiss(mob.getUUID());
         CrisisRaiders.retreat(player.get().getUUID(), level.getServer().getTickCount());
         won(player.get(), record.get());

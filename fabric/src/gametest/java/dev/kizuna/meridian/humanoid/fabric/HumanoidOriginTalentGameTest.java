@@ -9,6 +9,10 @@ import static dev.kizuna.meridian.humanoid.fabric.CrisisGameTests.waitUntil;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import dev.kizuna.meridian.humanoid.server.CrisisHeat;
+import dev.kizuna.meridian.humanoid.server.CrisisFeuds;
+import dev.kizuna.meridian.humanoid.server.CrisisRules;
+import dev.kizuna.meridian.humanoid.server.CrisisOutcome;
+import dev.kizuna.meridian.humanoid.server.CrisisSchedule;
 import dev.kizuna.meridian.humanoid.server.CrisisParty;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.origin.fabric.Origin;
@@ -47,6 +51,12 @@ public final class HumanoidOriginTalentGameTest {
     private static final int FARMER_STANDING = 20;
     private static final BlockPos VILLAGER_AT = new BlockPos(1, 2, 1);
     private static final long SEED = 1;
+    private static final int FIRST_MIN = 6;
+    private static final int FIRST_MAX = 10;
+    private static final int AGAIN_MIN = 12;
+    private static final int AGAIN_MAX = 16;
+    private static final int SECOND_ROSTER = 2;
+    private static final int FINAL_ROSTER = 4;
 
     @GameTest(maxTicks = BREATHING_TIMEOUT)
     public void firstRebornChoiceGrantsItsVolumeAndRejoinRetainsIt(GameTestHelper context) {
@@ -63,7 +73,10 @@ public final class HumanoidOriginTalentGameTest {
             var selected = OriginRecords.read(CrisisGameTests.body(player));
             check(context, selected.getChosen().equals(REBORN), "首次选择未保存");
             check(context, CrisisVolumes.known(player.getUUID()).contains(REBORN_VOLUME), "选择重生没有学卷");
+            long unpracticed = CrisisGameTests.engine().record(player).orElseThrow().getFeuds(0).getDueAt();
             RebornFirstBreath.exercise(context, fixture, () -> {
+                var practicing = CrisisGameTests.engine().record(player).orElseThrow().getFeuds(0);
+                check(context, practicing.getDueAt() == unpracticed, "持续吐纳改动了同一玩家的仇家日程");
                 fixture.close();
                 var second = fixture.rejoin(context);
                 waitUntil(context, () -> attached(second.player()), () -> {
@@ -111,7 +124,10 @@ public final class HumanoidOriginTalentGameTest {
                 check(context, book.middle().filter(REBORN_VOLUME::equals).isEmpty(), "专卷进入进阶卷池");
             }
             var reborn = Origins.all().get(Identifier.parse(REBORN));
-            check(context, reborn.threats().isEmpty() && missingText(reborn).isEmpty(),
+            var entries = CrisisOrigins.entries(reborn);
+            check(context, reborn.threats().size() == 1 && entries.size() == 1
+                    && entries.getFirst().threat().party().equals("meridian_humanoid:old_register")
+                    && missingText(reborn).isEmpty(),
                     "重生数据或文本不完整");
             finish(context, fixture);
         });
@@ -131,6 +147,51 @@ public final class HumanoidOriginTalentGameTest {
         }
         OriginTalents.requireVolumes();
         context.succeed();
+    }
+
+    @GameTest(maxTicks = TIMEOUT)
+    public void rebornFeudReturnsAfterEveryEndingAndCapsItsRoster(GameTestHelper context) {
+        var origin = Origins.all().get(Identifier.parse(REBORN));
+        var entries = CrisisOrigins.entries(origin);
+        var empty = dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.CrisisRecord.getDefaultInstance();
+        var baseline = CrisisFeuds.start(CrisisFeuds.reconcile(empty, entries), entries, SEED);
+        var first = baseline.getFeuds(0);
+        long day = CrisisRules.DAY_TICKS;
+        check(context, first.getDueAt() >= FIRST_MIN * day && first.getDueAt() <= FIRST_MAX * day, "首拨日期不符");
+        var at = baseline.toBuilder().setOnlineTicks(first.getDueAt()).build();
+        var rules = CrisisGameTests.engine().rules();
+        var scheduled = CrisisFeuds.due(at, entries, rules).orElseThrow();
+        var pending = CrisisSchedule.schedule(at, scheduled, 1);
+        check(context, pending.getHeat() == 0 && pending.getOpenedMeridians() == 0, "初始风声或脉数不为零");
+        var generic = new CrisisSchedule.Raid(rules.genericParty(), "", 0, first.getDueAt());
+        var busy = CrisisSchedule.schedule(at, generic, 1);
+        check(context, CrisisFeuds.due(busy, entries, rules).isEmpty(), "仇家挤占通用 pending");
+        for (var result : List.of(CrisisOutcome.Settlement.win(), CrisisOutcome.Settlement.escape(),
+                CrisisOutcome.Settlement.loss(com.google.protobuf.ByteString.EMPTY))) {
+            var after = CrisisOutcome.settle(pending, result, entries, rules, SEED);
+            var next = after.getFeuds(0);
+            long gap = next.getDueAt() - at.getOnlineTicks();
+            check(context, gap >= AGAIN_MIN * day && gap <= AGAIN_MAX * day, "续拨日期不符 " + result.ending());
+            var later = after.toBuilder().setOnlineTicks(next.getDueAt()).build();
+            check(context, !next.getFinished() && CrisisFeuds.due(later, entries, rules).isPresent(),
+                    "赢逃输后必须还有下一拨 " + result.ending());
+        }
+        checkRoster(context, CrisisFabric.parties().get(scheduled.party()));
+        context.succeed();
+    }
+
+    private static void checkRoster(GameTestHelper context, CrisisParty party) {
+        for (var band : CrisisHeat.Band.values()) {
+            var random = new SplittableRandom(SEED);
+            var first = party.lineup(band, 0, random);
+            var middle = party.lineup(band, SECOND_ROSTER, random);
+            var last = party.lineup(band, FINAL_ROSTER, random);
+            check(context, first.maxSize() < middle.maxSize() && middle.maxSize() < last.maxSize(), "档内没有增援");
+            check(context, last.equals(party.lineup(band, Integer.MAX_VALUE, random)), "最高拨阵容未封顶");
+            if (band == CrisisHeat.Band.TRUE_MANY) {
+                check(context, last.maxSize() == FINAL_ROSTER && last.leader().elite(), "多脉末档阵容不符");
+            }
+        }
     }
 
     @GameTest(maxTicks = TIMEOUT)

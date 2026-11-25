@@ -320,12 +320,17 @@ final class CrisisEngine {
         // 现读一次身体拿修订号再写；这一刻读不到或宿主拒绝就等下次，内存里的记录不丢。
         CrisisRecord record = records.get(player.getUUID());
         Optional<BodySnapshot> body = bodies.read(player);
-        if (record == null || body.isEmpty()) {
+        if (record == null) {
+            return;
+        }
+        if (body.isEmpty()) {
+            dirty.add(player.getUUID());
             return;
         }
         try {
             bodies.write(player, body.get(), record);
         } catch (IllegalStateException rejected) {
+            dirty.add(player.getUUID());
             LOGGER.warn("玩家 {} 的招敌记录这次没写进身体，下次再写", player.getScoreboardName(), rejected);
         }
     }

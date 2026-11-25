@@ -82,7 +82,7 @@
 | `apprentice` 药铺学徒 | 开局会《炼药卷·熬药》（`meridian_brewing:brewing_basics`）；开局会聚气汤、苦黄膏两张药方 | `recipe_thief`，6–10 天，12–20 天，1 拨 |
 | `disgraced` 罪臣之后 | 开局会《破门斩·木门》（`meridian_door_breaker:upper`） | `captors`，10–16 天，24–36 天，没有了断，`meridian_door_breaker:lower` |
 | `merchant` 行商之后 | 参考负重 ×1.25 | `highwaymen`，5–9 天，10–14 天，没有了断 |
-| `reborn` 重生归来 | 开局会后世吐纳卷，拥有基础吐纳授权 | 没有 |
+| `reborn` 重生归来 | 开局会后世吐纳卷，拥有基础吐纳授权 | 旧簿仇家终身来犯，三档阵容各按胜场增援 |
 
 - 队伍表：`clan_foes` 掠夺者为主，三档各分 0/1/2 拨，一拨比一拨强，第 2 拨头目是真炁精锐；`recipe_thief` 头目是真炁女巫，
   `wandering` 档有时一个人来、有时带一个随从，往上的档随从多些，`true_many` 档她是精锐；`captors` 只有卫道士；
@@ -194,7 +194,7 @@
   `heavy`（再伤一条经脉）暂时不能用，写了启动失败：经脉伤了还没有恢复的规矩，伤了就再也好不了。
   哪一档都不跌境、不删进度和已学功法。风声和逃了一样留 `heat.kept_after_escape`。
 - 出身仇家的一拨：赢了拨次 +1，打满 `stages` 就了断，不然下一拨在 `interval_days` 里按种子取一天；
-  逃了、输了拨次不动，下一拨隔 `interval_days` 最少的天数再来。
+  逃了、输了拨次不动。若配置了 `setback_days`，在这个区间取下一拨日期；省略时沿用 `interval_days` 的下限。
 - 了结以后场数 +1、记下了结时刻，排着的那一场清掉，马上写回。
 
 ### 撤走
@@ -296,3 +296,5 @@
   要看「有没有人看见」的用例各自送到远处一道（`CrisisGameTests.standApart` 的 `lane`），彼此隔 512 格。测试数据包里有测试出身 `meridian_humanoid_test:orphan`（两条仇家）和
   测试队伍表 `meridian_humanoid_test:feud`。测试玩家走原版进服入口并声明 Human 要求的界面通道（`CrisisTestPlayer`），
   否则 Human 会暂停身体、引擎读不到。
+
+重生归来的旧簿仇家首拨定在 6–10 在线日，三种收场都隔 12–16 日，胜利累计到两拨、四拨时各档增援，四拨后沿用该档最强阵容。生人负责往后每一拨；Story 的旧案结局只负责证物和尾信。

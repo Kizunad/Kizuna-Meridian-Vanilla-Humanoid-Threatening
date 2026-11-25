@@ -87,7 +87,7 @@ public final class CrisisFeuds {
     public static CrisisRecord settle(CrisisRecord record, String key, CrisisOutcome.Ending ending,
                                       List<Entry> entries, long seed) {
         // 了结这条的一拨：赢了拨次 +1，打满 stages 就了断，不然下一拨在 interval_days 里按种子取一天；
-        // 逃了、输了拨次不动，下一拨隔 interval_days 最少的天数再来。出身里已经没有这条（数据包改过）就不动。
+        // 逃了、输了拨次不动，按 setback_days 再排；未指定时沿用 interval_days 下限。出身里已经没有这条（数据包改过）就不动。
         Optional<Entry> entry = find(entries, key);
         int index = indexOf(record, key);
         if (entry.isEmpty() || index < 0) {
@@ -95,12 +95,19 @@ public final class CrisisFeuds {
         }
         Feud feud = record.getFeuds(index);
         CrisisThreat threat = entry.get().threat();
-        long days = threat.intervalDays().min();
+        var random = CrisisSchedule.random(seed * 31 + key.hashCode());
+        var setback = threat.timing().setbackDays();
+        long days;
         Feud.Builder next = feud.toBuilder();
         if (ending == CrisisOutcome.Ending.WIN) {
             int stage = feud.getStage() + 1;
-            next.setStage(stage).setFinished(threat.stages() > 0 && stage >= threat.stages());
-            days = days(threat.intervalDays(), CrisisSchedule.random(seed * 31 + key.hashCode()));
+            next.setStage(stage);
+            next.setFinished(threat.stages() > 0 && stage >= threat.stages());
+            days = days(threat.intervalDays(), random);
+        } else if (setback.isPresent()) {
+            days = days(setback.get(), random);
+        } else {
+            days = threat.intervalDays().min();
         }
         next.setDueAt(record.getOnlineTicks() + days * CrisisRules.DAY_TICKS);
         return record.toBuilder().setFeuds(index, next).build();

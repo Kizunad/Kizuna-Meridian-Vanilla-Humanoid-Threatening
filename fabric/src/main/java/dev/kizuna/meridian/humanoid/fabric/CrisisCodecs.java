@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.kizuna.meridian.humanoid.server.CrisisHeat;
 import dev.kizuna.meridian.humanoid.server.CrisisParty;
@@ -26,13 +27,15 @@ final class CrisisCodecs {
             CrisisThreat.DayRange::min, CrisisThreat.DayRange::max);
     private static final Codec<Count> COUNT = pair(Count::new, Count::min, Count::max);
 
-    /**
-     * {@code {"party", "first_after_days": [最早, 最晚], "interval_days": [..], "stages", "min_realm"?, "foe_volume"?}}。
-     */
+    private static final MapCodec<CrisisThreat.Timing> TIMING = RecordCodecBuilder.mapCodec(instance -> instance.group(
+            DAYS.fieldOf("first_after_days").forGetter(CrisisThreat.Timing::firstAfterDays),
+            DAYS.fieldOf("interval_days").forGetter(CrisisThreat.Timing::intervalDays),
+            DAYS.optionalFieldOf("setback_days").forGetter(CrisisThreat.Timing::setbackDays)
+    ).apply(instance, CrisisThreat.Timing::new));
+
     static final Codec<CrisisThreat> THREAT = RecordCodecBuilder.create(instance -> instance.group(
             ID.fieldOf("party").forGetter(CrisisThreat::party),
-            DAYS.fieldOf("first_after_days").forGetter(CrisisThreat::firstAfterDays),
-            DAYS.fieldOf("interval_days").forGetter(CrisisThreat::intervalDays),
+            TIMING.forGetter(CrisisThreat::timing),
             Codec.INT.fieldOf("stages").forGetter(CrisisThreat::stages),
             TIER.optionalFieldOf("min_realm", HumanoidTier.WANDERING_QI).forGetter(CrisisThreat::minRealm),
             ID.optionalFieldOf("foe_volume").forGetter(CrisisThreat::foeVolume)

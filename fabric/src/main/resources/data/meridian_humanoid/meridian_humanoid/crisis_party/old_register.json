@@ -1,0 +1,147 @@
+{
+  "lineups": [
+    {
+      "band": "wandering",
+      "stage": 0,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "wandering_qi"
+      }
+    },
+    {
+      "band": "wandering",
+      "stage": 2,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "wandering_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "wandering_qi",
+          "count": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "band": "wandering",
+      "stage": 4,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "wandering_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "wandering_qi",
+          "count": [
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_few",
+      "stage": 0,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi"
+      }
+    },
+    {
+      "band": "true_few",
+      "stage": 2,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "wandering_qi",
+          "count": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_few",
+      "stage": 4,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "wandering_qi",
+          "count": [
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_many",
+      "stage": 0,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "true_qi",
+          "count": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_many",
+      "stage": 2,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi"
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "true_qi",
+          "count": [
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "band": "true_many",
+      "stage": 4,
+      "leader": {
+        "species": "minecraft:pillager",
+        "tier": "true_qi",
+        "elite": true
+      },
+      "followers": [
+        {
+          "species": "minecraft:vindicator",
+          "tier": "true_qi",
+          "count": [
+            3,
+            3
+          ]
+        }
+      ]
+    }
+  ]
+}

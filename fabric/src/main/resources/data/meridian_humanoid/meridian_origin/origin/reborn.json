@@ -13,5 +13,25 @@
       "params": {}
     }
   ],
-  "threats": []
+  "threats": [
+    {
+      "type": "meridian_humanoid:crisis",
+      "params": {
+        "party": "meridian_humanoid:old_register",
+        "first_after_days": [
+          6,
+          10
+        ],
+        "interval_days": [
+          12,
+          16
+        ],
+        "setback_days": [
+          12,
+          16
+        ],
+        "stages": 0
+      }
+    }
+  ]
 }

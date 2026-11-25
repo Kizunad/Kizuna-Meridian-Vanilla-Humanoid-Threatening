@@ -116,5 +116,13 @@
   "crisis.meridian_humanoid.highwaymen.omen.note.2": "Leave the goods behind obediently; I am coming to take them.",
   "crisis.meridian_humanoid.highwaymen.omen.note.3": "Within these few days, I shall come the moment dusk falls.",
   "crisis.meridian_humanoid.highwaymen.leader_name": "Cargo-Claiming Ghost",
-  "crisis.meridian_humanoid.highwaymen.leader_return": "Met again? You were fortunate to keep your life last time, but this time, all the goods upon your back stay behind."
+  "crisis.meridian_humanoid.highwaymen.leader_return": "Met again? You were fortunate to keep your life last time, but this time, all the goods upon your back stay behind.",
+  "origin.meridian_humanoid.reborn.threat.1": "You draw hatred by nature. Old debts bring them to your door, wave after wave. Win or hide, the next wave still comes.",
+  "crisis.meridian_humanoid.old_register.omen.rumor.1": "Someone carries an old ledger, asking after you along the road.",
+  "crisis.meridian_humanoid.old_register.omen.rumor.2": "That crew just matched your name to the death date in their book.",
+  "crisis.meridian_humanoid.old_register.omen.note.1": "They recognized your name.",
+  "crisis.meridian_humanoid.old_register.omen.note.2": "They come only to settle old debts.",
+  "crisis.meridian_humanoid.old_register.omen.note.3": "They will be here at dusk.",
+  "crisis.meridian_humanoid.old_register.leader_name": "Ledger Keeper",
+  "crisis.meridian_humanoid.old_register.leader_return": "Ran into you again! Time to check that old debt properly today!"
 }

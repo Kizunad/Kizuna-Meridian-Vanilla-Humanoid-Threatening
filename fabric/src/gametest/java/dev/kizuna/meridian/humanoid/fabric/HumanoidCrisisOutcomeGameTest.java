@@ -192,7 +192,10 @@ public final class HumanoidCrisisOutcomeGameTest {
             player.getInventory().add(CrisisVolumes.scroll(FOE_VOLUME).orElseThrow());
             player.getInventory().add(healingPotion());
             Mob leader = raiders(context, player).getFirst();
+            CrisisEncounters.watch(player, "test:loss", HumanoidReceiptGameTest.watch(""));
             player.die(leader.damageSources().mobAttack(leader));
+            var receipt = record(player).getReceiptsOrThrow("test:loss");
+            check(context, receipt.getOutcome().equals("loss") && !receipt.hasFall(), "败局回执不符");
             Grudge grudge = record(player).getGrudge();
             check(context, grudge.getCarriedCount() == 1 && CrisisSpoils.decode(grudge.getCarried(0),
                     player.registryAccess()).filter(HumanoidCrisisOutcomeGameTest::isFoeScroll).isPresent()
@@ -277,10 +280,13 @@ public final class HumanoidCrisisOutcomeGameTest {
         standApart(context, player, 7);
         waitUntil(context, () -> attached(player) && run(context, strikeCommand(player) + " " + PARTY) > 0, () -> {
             List<Mob> raiders = raiders(context, player);
+            CrisisEncounters.watch(player, "test:orphan", HumanoidReceiptGameTest.watch(""));
             CrisisRaiders.release(player.getUUID());
             raiders.forEach(Mob::discard);
             waitUntil(context, () -> !record(player).hasPending(), () -> {
                 CrisisRecord record = record(player);
+                var receipt = record.getReceiptsOrThrow("test:orphan");
+                check(context, receipt.getOutcome().equals("escape") && !receipt.hasFall(), "孤儿场没有逃局回执");
                 check(context, settledOnce(record) && record.getGrudge().getEncounters() == 1, "了结以后：" + record);
                 Mob orphan = spawnAt(context, EntityTypes.VINDICATOR, player.position().add(NEAR, 0, 0),
                         mob -> mob.addTag(CrisisArrivals.RAIDER_TAG));
