@@ -398,9 +398,10 @@ public abstract class LivingEntityHumanoidMixin implements HumanoidEntityAccess 
         // 26.2 实体存档经 ValueOutput 写入；先组成与旧版相同的复合标签，再整体存入同一个键。
         CompoundTag holder = new CompoundTag();
         if (meridian$awaitingVolumeBirth && meridian$body == null && meridian$savedBody == null) {
-            Entity entity = (Entity) (Object) this;
+            LivingEntity entity = (LivingEntity) (Object) this;
             String id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
-            if (HumanoidSpecies.fromEntityId(id).filter(HumanoidSpecies.values()::contains).isPresent()) {
+            var species = HumanoidSpecies.fromEntityId(id);
+            if (species.filter(entry -> BirthVolumes.supports(entity, entry)).isPresent()) {
                 output.putBoolean(meridian$PENDING_VOLUMES, true /* awaitingBirth */);
             }
         }

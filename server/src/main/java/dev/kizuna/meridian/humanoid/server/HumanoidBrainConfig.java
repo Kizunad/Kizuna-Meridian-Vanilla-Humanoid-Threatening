@@ -23,7 +23,19 @@ public record HumanoidBrainConfig(Schedule schedule, ThreatRules threat, Assessm
 
     /** 战术阈值，以及突击落点离目标的距离、同一式连续施放失败后的屏蔽规则、对手胸甲护甲值到多少算「甲厚」。 */
     public record ResponseRules(TacticRules tactics, double assaultStandOff, int failureLimit,
-                                long failureBlockMillis, double armoredChestArmor) { }
+                                long failureBlockMillis, WeaponRules weapons) {
+        public ResponseRules(TacticRules tactics, double standOff, int limit, long blockMillis, double armor) {
+            // 直接使用旧构造入口的调用方沿用资源里的泼金门槛。
+            this(tactics, standOff, limit, blockMillis, new WeaponRules(armor,
+                    HumanoidBrainConfigLoader.defaults().response().weapons().splashHealthRatio()));
+        }
+
+        public double armoredChestArmor() {
+            return weapons.armoredChestArmor();
+        }
+    }
+
+    public record WeaponRules(double armoredChestArmor, double splashHealthRatio) { }
 
     /** 双通道策略：准备式保持跃步带的概率，以及调息时是否继续沿退路移动。 */
     public record ConcurrencyRules(double holdRangeProbability, boolean allowRecoveryMovement) {

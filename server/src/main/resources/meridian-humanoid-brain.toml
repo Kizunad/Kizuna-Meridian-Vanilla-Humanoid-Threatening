@@ -81,6 +81,8 @@ outnumbered_weight = 1.0       # 村民的战力差再减去 此值 ×（对方�
                                # 帮手是同伴半径内看得见的铁傀儡和正在对敌的村民。0 就是不看人数
 
 [response]
+# 持热剑者仅在生命低于此比例时考虑泼金。
+splash_health_ratio = 0.30
 reaction_window_millis = 1000  # 来袭命中剩余不超过此值才考虑躲或抗
 interrupt_margin_millis = 150  # 打断要求我的首击比对方起手结束早出这么多
 absorb_own_hit_millis = 300    # 自己正在施放且下一击剩余不超过此值时硬抗

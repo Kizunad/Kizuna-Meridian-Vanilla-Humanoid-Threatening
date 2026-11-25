@@ -1,7 +1,6 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.fabric.BirthVolumes.Equipment;
-import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.inventory.MobInventories;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import java.util.HashSet;
@@ -38,7 +37,7 @@ final class BirthEquipment {
             return true;
         }
         var species = HumanoidSpeciesHooks.claimed(mob).orElse(null);
-        if (species == null || !HumanoidSpecies.values().contains(species) || !mob.isAlive()
+        if (species == null || !BirthVolumes.supports(mob, species) || !mob.isAlive()
                 || access.meridian$humanoidLoadFailed()) {
             return true;
         }

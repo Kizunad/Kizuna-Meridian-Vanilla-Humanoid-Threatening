@@ -24,6 +24,7 @@ public final class HumanoidBrainConfigLoader {
     private static final int CURRENT_CONFIG_VERSION = 2;
     private static final int MIN_SUPPORTED_CONFIG_VERSION = 1;
     private static final String CORNERED_STAND_DISTANCE = "cornered_stand_distance";
+    private static final String SPLASH_HEALTH_RATIO = "splash_health_ratio";
     private static final String ARMORED_CHEST_ARMOR = "armored_chest_armor";
     private static final String STRIKE_START_DISTANCE = "strike_start_distance";
     private static final String KICK_START_DISTANCE = "kick_start_distance";
@@ -319,7 +320,7 @@ public final class HumanoidBrainConfigLoader {
         TOML.checkKeys(table, Set.of("reaction_window_millis", "interrupt_margin_millis", "absorb_own_hit_millis",
                 "absorb_dose_ratio", "dodge_margin_millis", "assault_stand_off", "failure_limit",
                 "failure_block_millis", CORNERED_STAND_DISTANCE, ARMORED_CHEST_ARMOR, STRIKE_START_DISTANCE,
-                KICK_START_DISTANCE), "response.");
+                KICK_START_DISTANCE, SPLASH_HEALTH_RATIO), "response.");
         var reaction = new TacticRules.Reaction(millis(table, "reaction_window_millis"),
                 millis(table, "interrupt_margin_millis"),
                 millis(table, "absorb_own_hit_millis"),
@@ -328,11 +329,13 @@ public final class HumanoidBrainConfigLoader {
         var tactics = new TacticRules(reaction, safeDistance, corneredStandDistance(table),
                 positive(defaulted(table, STRIKE_START_DISTANCE), STRIKE_START_DISTANCE, "response"),
                 positive(defaulted(table, KICK_START_DISTANCE), KICK_START_DISTANCE, "response"));
+        var weapons = new HumanoidBrainConfig.WeaponRules(
+                positive(defaulted(table, ARMORED_CHEST_ARMOR), ARMORED_CHEST_ARMOR, "response"),
+                ratio(defaulted(table, SPLASH_HEALTH_RATIO), SPLASH_HEALTH_RATIO, "response"));
         return new HumanoidBrainConfig.ResponseRules(tactics,
                 positive(table, "assault_stand_off", "response"),
                 TOML.positiveInteger(table, "failure_limit", "response.failure_limit"),
-                millis(table, "failure_block_millis"),
-                positive(defaulted(table, ARMORED_CHEST_ARMOR), ARMORED_CHEST_ARMOR, "response"));
+                millis(table, "failure_block_millis"), weapons);
     }
 
     private static TomlTable defaulted(TomlTable table, String key) {

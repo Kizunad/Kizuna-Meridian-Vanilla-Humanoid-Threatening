@@ -29,10 +29,22 @@ public record BirthVolumes(HumanoidTier tier, List<String> volumes, Equipment eq
 
     static void select(LivingEntity entity, HumanoidSpecies species, HumanoidBodyState body) {
         var access = (HumanoidEntityAccess) entity;
-        if (!access.meridian$awaitingVolumeBirth() || !HumanoidSpecies.values().contains(species)) {
+        if (!access.meridian$awaitingVolumeBirth() || !supports(entity, species)) {
             return;
         }
-        access.meridian$birthVolumes(draw(entity, species, body));
+        if (HumanoidSwordForms.species(entity)) {
+            var tier = HumanoidTier.of(body.snapshot());
+            var volumes = HumanoidSwordForms.birthVolumes(entity, tier);
+            var equipment = volumes.isEmpty() ? Equipment.NONE : Equipment.ALREADY_CARRIED;
+            access.meridian$birthVolumes(new BirthVolumes(tier, volumes, equipment));
+        } else {
+            access.meridian$birthVolumes(draw(entity, species, body));
+        }
+    }
+
+    public static boolean supports(LivingEntity entity, HumanoidSpecies species) {
+        // 待定的出生卷要随区块和实体一同保存。
+        return HumanoidSpecies.values().contains(species) || HumanoidSwordForms.species(entity);
     }
 
     static BirthVolumes draw(LivingEntity entity, HumanoidSpecies species, HumanoidBodyState body) {

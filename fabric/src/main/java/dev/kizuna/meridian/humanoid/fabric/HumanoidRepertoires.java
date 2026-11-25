@@ -347,7 +347,8 @@ final class HumanoidRepertoires {
         for (KnownTechnique known : source.progress().getKnownList()) {
             TechniqueReference reference = known.getTechnique();
             var found = registry.find(reference);
-            if (found.isEmpty() || blocked.test(reference.getId())) {
+            if (HumanoidSwordForms.SPLASH.equals(reference.getId()) || found.isEmpty()
+                    || blocked.test(reference.getId())) {
                 continue;
             }
             TechniqueDefinition definition = found.orElseThrow();
@@ -390,7 +391,8 @@ final class HumanoidRepertoires {
     static boolean payable(BodySnapshot body, TechniqueDefinition definition, TechniqueBinding binding) {
         // 读候选共用的身体预检：真元付得起，组织和器官也做得了这一式的功；
         // 腿肌累了出不了功的式不进候选，免得照选照失败、攒够连续失败次数被暂停。
-        return TechniqueAvailability.affordable(body, definition, binding)
+        var payers = TechniqueFabric.service().registry().addonCostPayers();
+        return TechniqueAvailability.affordable(body, definition, binding, payers)
                 && TechniqueAvailability.workable(body, definition, binding);
     }
 

@@ -190,9 +190,14 @@ public final class HumanoidBrain {
             idle(mob, mind);
             return;
         }
-        mind.engage(threat.get());
-        HumanoidNotice.keepEngaged(mob, threat.get());
-        var opponent = new HumanoidOpponent(threat.get(), observe(threat.get()));
+        var target = threat.orElseThrow();
+        mind.engage(target);
+        HumanoidNotice.keepEngaged(mob, target);
+        if (HumanoidSwordForms.tryCast(mob, target)) {
+            mind.clearCastPlan();
+            return;
+        }
+        var opponent = new HumanoidOpponent(target, observe(target));
         boolean casting = HumanoidTechniqueHost.hasActiveCast(mob);
         if (!casting) {
             mind.castIdle();
