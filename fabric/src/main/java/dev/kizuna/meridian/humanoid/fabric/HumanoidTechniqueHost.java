@@ -2,6 +2,7 @@ package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.core.BodySnapshot;
 import dev.kizuna.meridian.human.fabric.HumanGuardStamina;
+import dev.kizuna.meridian.human.server.HumanTechniqueAnimations.GuardStyle;
 import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.BodyCommand;
@@ -10,6 +11,7 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.AiRole;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ActiveCast;
+import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.CastPhase;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.GuardStamina;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueEffect;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.TechniqueReference;
@@ -29,6 +31,7 @@ import dev.kizuna.meridian.technique.server.TechniqueHostEntrypoint;
 import dev.kizuna.meridian.technique.server.TechniqueProtocol;
 import dev.kizuna.meridian.technique.server.TechniqueRecoveryHost;
 import dev.kizuna.meridian.technique.server.TechniqueService;
+import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -57,13 +60,57 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
         }));
     }
 
-    static void registerCastEndListener() {
+    static void registerCastListeners() {
         TechniqueFabric.CAST_ENDED.register(HumanoidTechniqueHost::castEnded);
+        TechniqueFabric.SERVICE_STARTED.register(service -> service.addCastStateListener(
+                HumanoidTechniqueHost::guardRecovery));
+        VanillaDamageFabric.registerDamageObserver(HumanoidTechniqueHost::guardHit);
+    }
+
+    private static void guardRecovery(TechniqueService.CastStateChanged event) {
+        var active = event.active();
+        if (event.phase() != CastPhase.RECOVERING || !active.hasSustained()) {
+            return;
+        }
+        var session = sessions.get(event.entityUuid());
+        if (session != null) {
+            var guard = session.effects().presentation.guardFor(active.getRequest().getCastId());
+            if (guard != null) {
+                guard.recover(active.getSustained());
+            }
+        }
+    }
+
+    private static void guardHit(VanillaDamageFabric.DamageEvent event) {
+        // 判定后的换兵、碎裂与破防都可能早于通知；受击样式只认该击回执。
+        var input = event.input();
+        var contact = input.guarded();
+        if (contact.isEmpty() || event.bodyDead()) {
+            return;
+        }
+        var session = sessions.get(event.target().getUUID());
+        var state = contact.orElseThrow();
+        if (session == null || !state.bodyId().equals(event.result().body().getId())) {
+            return;
+        }
+        String castId = state.castId();
+        var guard = session.effects().presentation.guardFor(castId);
+        var active = session.body().techniqueProgress().getActiveCast();
+        if (guard != null && castId.equals(active.getRequest().getCastId())
+                && !active.getSustained().getExhausted()) {
+            GuardStyle contactStyle = input.weaponGuarded() ? GuardStyle.WEAPON : GuardStyle.ARMS;
+            guard.hit(contactStyle);
+        }
     }
 
     private static void castEnded(TechniqueCastEnded event) {
         Session session = sessions.get(event.entityUuid());
-        if (session != null && event.castId().equals(session.exchangeCastId)) {
+        if (session == null) {
+            return;
+        }
+        String castId = event.castId();
+        session.effects().presentation.endGuard(castId);
+        if (castId.equals(session.exchangeCastId)) {
             restoreExchange(session);
         }
     }
@@ -216,6 +263,9 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
             assignVolumes(entity, existing);
             return existing;
         }
+        if (existing != null) {
+            existing.effects().presentation.clearGuard();
+        }
         var created = new Session(body, new HumanoidTechniqueEffects(entity));
         recover(entity, created);
         var id = entity.getUUID();
@@ -367,6 +417,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
             if (session.exchange != null && !session.body().techniqueProgress().hasActiveCast()) {
                 restoreExchange(session);
             }
+            session.effects().presentation.refreshGuard();
         }
     }
 
@@ -416,6 +467,7 @@ public final class HumanoidTechniqueHost implements TechniqueHostEntrypoint {
 
     private static void recover(LivingEntity entity, Session session) {
         // 恢复直连原身体，避免通过 inspect 重入同一恢复流程。
+        session.effects().presentation.clearGuard();
         TechniqueFabric.service().recoverOnLoad(entity.getUUID(), new TechniqueRecoveryHost() {
             @Override
             public BodySnapshot snapshot() {

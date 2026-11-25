@@ -71,7 +71,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidCharmController.initialize();
         HumanoidRestrictions.initialize();
         HumanoidTechniqueHost.registerGuardCheck();
-        HumanoidTechniqueHost.registerCastEndListener();
+        HumanoidTechniqueHost.registerCastListeners();
         HumanoidStaggerAnimation.initialize();
         HumanoidWitchAi.initialize(configDirectory);
         CrisisFabric.initialize(configDirectory);

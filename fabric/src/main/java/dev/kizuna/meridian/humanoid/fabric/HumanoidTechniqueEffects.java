@@ -38,7 +38,7 @@ final class HumanoidTechniqueEffects {
     private final Map<Identity, EffectIntent> receipts = new HashMap<>();
     private final Set<Identity> executing = new HashSet<>();
     private final Set<String> castingIds = new HashSet<>();
-    private final HumanoidTechniquePresentation presentation = new HumanoidTechniquePresentation();
+    final HumanoidTechniquePresentation presentation = new HumanoidTechniquePresentation();
 
     HumanoidTechniqueEffects(LivingEntity entity) {
         // 共用世界执行器只接收敌我策略和 Damage 出手边界，不复制伤害规则；拳脚走 Human 的共用打击执行器，和玩家同一份。

@@ -348,13 +348,17 @@ public final class HumanoidGuardStaminaGameTest {
     }
 
     private static Mob raised(GameTestHelper context, EntityType<? extends Mob> type) {
+        return raised(context, type, ItemStack.EMPTY);
+    }
+
+    static Mob raised(GameTestHelper context, EntityType<? extends Mob> type, ItemStack mainHand) {
         var mob = type.create(context.getLevel(), EntitySpawnReason.COMMAND);
         var pos = context.absolutePos(new BlockPos(SPAWN_COORD, SPAWN_COORD, SPAWN_COORD));
         mob.snapTo(pos.getX(), pos.getY(), pos.getZ(), 0, 0);
         mob.setNoAi(true /* aiDisabled */);
         mob.setNoGravity(true /* noGravity */);
         HumanoidSpeciesBirths.birth(mob, HumanoidTier.MORTAL);
-        mob.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        mob.setItemSlot(EquipmentSlot.MAINHAND, mainHand);
         context.assertTrue(context.getLevel().addFreshEntity(mob), "无法放置生人");
         var outcome = cast(mob);
         context.assertTrue(outcome.getPhase() == CastPhase.WARMUP, "生人无法直接起格挡 " + outcome);
@@ -449,8 +453,12 @@ public final class HumanoidGuardStaminaGameTest {
         body.apply(request, snapshot.getSettledAt());
     }
 
-    private static CommitResult frontHit(GameTestHelper context, Mob mob) {
+    static CommitResult frontHit(GameTestHelper context, Mob mob) {
         var attacker = EntityTypes.COW.create(context.getLevel(), EntitySpawnReason.COMMAND);
+        return frontHit(mob, attacker);
+    }
+
+    static CommitResult frontHit(Mob mob, Mob attacker) {
         mob.setYRot(0);
         attacker.setPos(mob.position().add(0, 0, SPAWN_COORD));
         var source = mob.damageSources().mobAttack(attacker);

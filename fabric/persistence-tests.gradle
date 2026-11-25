@@ -10,7 +10,7 @@ def reproClasses = [
                'HumanoidDebugQiGameTest', 'HumanoidAuditReproGameTest', 'ReleaseHandoffGameTest',
                'HumanoidPeddlerGameTest', 'HumanoidLimbStrikeGameTest', 'HumanoidTierTagGameTest',
                'HumanoidDutyGameTest', 'HumanoidGuardGameTest', 'HumanoidGuardStaminaGameTest',
-               'HumanoidArmGuardGameTest',
+               'HumanoidArmGuardGameTest', 'HumanoidGuardAnimationGameTest',
                'HumanoidWayfarerGameTest', 'HumanoidWayfarerAiGameTest',
                'HumanoidWayfarerProjectileGameTest', 'HumanoidWayfarerDecisionGameTest',
                'HumanoidWayfarerNaturalAiGameTest', 'HumanoidVindicatorWayfarerGameTest',
@@ -24,6 +24,8 @@ def reproClasses = [
         species: ['SpeciesHookGameTest'],
         pool: ['BirthVolumeGameTest'],
         equipment: ['BirthEquipmentGameTest'],
+        // 猪灵的功法模板组由猪灵附属提供，联合验收时同时跑原生生人与外部认领物种。
+        'piglin-guard': ['HumanoidGuardAnimationGameTest', 'PiglinGuardAnimationGameTest'],
         'equipment-save': ['BirthEquipmentRestartGameTest'],
         'equipment-load': ['BirthEquipmentRestartGameTest'],
         arena: ['HumanoidEnclosedArenaGameTest'],
