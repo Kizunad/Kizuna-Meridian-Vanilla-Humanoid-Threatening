@@ -112,9 +112,14 @@ final class HumanoidTechniqueEffects {
         } else if (effect.hasMovement()) {
             movement(effect);
         } else if (effect.hasImpulse()) {
-            double speed = effect.getImpulse().getSpeed().getValue() / TICKS_PER_SECOND;
-            TechniqueWorldImpulses.apply(entity, effect.getImpulse().getDirection(),
-                    direction(effect).scale(speed));
+            if (effect.getImpulse().hasMaximumDistance()) {
+                // 定距短移由共用执行器量距离、记朝向，受阻时取消同一施放此后的打击。
+                world.step(effect, direction(effect));
+            } else {
+                double speed = effect.getImpulse().getSpeed().getValue() / TICKS_PER_SECOND;
+                TechniqueWorldImpulses.apply(entity, effect.getImpulse().getDirection(),
+                        direction(effect).scale(speed));
+            }
         } else if (effect.hasPresentation()) {
             presentation.apply(entity, effect);
             if (effect.getPresentation().getAction()
@@ -203,6 +208,7 @@ final class HumanoidTechniqueEffects {
             case FORWARD -> forward;
             case BACKWARD -> forward.reverse();
             case INPUT -> inputDirection(effect, forward);
+            case SIDE -> TechniqueWorldImpulses.side(entity.getYRot(), effect.getDirection());
             case TOWARD_TARGET -> towardTarget(effect.getTargetId(), forward);
             default -> throw new TechniqueErrors.HostRejected(FailureCode.INVALID_REQUEST);
         };
