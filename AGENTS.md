@@ -21,3 +21,34 @@
 - 客户端测试：`kz client ~/Code/<本仓的 worktree>` 列出有哪些项，`kz client ~/Code/<本仓的 worktree> <项>` 跑其中一项
 - 要自己写 Gradle 参数时：`kz gradle ~/Code/<本仓的 worktree> -- <参数>`
 - 不提交、不推送；在自己的 worktree（`~/Code/wt-*`）里改，不改主目录。
+
+## 速查
+
+### 自动生成
+
+- Fabric 模组 `meridian_humanoid_host`，清单 `fabric/src/main/resources/fabric.mod.json`
+  - `main` → `dev.kizuna.meridian.humanoid.fabric.HumanoidFabric`
+  - `meridian_activity_host` → `dev.kizuna.meridian.humanoid.fabric.HumanoidActivityHost`
+  - `meridian_brewing_charm_controller` → `dev.kizuna.meridian.humanoid.fabric.HumanoidCharmController`
+  - `meridian_health_host` → `dev.kizuna.meridian.humanoid.fabric.HumanoidHealthHost`
+  - `meridian_origin` → `dev.kizuna.meridian.humanoid.fabric.CrisisOrigins`、`dev.kizuna.meridian.humanoid.fabric.OriginTalents`
+  - `meridian_player_control_driver` → `dev.kizuna.meridian.humanoid.fabric.HumanoidPlayerDriver`
+  - `meridian_technique_host` → `dev.kizuna.meridian.humanoid.fabric.HumanoidTechniqueHost`
+- 数据目录：`fabric/src/gametest/resources/data/meridian/`、`fabric/src/gametest/resources/data/meridian_humanoid_test/`、`fabric/src/main/resources/data/meridian_humanoid/`、`fabric/src/main/resources/data/meridian_humanoid_host/`、`fabric/src/main/resources/data/minecraft/`
+- 资源目录：`fabric/src/main/resources/assets/meridian_humanoid/`、`fabric/src/main/resources/assets/meridian_humanoid_host/`
+- Protobuf 数据文件（含功法目录）：无
+- 随包 TOML：`server/src/main/resources/meridian-humanoid-brain.toml`、`server/src/main/resources/meridian-humanoid-crisis.toml`、`server/src/main/resources/meridian-humanoid.toml`、`server/src/main/resources/meridian-witch-ai.toml`
+- 测试源集：`fabric/src/clienttest/`、`fabric/src/gametest/`、`fabric/src/test/`、`server/src/test/`
+- `kz` 装配 ID：`humanoid-threatening`（`--with` 使用工作树路径）
+- `kz test --part unit`：`test build`
+- `kz test --part gametest`
+  - `:fabric:runGametest -PgametestRunDir=build/{name}`，运行目录 `fabric/build/{name}`
+- `kz client` 项目：无
+
+### 常见坑
+
+- 2026-11-20 固定打法的夹具要显式约束出生档与外卷池。随机学到的外卷会改变选式和走位。来源 `POOL-TEST-ISOLATION-TASK.md`。
+- 2026-11-21 包含档位或出生功法断言的 GameTest 固定种子、显式指定档位，并在起手前断言已学卷。来源 `FLAKES-20261121-TASK.md`。
+- 2026-11-10 改随包 `meridian-humanoid-brain.toml` 后用 `kz test <树> --part gametest` 启动新目录，旧文件不会被默认值覆盖。来源 `C5b-FIX-TASK.md`。
+- 2026-11-26 身体按需创建。读身份、库存或目击者资格时走只读查询，首次观察时的 `inspectBody` 会改变出生流程。来源 `MOB-PURSE-TASK.md`。
+- 2026-11-26 测试产出的日志放在运行目录或模块 `build/` 下，检查时也留意已跟踪的空日志。来源 `TEST-LOGS-OUT-TASK.md`。
