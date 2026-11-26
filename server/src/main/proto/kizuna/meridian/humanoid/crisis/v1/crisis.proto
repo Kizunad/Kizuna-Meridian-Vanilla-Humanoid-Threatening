@@ -33,9 +33,14 @@ message CrisisRecord {
   // 订阅者接第一场匹配的战果，确认后可订下一场。结算、撤销订阅和留存回执一并保存。
   map<string, RaidWatch> watches = 14;
   map<string, RaidReceipt> receipts = 15;
+  // 轻遭遇单独记次数、收场时刻和最后受理的行路签号。
+  int32 road_count = 16;
+  int64 road_settled_at = 17;
+  int64 road_request = 18;
 }
 
 message RaidWatch {
+  bool road = 3;
   string feud = 1;
   string party = 2;
 }
@@ -48,6 +53,7 @@ message FallSite {
 }
 
 message RaidReceipt {
+  bool road = 9;
   string player = 1;
   int32 encounter = 2;
   string feud = 3;
@@ -100,6 +106,8 @@ message Pending {
   repeated string leader_volumes = 16;
   // 这一场是记仇的人带队回来的。
   bool grudge_leads = 17;
+  // 零为完整来犯，正数为玩家的行路签号。
+  int64 road_request = 18;
 }
 
 // 记仇的人：一场里活着走掉的头目，下一场由它带队回来。

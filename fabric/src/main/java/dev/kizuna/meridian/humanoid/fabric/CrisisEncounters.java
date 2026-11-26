@@ -20,6 +20,16 @@ public final class CrisisEncounters {
         return CrisisFabric.engine().record(player);
     }
 
+    /** 凭玩家自己的行路签请求到场，找不到落点时可以持同一签再试。 */
+    public static boolean requestRoad(ServerPlayer player, String party, long ticket) {
+        return CrisisFabric.engine().requestRoad(player, party, ticket);
+    }
+
+    /** 玩家凭签离开本场追兵。 */
+    public static boolean leaveRoad(ServerPlayer player, long ticket) {
+        return CrisisFabric.engine().leaveRoad(player, ticket);
+    }
+
     public static boolean partyExists(String id) {
         return CrisisFabric.parties().containsKey(id);
     }
@@ -57,10 +67,13 @@ public final class CrisisEncounters {
         var result = after.toBuilder();
         for (Map.Entry<String, RaidWatch> entry : after.getWatchesMap().entrySet()) {
             RaidWatch watch = entry.getValue();
-            if (watch.getParty().equals(pending.getParty()) && watch.getFeud().equals(pending.getFeud())) {
+            boolean road = pending.getRoadRequest() > 0;
+            if (watch.getRoad() == road && watch.getParty().equals(pending.getParty())
+                    && watch.getFeud().equals(pending.getFeud())) {
                 var receipt = RaidReceipt.newBuilder()
+                        .setRoad(road)
                         .setPlayer(player.getStringUUID())
-                        .setEncounter(after.getSettledCount())
+                        .setEncounter(Math.addExact(after.getSettledCount(), after.getRoadCount()))
                         .setOnlineTicks(after.getOnlineTicks())
                         .setParty(pending.getParty())
                         .setFeud(pending.getFeud())

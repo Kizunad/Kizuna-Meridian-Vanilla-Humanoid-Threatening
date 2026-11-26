@@ -15,7 +15,7 @@ import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
@@ -39,7 +39,7 @@ final class CrisisFabric {
     }
 
     static void initialize(Path configDirectory) {
-        // 配置坏了启动失败；进度触发器在注册表冻结前登记；下线在默认阶段写回记录，排在 Human 的下线清理之前。
+        // 配置坏了启动失败；进度触发器在注册表冻结前登记。
         // 重载排在默认阶段之后，出身附属先重读完出身，这边再核对、刷新功法谱的仇家来源。
         engine = new CrisisEngine(CrisisRules.load(configDirectory.resolve(CONFIG_FILE)), new CrisisBodies());
         CrisisTrigger.register();
@@ -57,7 +57,8 @@ final class CrisisFabric {
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> engine.endings().died(entity, source));
         ServerEntityEvents.ENTITY_LOAD.register(CrisisRetreats::loaded);
         TechniqueFabric.KNOWN_CHANGED.register(engine::learned);
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> engine.disconnect(handler.player));
+        // 玩家从在线名单移除前，在世界线程提交战果并卸载来人。
+        ServerPlayerEvents.LEAVE.register(engine::disconnect);
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> stop());
         CrisisCommands.register(engine);
     }

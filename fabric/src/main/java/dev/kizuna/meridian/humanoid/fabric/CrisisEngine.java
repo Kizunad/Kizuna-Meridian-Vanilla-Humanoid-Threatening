@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
 import dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.CrisisRecord;
+import dev.kizuna.meridian.humanoid.protocol.pb.CrisisMessages.Pending;
 import dev.kizuna.meridian.humanoid.server.CrisisArrival;
 import dev.kizuna.meridian.humanoid.server.CrisisFeuds;
 import dev.kizuna.meridian.humanoid.server.CrisisHeat;
@@ -22,6 +23,7 @@ import java.util.function.UnaryOperator;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.entity.npc.villager.Villager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +36,7 @@ final class CrisisEngine {
     static final int STEP_TICKS = 20;
     private static final int OBSERVE_TICKS = 100;
     private static final int FLUSH_TICKS = 1200;
+    private static final long ROAD_REST = 2 * CrisisRules.DAY_TICKS;
     private static final Logger LOGGER = LoggerFactory.getLogger("meridian_humanoid/crisis");
     private final CrisisRules rules;
     private final CrisisBodies bodies;
@@ -113,6 +116,7 @@ final class CrisisEngine {
         records.put(player.getUUID(), record);
         boolean marked = dirty.remove(player.getUUID());
         return marked || raid.isPresent() || omen || arrived.isPresent()
+                || before.getRoadCount() != record.getRoadCount()
                 || before.getSettledCount() != record.getSettledCount()
                 || !record.getFeudsList().equals(before.getFeudsList());
     }
@@ -123,6 +127,44 @@ final class CrisisEngine {
             return Optional.empty();
         }
         return arrivals.whenFit(player, record, feudEntries(player), seed(player, record));
+    }
+
+    boolean requestRoad(ServerPlayer player, String party, long ticket) {
+        // 只在完整来犯没有占用场次、当前签也没有受理过时尝试到场。
+        var record = records.get(player.getUUID());
+        if (record == null || ticket <= record.getRoadRequest() || record.hasPending()
+                || !CrisisFabric.parties().containsKey(party) || nextRaid(player, record).isPresent()
+                || !player.isAlive() || player.isCreative() || player.isSpectator()
+                || player.level().dimension() != Level.OVERWORLD) {
+            return false;
+        }
+        long last = Math.max(record.getRoadSettledAt(), record.getSettledAt());
+        long now = record.getOnlineTicks();
+        if (now - last < ROAD_REST) {
+            return false;
+        }
+        var pending = Pending.newBuilder()
+                .setParty(party)
+                .setRoadRequest(ticket)
+                .setScheduledAt(now)
+                .setStrikeAt(now)
+                .build();
+        var scheduled = record.toBuilder()
+                .setRoadRequest(ticket)
+                .setPending(pending)
+                .build();
+        var arrived = arrivals.arrive(player, scheduled, List.of(), seed(player, record));
+        return arrived.isPresent() && update(player, ignored -> arrived.orElseThrow());
+    }
+
+    boolean leaveRoad(ServerPlayer player, long ticket) {
+        // 只撤仍在场的那一签，旧对话不会误结下一场。
+        var record = records.get(player.getUUID());
+        if (record == null || ticket <= 0 || !record.getPending().getArrived()
+                || record.getPending().getRoadRequest() != ticket) {
+            return false;
+        }
+        return update(player, current -> endings.escape(player, current));
     }
 
     Strike strike(ServerPlayer player, Optional<String> party) {
@@ -355,7 +397,7 @@ final class CrisisEngine {
 
     void disconnect(ServerPlayer player) {
         // 下线：来了人的那一场算逃，名下的来人（盯人的、在撤的）当场清走；写回最后一段在线时间，然后放掉。
-        // Human 的下线清理排在这之后，身体此时还在。
+        // 此时玩家仍在在线名单，身体宿主可以检查修订并写回。
         UUID id = player.getUUID();
         records.computeIfPresent(id, (ignored, record) -> endings.leave(player, record));
         CrisisRaiders.release(id).forEach(raider -> CrisisRetreats.find(player.level().getServer(), raider)

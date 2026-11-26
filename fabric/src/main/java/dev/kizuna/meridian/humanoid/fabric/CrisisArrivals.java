@@ -100,7 +100,8 @@ final class CrisisArrivals {
         RandomGenerator random = CrisisSchedule.random(seed);
         List<CrisisParty.Member> lineup = party.lineup(CrisisArrival.band(record, rules.strength()),
                 pending.getStage(), random).roster(random);
-        Optional<CrisisOutcome.Return> back = Optional.of(record).filter(CrisisRecord::hasGrudge)
+        Optional<CrisisOutcome.Return> back = Optional.of(record)
+                .filter(current -> pending.getRoadRequest() == 0 && current.hasGrudge())
                 .map(present -> CrisisOutcome.returning(present.getGrudge(), lineup.getFirst(),
                         HumanoidBrain.config().volumes()));
         List<CrisisParty.Member> roster = back.map(returned -> led(lineup, returned.leader())).orElse(lineup);

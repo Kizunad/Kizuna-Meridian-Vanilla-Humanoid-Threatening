@@ -61,6 +61,14 @@ public final class CrisisOutcome {
         // 风声赢了留 kept_after_win、逃了输了留 kept_after_escape；记一场了结；仇家的这一拨往前走；
         // 赢了记仇的人了断，逃了、输了头目记仇；排着的那一场清掉。
         Pending pending = record.getPending();
+        if (pending.getRoadRequest() > 0) {
+            // 轻遭遇的间隔单独计算，完整来犯的风声和记仇者保持原值。
+            return record.toBuilder()
+                    .setRoadCount(Math.incrementExact(record.getRoadCount()))
+                    .setRoadSettledAt(record.getOnlineTicks())
+                    .clearPending()
+                    .build();
+        }
         boolean won = settlement.ending() == Ending.WIN;
         CrisisRecord settled = CrisisHeat.keep(record, won ? rules.heat().keptAfterWin()
                 : rules.heat().keptAfterEscape());

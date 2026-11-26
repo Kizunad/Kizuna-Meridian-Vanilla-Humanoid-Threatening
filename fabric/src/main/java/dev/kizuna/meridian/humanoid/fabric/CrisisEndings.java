@@ -75,7 +75,7 @@ final class CrisisEndings {
         return new Sight(nearest, seen);
     }
 
-    private CrisisRecord escape(ServerPlayer player, CrisisRecord record) {
+    CrisisRecord escape(ServerPlayer player, CrisisRecord record) {
         // 逃了：了结、头目记仇，来人撤走。
         LOGGER.info("玩家 {} 甩开了来人（队伍表 {}）", player.getScoreboardName(), record.getPending().getParty());
         CrisisRaiders.retreat(player.getUUID(), player.level().getServer().getTickCount());
@@ -123,7 +123,9 @@ final class CrisisEndings {
         }
         ServerLevel level = (ServerLevel) mob.level();
         List<ItemStack> drops = new ArrayList<>();
-        spoils(player.get(), record.get()).flatMap(CrisisVolumes::scroll).ifPresent(drops::add);
+        if (record.get().getPending().getRoadRequest() == 0) {
+            spoils(player.get(), record.get()).flatMap(CrisisVolumes::scroll).ifPresent(drops::add);
+        }
         if (record.get().getPending().getGrudgeLeads()) {
             drops.addAll(CrisisSpoils.carried(level, record.get().getGrudge().getCarriedList()));
         }
@@ -139,7 +141,9 @@ final class CrisisEndings {
         engine.update(player.get(), present -> settled(player.get(), present, CrisisOutcome.Settlement.win(), fall));
         CrisisRaiders.dismiss(mob.getUUID());
         CrisisRaiders.retreat(player.get().getUUID(), level.getServer().getTickCount());
-        won(player.get(), record.get());
+        if (record.get().getPending().getRoadRequest() == 0) {
+            won(player.get(), record.get());
+        }
     }
 
     private void won(ServerPlayer player, CrisisRecord before) {
@@ -213,11 +217,15 @@ final class CrisisEndings {
         if (record.isEmpty() || !byRaider) {
             return;
         }
-        ByteString taken = rules.outcome().lossPenalty() == CrisisRules.LossPenalty.MEDIUM ? CrisisSpoils.take(player)
-                : ByteString.EMPTY;
+        ByteString taken = ByteString.EMPTY;
+        if (record.get().getPending().getRoadRequest() == 0
+                && rules.outcome().lossPenalty() == CrisisRules.LossPenalty.MEDIUM) {
+            taken = CrisisSpoils.take(player);
+        }
+        var settlement = CrisisOutcome.Settlement.loss(taken);
         LOGGER.info("玩家 {} 死在来人手里（队伍表 {}），夺走 {} 件", player.getScoreboardName(),
                 record.get().getPending().getParty(), taken.isEmpty() ? 0 : 1);
-        engine.update(player, present -> settled(player, present, CrisisOutcome.Settlement.loss(taken)));
+        engine.update(player, present -> settled(player, present, settlement));
         CrisisRaiders.retreat(player.getUUID(), player.level().getServer().getTickCount());
     }
 

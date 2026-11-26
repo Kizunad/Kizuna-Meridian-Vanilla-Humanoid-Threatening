@@ -48,6 +48,30 @@ public class CrisisOutcomeTest {
     }
 
     @Test
+    public void roadOutcomesPreserveFullRaidState() {
+        var full = arrived(0, false /* grudgeLeads */);
+        var pending = full.getPending().toBuilder()
+                .setRoadRequest(1)
+                .clearFeud()
+                .build();
+        var before = full.toBuilder()
+                .setGrudge(grudge(1))
+                .setSettledAt(DAY)
+                .setPending(pending)
+                .build();
+        var expected = before.toBuilder()
+                .setRoadCount(1)
+                .setRoadSettledAt(NOW)
+                .clearPending()
+                .build();
+        var outcomes = List.of(CrisisOutcome.Settlement.win(), CrisisOutcome.Settlement.escape(),
+                CrisisOutcome.Settlement.loss(SCROLL));
+        for (var outcome : outcomes) {
+            assertEquals(expected, CrisisOutcome.settle(before, outcome, ENTRIES, RULES, 0));
+        }
+    }
+
+    @Test
     public void winningTheLastStageEndsTheFeud() {
         // 两拨的仇家打赢第 2 拨（下标 1）就了断；「了断」只认这一回从没打完变成打完，已经打完的再比不算。
         CrisisRecord won = CrisisOutcome.settle(arrived(1, false), CrisisOutcome.Settlement.win(), ENTRIES, RULES, 7);
