@@ -224,7 +224,6 @@ public final class HumanoidBodyState {
             throw new IllegalArgumentException("类人实体实体身份不能为空");
         }
         BodyMessages.BodySnapshot body = decodeBody(saved.bodyBytes());
-        validateBodyIdentity(body);
         var receipts = new ArrayList<MeridianMessages.CommandReceipt>();
         for (byte[] bytes : saved.receiptBytes()) {
             receipts.add(MeridianProtocol.decodeReceipt(bytes));
@@ -242,10 +241,12 @@ public final class HumanoidBodyState {
                 now.getElapsedMillis(), species);
     }
 
-    private static BodyMessages.BodySnapshot decodeBody(byte[] bodyBytes) {
+    static BodyMessages.BodySnapshot decodeBody(byte[] bodyBytes) {
         // 反序列化失败明确标记为快照损坏，不能改为新生身体。
         try {
-            return BodyMessages.BodySnapshot.parseFrom(bodyBytes);
+            var body = BodyMessages.BodySnapshot.parseFrom(bodyBytes);
+            validateBodyIdentity(body);
+            return body;
         } catch (com.google.protobuf.InvalidProtocolBufferException failure) {
             throw new IllegalArgumentException("类人实体身体快照损坏", failure);
         }

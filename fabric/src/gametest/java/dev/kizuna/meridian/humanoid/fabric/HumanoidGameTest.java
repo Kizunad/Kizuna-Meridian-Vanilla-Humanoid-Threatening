@@ -7,6 +7,7 @@ import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages;
 import dev.kizuna.meridian.protocol.HealthHostProtobuf;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
+import dev.kizuna.meridian.vanilla.fabric.VanillaDamageFabric;
 import dev.kizuna.meridian.protocol.pb.HealthHostMessages;
 import dev.kizuna.meridian.protocol.pb.HealthMessages;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages;
@@ -192,6 +193,28 @@ public final class HumanoidGameTest {
             context.assertTrue(access.meridian$birthVolumes() != null && !access.meridian$awaitingVolumeBirth(),
                     "区域恢复后没有自动完成出生");
         });
+    }
+
+    @GameTest(maxTicks = DEFAULT_TIMEOUT)
+    public void existingSnapshotLeavesBodiesAndLoadBoundaryUntouched(GameTestHelper context) {
+        // 分别在首查前、已绑定和只暂存原始 NBT 的三个时刻经过公开伤害桥读取。
+        var villager = loadedVillager(context, new BlockPos(SPAWN_X, SPAWN_Y, SPAWN_Z));
+        var access = (HumanoidEntityAccess) villager;
+        context.assertTrue(VanillaDamageFabric.existingMobBody(villager).isEmpty()
+                && access.meridian$humanoidBody() == null, "只读查询给无身体村民建了身体");
+        var expected = inspect(villager).getBody();
+        context.assertTrue(VanillaDamageFabric.existingMobBody(villager).orElseThrow().equals(expected),
+                "只读查询改变了已经提交的身体");
+        var saved = HumanoidEntityNbt.save(villager);
+        access.meridian$humanoidBody(null);
+        HumanoidEntityNbt.load(villager, saved);
+        long loadedAt = access.meridian$loadedAtMillis();
+        var snapshot = VanillaDamageFabric.existingMobBody(villager).orElseThrow();
+        context.assertTrue(snapshot.equals(expected) && access.meridian$humanoidBody() == null,
+                "读取旧档快照改变了身体或提前恢复了身体");
+        context.assertTrue(access.meridian$loadedAtMillis() == loadedAt, "读取旧档快照消耗了载入时间边界");
+        System.out.println("PURSE_TEST_OK existing_snapshot_leaves_bodies_and_load_boundary_untouched");
+        context.succeed();
     }
 
     @GameTest(maxTicks = DEFAULT_TIMEOUT)

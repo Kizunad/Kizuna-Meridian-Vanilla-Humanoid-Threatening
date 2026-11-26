@@ -12,10 +12,36 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Fabric 健康宿主按物种及其个体判断认领身体。 */
 public final class HumanoidHealthHost implements BodyHealthHost {
+    static Optional<BodyMessages.BodySnapshot> existingBody(LivingEntity entity) {
+        // 直接返回已提交的状态。尚未恢复的旧实体只解码属于自己的原始快照。
+        if (!HumanoidFabric.isReady() || !HumanoidFabric.isClaimed(entity)) {
+            return Optional.empty();
+        }
+        var access = (HumanoidEntityAccess) entity;
+        if (access.meridian$humanoidLoading() || access.meridian$humanoidLoadFailed()) {
+            return Optional.empty();
+        }
+        var state = access.meridian$humanoidBody();
+        if (state != null) {
+            return Optional.of(state.snapshot());
+        }
+        var saved = access.meridian$humanoidSavedBody();
+        if (saved == null || saved.length == 0 || !entity.getUUID().equals(access.meridian$humanoidSavedOwner())) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(HumanoidBodyState.decodeBody(saved));
+        } catch (IllegalArgumentException invalid) {
+            HumanoidFabric.report(entity, invalid);
+            return Optional.empty();
+        }
+    }
+
     /** 调试用途，不进正式玩法：调试附属改写类人真元库存的入口；权限检查留在调用方命令层。 */
     public static MeridianMessages.FailureCode debugQi(LivingEntity entity, MeridianMessages.DebugQi request) {
         // 只在服务端主线程进入当前宿主的同一身体事务；未认领或正文未读完按无身体处理。
