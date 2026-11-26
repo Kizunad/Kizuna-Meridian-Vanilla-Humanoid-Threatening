@@ -69,27 +69,13 @@
 - 和通用招敌共用「同时只排一场」、开局保护期和最短间隔。几条同时到了按出身里写的先后；仇家先于风声。
 - 记录里有、出身里已经没有的仇家（数据包改过）留着不动，只是不再排。
 
-## 首批出身
+## 重生归来
 
-本仓的出身在 `fabric/src/main/resources/data/meridian_humanoid/meridian_origin/origin/`，其中四个出身带仇家队伍表，
-出身卡和征兆的文字在本仓语言文件的 `origin.meridian_humanoid.*`、`crisis.meridian_humanoid.<队伍表>.*` 下。
-玩家生来就在游炁，所以 `min_realm` 都用默认值：一选定就开始计日。
+生人提供 `meridian_humanoid:reborn`。选定后学会后世吐纳卷，获得基础吐纳权限。
+旧簿仇家 `old_register` 按玩家在线天数来犯，随胜场增援。
 
-| 出身 | 天赋 | 仇家（队伍表、第一拨、两拨之间、拨数、必掉卷） |
-|---|---|---|
-| `farmer` 寻常农户 | 村民声望 +20 | 没有 |
-| `orphan` 灭门遗孤 | 开局会《行矢·百步》（`meridian_wayfarer:bow_upper`） | `clan_foes`，8–14 天，12–20 天，3 拨，`meridian_wayfarer:bow_lower` |
-| `apprentice` 药铺学徒 | 开局会《炼药卷·熬药》（`meridian_brewing:brewing_basics`）；开局会聚气汤、苦黄膏两张药方 | `recipe_thief`，6–10 天，12–20 天，1 拨 |
-| `disgraced` 罪臣之后 | 开局会《破门斩·木门》（`meridian_door_breaker:upper`） | `captors`，10–16 天，24–36 天，没有了断，`meridian_door_breaker:lower` |
-| `merchant` 行商之后 | 参考负重 ×1.25 | `highwaymen`，5–9 天，10–14 天，没有了断 |
-| `reborn` 重生归来 | 开局会后世吐纳卷，拥有基础吐纳授权 | 旧簿仇家终身来犯，三档阵容各按胜场增援 |
-
-- 队伍表：`clan_foes` 掠夺者为主，三档各分 0/1/2 拨，一拨比一拨强，第 2 拨头目是真炁精锐；`recipe_thief` 头目是真炁女巫，
-  `wandering` 档有时一个人来、有时带一个随从，往上的档随从多些，`true_many` 档她是精锐；`captors` 只有卫道士；
-  `highwaymen` 人少、多是游炁。
-- 药方天赋由炼药附属登记（`meridian_brewing:starting_recipes`），负重天赋由负重附属登记（`meridian_burden:carry_capacity`），
-  所以本仓硬依赖这两个附属：缺了它们出身数据读不进来。
-- 文字由 Gemini 照会话仓 `handoff/origin-lore-20261115/3b/` 的资料写，逐句对过代码；改文字改资料重写，不手改语言文件。
+旧档里显式退役的出身由出身附属在下次进服时重抽。尚未到场的退役队伍撤销排期；
+已经到场的按逃脱收场并交付回执。记仇者保留携带物，往后的称呼和台词使用通用招敌队伍。
 
 ## 开局卷、基础吐纳与村民声望
 
@@ -288,9 +274,7 @@
   头目死后随从撤走、没人看见就消失；逃了记仇、再来变强；输了被夺卷轴、追上打死掉回来；记仇的人带队、掉回药水；
   下线算逃并清走来人；名下没人按逃了结、孤儿清走；当着生人杀人和学稀有卷涨风声）、`HumanoidCrisisOmenGameTest`
   （没有村民只留字条、在玩家身后、不消失；村民说传言、最后一次必留字条；调试指令把字条留在近处的床上；
-  记仇的人照面说一句、只说一次；说的话从 `HumanoidSpeech.SPOKE` 听）、`HumanoidOriginTalentGameTest`（首批五个出身和四张队伍表读进来、
-  出身卡每一行都有文字；遗孤的仇家一拨比一拨强；罪臣之后选定就会木门卷、再定一次不出错；寻常农户的村民声望多 20、行商之后不加；
-  参数写错的开局卷和声望读不进来）。
+  记仇的人照面说一句、只说一次；说的话从 `HumanoidSpeech.SPOKE` 听）、`HumanoidOriginTalentGameTest`（重生选择和仇家、测试出身授卷和声望、无效参数校验）。
   四条进度的断言放在这两类里：征兆三条用例看「风声」给的时刻；收场五条用例在头目死前、死后看三条结局进度
   （`CrisisGameTests.endings`：正好哪几条完成，别的都没完成）。
   要看「有没有人看见」的用例各自送到远处一道（`CrisisGameTests.standApart` 的 `lane`），彼此隔 512 格。测试数据包里有测试出身 `meridian_humanoid_test:orphan`（两条仇家）和

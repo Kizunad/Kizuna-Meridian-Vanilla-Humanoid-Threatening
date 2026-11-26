@@ -1,6 +1,6 @@
 {
   "weight": 10,
-  "icon": "minecraft:wheat",
+  "icon": "minecraft:paper",
   "talents": [
     {
       "type": "meridian_humanoid:villager_standing",

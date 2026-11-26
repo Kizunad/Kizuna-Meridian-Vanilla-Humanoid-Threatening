@@ -20,7 +20,7 @@ def reproClasses = [
                'HumanoidEvokerGameTest', 'HumanoidAdvancementGameTest',
                'HumanoidFieldNotesGameTest', 'HumanoidCrisisGameTest',
                'HumanoidCrisisFeudGameTest', 'HumanoidOriginTalentGameTest', 'HumanoidCrisisRaidGameTest',
-               'HumanoidCrisisOutcomeGameTest', 'HumanoidReceiptGameTest', 'HumanoidCrisisOmenGameTest',
+               'HumanoidCrisisOutcomeGameTest', 'HumanoidReceiptGameTest', 'RetiredRaidGameTest', 'HumanoidCrisisOmenGameTest',
                'HumanoidVolumeSourcesGameTest'],
         species: ['SpeciesHookGameTest'],
         pool: ['BirthVolumeGameTest'],

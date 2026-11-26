@@ -1,0 +1,13 @@
+{
+  "weight": 10,
+  "icon": "minecraft:paper",
+  "talents": [
+    {
+      "type": "meridian_humanoid:starting_volume",
+      "params": {
+        "volume": "meridian_door_breaker:upper"
+      }
+    }
+  ],
+  "threats": []
+}

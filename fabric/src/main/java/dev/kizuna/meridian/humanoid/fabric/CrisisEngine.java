@@ -334,7 +334,11 @@ final class CrisisEngine {
         }
         try {
             CrisisRecord record = CrisisRecords.read(body.get());
-            records.put(id, record);
+            var migrated = RetiredRaids.restore(player, record, endings, rules.genericParty());
+            records.put(id, migrated);
+            if (migrated != record) {
+                flush(player);
+            }
             knownVolumes.put(id, Set.copyOf(CrisisVolumes.known(id)));
         } catch (IllegalArgumentException corrupt) {
             broken.add(id);

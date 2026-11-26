@@ -50,6 +50,7 @@
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisRaidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOutcomeGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidReceiptGameTest",
+      "dev.kizuna.meridian.humanoid.fabric.RetiredRaidGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidCrisisOmenGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidFieldNotesGameTest",
       "dev.kizuna.meridian.humanoid.fabric.HumanoidVolumeSourcesGameTest"
