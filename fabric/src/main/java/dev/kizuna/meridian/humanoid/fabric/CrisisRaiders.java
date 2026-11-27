@@ -158,6 +158,9 @@ public final class CrisisRaiders {
     }
 
     public static boolean acceptsTarget(Mob subject, LivingEntity target) {
+        if (!HumanoidVisitors.acceptsOpponent(subject, target)) {
+            return false;
+        }
         // 原版改目标时：不是招敌管着的随它；被魅惑的交给魅惑判断；撤走的只接受清空；盯人的只接受清空或那名玩家。
         if (!sent(subject) || HumanoidCharmController.controlled(subject) || target == null) {
             return true;

@@ -76,6 +76,7 @@ public final class HumanoidFabric implements ModInitializer {
         HumanoidStaggerAnimation.initialize();
         HumanoidWitchAi.initialize(configDirectory);
         CrisisFabric.initialize(configDirectory);
+        HumanoidVisitors.register();
         OriginTalents.initialize();
         HumanoidEvokerSpells.initialize();
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);

@@ -4,7 +4,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import java.util.Optional;
 import java.util.UUID;
-import dev.kizuna.meridian.humanoid.server.HumanoidTier;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -18,12 +18,22 @@ import net.minecraft.world.phys.Vec3;
 
 /** 单人在约定地点赴会，场次归属及结束条件由发起方保存。 */
 public final class HumanoidVisitors {
-    private static final String VISITOR = "meridian_humanoid.visitor";
+    static final String VISITOR = "meridian_humanoid.visitor";
+    private static final String OPPONENT = "meridian_humanoid.opponent.";
     public static final String YOUTH = "meridian_humanoid.young";
 
     public record Guest<T extends Mob>(EntityType<T> type, HumanoidTier tier) { }
 
     private HumanoidVisitors() { }
+
+    static void register() {
+        // arrive 创建的来客和旧存档重新载入的来客，都以持久的访客标签认领。
+        ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> {
+            if (entity instanceof Mob && entity.entityTags().contains(VISITOR)) {
+                entity.addTag("meridian.no_taunt");
+            }
+        });
+    }
 
     public static Optional<Villager> arrive(ServerLevel level, BlockPos feet, UUID visit, Component name) {
         return arrive(level, feet, visit, name, EntityTypes.VILLAGER);
@@ -107,9 +117,47 @@ public final class HumanoidVisitors {
 
     private static final float VISITOR_STRIKE = 2.0F;
 
+    /** 双方由同一现场选出，沿可走路径接近；只有到身边且看得见时才打中。 */
+    public static void engage(Mob guest, net.minecraft.world.entity.LivingEntity opponent) {
+        if (!guest.entityTags().contains(VISITOR) || !guest.isAlive() || !opponent.isAlive()
+                || guest.level() != opponent.level()) {
+            return;
+        }
+        guest.setNoAi(false /* noAi */);
+        String allowed = OPPONENT + opponent.getStringUUID();
+        if (!guest.entityTags().contains(allowed)) {
+            clearOpponent(guest);
+            guest.addTag(allowed);
+        }
+        guest.setTarget(opponent);
+        guest.getNavigation().moveTo(opponent, 1);
+        if (guest.isWithinMeleeAttackRange(opponent) && guest.hasLineOfSight(opponent)) {
+            guest.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            var level = (ServerLevel) guest.level();
+            opponent.hurtServer(level, level.damageSources().mobAttack(guest), VISITOR_STRIKE);
+        }
+    }
+
+    static boolean acceptsOpponent(Mob guest, net.minecraft.world.entity.LivingEntity target) {
+        if (target == null || !guest.entityTags().contains(VISITOR)) {
+            return true;
+        }
+        for (String tag : guest.entityTags()) {
+            if (tag.startsWith(OPPONENT)) {
+                return tag.equals(OPPONENT + target.getStringUUID());
+            }
+        }
+        return true;
+    }
+
+    private static void clearOpponent(Mob guest) {
+        guest.entityTags().stream().filter(tag -> tag.startsWith(OPPONENT)).findFirst().ifPresent(guest::removeTag);
+    }
+
     /** 制服时停下追逐，来客仍能受击、保命或死亡。 */
     public static void restrain(Mob guest) {
         if (guest.entityTags().contains(VISITOR)) {
+            clearOpponent(guest);
             guest.getNavigation().stop();
             guest.setTarget(null);
             guest.setNoAi(true /* noAi */);
@@ -120,6 +168,7 @@ public final class HumanoidVisitors {
     /** 访客沿撤退路径自行走远，保留随身实物直到实际退场。 */
     public static void withdraw(Mob guest, UUID owner) {
         if (guest.entityTags().contains(VISITOR)) {
+            clearOpponent(guest);
             guest.addTag(CrisisArrivals.RAIDER_TAG);
             guest.setTarget(null);
             guest.setNoAi(false /* noAi */);

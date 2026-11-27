@@ -39,6 +39,8 @@ message CrisisRecord {
   int64 road_request = 18;
   // 只收本人致死的成年生人，死者身份与当时的交手证据一起保存。
   repeated SlainAdult slain_adults = 19;
+  // 同一玩家的擂台轮次递增；重放已结算的轮次不会重复传名。
+  int64 last_ring_victory = 20;
 }
 
 message SlainAdult {

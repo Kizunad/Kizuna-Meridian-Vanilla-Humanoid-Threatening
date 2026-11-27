@@ -34,6 +34,29 @@ public final class CrisisEncounters {
         return CrisisFabric.parties().containsKey(id);
     }
 
+    /** 在场村民亲眼看见三胜后传名，同一轮只涨一次风声。 */
+    public static boolean ringVictory(ServerPlayer player, long round) {
+        var engine = CrisisFabric.engine();
+        var rise = engine.rules().heat().rise();
+        double radius = rise.witnessRadius();
+        var area = player.getBoundingBox().inflate(radius);
+        var witnesses = player.level().getEntitiesOfClass(net.minecraft.world.entity.npc.villager.Villager.class,
+                area, villager -> villager.isAlive() && !villager.entityTags().contains(HumanoidVisitors.VISITOR)
+                        && villager.distanceTo(player) <= radius
+                        && villager.hasLineOfSight(player));
+        var previous = current(player);
+        if (round <= 0 || witnesses.isEmpty() || previous.isEmpty()) {
+            return false;
+        }
+        if (round <= previous.get().getLastRingVictory()) {
+            return false;
+        }
+        return engine.update(player, record -> {
+            var raised = dev.kizuna.meridian.humanoid.server.CrisisHeat.raise(record, rise.witnessedKill());
+            return raised.toBuilder().setLastRingVictory(round).build();
+        });
+    }
+
     /** 本人主动挑战已在场的头目；胜逃负沿用轻场订阅。 */
     public static boolean challenge(ServerPlayer player, String party, net.minecraft.world.entity.Mob opponent) {
         return CrisisFabric.engine().challenge(player, party, opponent);

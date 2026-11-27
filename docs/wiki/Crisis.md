@@ -292,3 +292,5 @@ Story 用 `CrisisEncounters.requestRoad(player, party, ticket)` 递交玩家自�
 轻场胜、逃、负分别写回当前场的结果，只更新行路的次数和冷却。完整招敌的静默时刻、风声、仇家拨数和记仇者照原记录保留。战果订阅同时匹配来源、队伍和仇家；缺省来源仍指完整来犯。玩家下线时在服务端从在线名单移除前写回战果并清走来人。
 
 护送途中，`CrisisRaiders.threatenEscort` 核对本人、本次签号和该场成员后，允许一名来敌追击实际同行者。原玩家仍持有战果，退场或目标死亡后停止绕袭。主动赴约时，`CrisisEncounters.challenge` 把在场的真炁头目接入空闲轻场，主动出手才开战。回执带头目 UUID 与路签号，可将命帖、手札和具体对手对上。
+
+访客可由现场通过 `HumanoidVisitors.engage` 指定对手，接近并在能看见对方时近战。认输和撤退会清除目标限制。擂台三胜经 `CrisisEncounters.ringVictory` 核对村民目击与玩家最近一次已记的轮号后涨风声。
