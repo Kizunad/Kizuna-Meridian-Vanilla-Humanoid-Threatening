@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.phys.Vec3;
 
@@ -74,5 +75,31 @@ public final class HumanoidVisitors {
         guest.setPersistenceRequired();
         guest.setNoAi(true /* noAi */);
         return guest;
+    }
+
+    /** 来客追打指定居民，接触且能看到对方时才走原版伤害入口。 */
+    public static void pursue(ServerLevel level, Mob guest, Villager resident) {
+        if (!guest.entityTags().contains(VISITOR) || !guest.isAlive() || !resident.isAlive()) {
+            return;
+        }
+        guest.setPose(Pose.STANDING);
+        guest.setNoAi(false /* noAi */);
+        guest.getNavigation().moveTo(resident, 1.0);
+        if (guest.isWithinMeleeAttackRange(resident) && guest.hasLineOfSight(resident)) {
+            guest.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            resident.hurtServer(level, level.damageSources().mobAttack(guest), VISITOR_STRIKE);
+        }
+    }
+
+    private static final float VISITOR_STRIKE = 2.0F;
+
+    /** 制服时停下追逐，来客仍能受击、保命或死亡。 */
+    public static void restrain(Mob guest) {
+        if (guest.entityTags().contains(VISITOR)) {
+            guest.getNavigation().stop();
+            guest.setTarget(null);
+            guest.setNoAi(true /* noAi */);
+            guest.setPose(Pose.SITTING);
+        }
     }
 }
