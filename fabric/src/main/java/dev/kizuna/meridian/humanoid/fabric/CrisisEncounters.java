@@ -34,6 +34,11 @@ public final class CrisisEncounters {
         return CrisisFabric.parties().containsKey(id);
     }
 
+    /** 本人主动挑战已在场的头目；胜逃负沿用轻场订阅。 */
+    public static boolean challenge(ServerPlayer player, String party, net.minecraft.world.entity.Mob opponent) {
+        return CrisisFabric.engine().challenge(player, party, opponent);
+    }
+
     public static boolean feudUses(String key, String party) {
         return Origins.all().values().stream()
                 .flatMap(origin -> CrisisOrigins.entries(origin).stream())
@@ -72,6 +77,8 @@ public final class CrisisEncounters {
                     && watch.getFeud().equals(pending.getFeud())) {
                 var receipt = RaidReceipt.newBuilder()
                         .setRoad(road)
+                        .setLeader(pending.getLeader())
+                        .setRoadRequest(pending.getRoadRequest())
                         .setPlayer(player.getStringUUID())
                         .setEncounter(Math.addExact(after.getSettledCount(), after.getRoadCount()))
                         .setOnlineTicks(after.getOnlineTicks())

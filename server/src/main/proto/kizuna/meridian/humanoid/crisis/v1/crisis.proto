@@ -53,6 +53,8 @@ message FallSite {
 }
 
 message RaidReceipt {
+  string leader = 10;
+  int64 road_request = 11;
   bool road = 9;
   string player = 1;
   int32 encounter = 2;

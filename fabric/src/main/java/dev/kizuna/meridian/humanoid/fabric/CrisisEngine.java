@@ -8,6 +8,7 @@ import dev.kizuna.meridian.humanoid.server.CrisisHeat;
 import dev.kizuna.meridian.humanoid.server.CrisisRecords;
 import dev.kizuna.meridian.humanoid.server.CrisisRules;
 import dev.kizuna.meridian.humanoid.server.CrisisSchedule;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
 import dev.kizuna.meridian.origin.fabric.Origin;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.Level;
@@ -165,6 +167,36 @@ final class CrisisEngine {
             return false;
         }
         return update(player, current -> endings.escape(player, current));
+    }
+
+    boolean challenge(ServerPlayer player, String party, Mob opponent) {
+        // 已经赴约的单人头目占同一个场位；主动挑战不等待行路脚程。
+        var record = records.get(player.getUUID());
+        if (record == null || record.hasPending() || nextRaid(player, record).isPresent()
+                || player.level().dimension() != Level.OVERWORLD || opponent.level() != player.level()
+                || !player.isAlive() || player.isSpectator() || !opponent.isAlive() || CrisisRaiders.sent(opponent)
+                || !CrisisFabric.parties().containsKey(party)) {
+            return false;
+        }
+        long ticket = Math.incrementExact(record.getRoadRequest());
+        long now = record.getOnlineTicks();
+        var pending = Pending.newBuilder()
+                .setParty(party)
+                .setRoadRequest(ticket)
+                .setScheduledAt(now)
+                .setStrikeAt(now)
+                .build();
+        var scheduled = record.toBuilder().setRoadRequest(ticket).setPending(pending).build();
+        var ids = List.of(opponent.getUUID());
+        var species = BuiltInRegistries.ENTITY_TYPE.getKey(opponent.getType());
+        var shown = new CrisisArrival.Leader(opponent.getUUID(), species.toString(), HumanoidTier.TRUE_QI,
+                CrisisVolumes.known(opponent.getUUID()), false /* grudge */);
+        var arrived = CrisisArrival.arrived(scheduled, shown, ids);
+        CrisisRaiders.track(player.getUUID(), ids);
+        opponent.addTag(CrisisArrivals.RAIDER_TAG);
+        opponent.setNoAi(false /* noAi */);
+        opponent.setTarget(player);
+        return update(player, ignored -> arrived);
     }
 
     Strike strike(ServerPlayer player, Optional<String> party) {

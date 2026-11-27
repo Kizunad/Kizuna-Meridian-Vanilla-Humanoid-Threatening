@@ -19,6 +19,7 @@ import net.minecraft.world.entity.Mob;
  */
 public final class CrisisRaiders {
     private static final Map<UUID, UUID> QUARRY = new HashMap<>();
+    private static final Map<UUID, UUID> ESCORTS = new HashMap<>();
     private static final Map<UUID, Retreat> RETREATING = new HashMap<>();
 
     /**
@@ -53,6 +54,7 @@ public final class CrisisRaiders {
         // 一场了结：盯这名玩家的来人都转成撤走，从这一刻起算。
         for (UUID raider : raiders(player)) {
             QUARRY.remove(raider);
+            ESCORTS.remove(raider);
             RETREATING.put(raider, new Retreat(player, tick));
         }
     }
@@ -65,6 +67,7 @@ public final class CrisisRaiders {
     static void dismiss(UUID raider) {
         // 这一个不用再管了（死了、走远消失了、卸载了）。
         QUARRY.remove(raider);
+        ESCORTS.remove(raider);
         RETREATING.remove(raider);
     }
 
@@ -83,6 +86,7 @@ public final class CrisisRaiders {
     static void clear() {
         // 停服时清空。
         QUARRY.clear();
+        ESCORTS.clear();
         RETREATING.clear();
     }
 
@@ -128,7 +132,24 @@ public final class CrisisRaiders {
                 || target.isSpectator()) {
             return Optional.empty();
         }
+        UUID escort = ESCORTS.get(mob.getUUID());
+        if (escort != null && target.level().getEntity(escort) instanceof LivingEntity companion
+                && companion.isAlive()) {
+            return Optional.of(companion);
+        }
         return Optional.of(target);
+    }
+
+    /** 本人当前轻场的一名来敌改追同行者，收场和撤队仍归原玩家。 */
+    public static boolean threatenEscort(ServerPlayer owner, long ticket, Mob raider, LivingEntity escort) {
+        var pending = CrisisEncounters.current(owner).orElseThrow().getPending();
+        if (ticket <= 0 || pending.getRoadRequest() != ticket || !pending.getRaidersList().contains(raider.getStringUUID())
+                || !huntingFor(raider, owner.getUUID()) || escort.level() != owner.level() || !escort.isAlive()) {
+            return false;
+        }
+        ESCORTS.put(raider.getUUID(), escort.getUUID());
+        raider.setTarget(escort);
+        return raider.getTarget() == escort;
     }
 
     public static boolean acceptsTarget(Mob subject, LivingEntity target) {
@@ -136,7 +157,7 @@ public final class CrisisRaiders {
         if (!sent(subject) || HumanoidCharmController.controlled(subject) || target == null) {
             return true;
         }
-        return target.getUUID().equals(QUARRY.get(subject.getUUID()));
+        return quarry(subject).filter(target::equals).isPresent();
     }
 
     public static void playerDying(ServerPlayer player, DamageSource source) {

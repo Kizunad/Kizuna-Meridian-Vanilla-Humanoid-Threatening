@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.humanoid.fabric;
 
+import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -63,5 +65,14 @@ public final class HumanoidVisitors {
         if (level.getEntity(visit) instanceof Mob guest && guest.entityTags().contains(VISITOR)) {
             guest.discard();
         }
+    }
+
+    public static Mob swordsman(ServerLevel level, BlockPos feet, Component name) {
+        var selection = new HumanoidSpawns.Selection(HumanoidSpecies.VINDICATOR, HumanoidTier.TRUE_QI);
+        var guest = HumanoidSpawns.spawn(level, selection, Vec3.atBottomCenterOf(feet), EntitySpawnReason.EVENT);
+        guest.setCustomName(name);
+        guest.setPersistenceRequired();
+        guest.setNoAi(true /* noAi */);
+        return guest;
     }
 }
