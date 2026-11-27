@@ -1,0 +1,9 @@
+{
+  "values": [
+    "minecraft:villager",
+    "minecraft:wandering_trader",
+    "minecraft:pillager",
+    "minecraft:vindicator",
+    "minecraft:evoker"
+  ]
+}

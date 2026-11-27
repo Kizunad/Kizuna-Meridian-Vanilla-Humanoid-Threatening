@@ -103,6 +103,9 @@ final class CrisisEndings {
     }
 
     void died(LivingEntity entity, DamageSource source) {
+        if (source.getEntity() instanceof ServerPlayer player) {
+            SlainAdults.record(engine, player, entity);
+        }
         // 死的是来人：是头目就赢了，是撤走途中的记仇的人就掉回它身上的东西，都放掉不再管；
         // 不是来人的修炼的生人当着别的生人被玩家杀了：风声涨。来人本就是冲玩家来的，杀它们不另涨。
         if (entity instanceof Mob mob && CrisisRaiders.sent(mob)) {

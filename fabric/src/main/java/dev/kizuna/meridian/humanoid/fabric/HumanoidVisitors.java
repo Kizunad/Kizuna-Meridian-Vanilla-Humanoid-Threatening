@@ -4,6 +4,7 @@ import dev.kizuna.meridian.humanoid.server.HumanoidSpecies;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import java.util.Optional;
 import java.util.UUID;
+import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -18,6 +19,9 @@ import net.minecraft.world.phys.Vec3;
 /** 单人在约定地点赴会，场次归属及结束条件由发起方保存。 */
 public final class HumanoidVisitors {
     private static final String VISITOR = "meridian_humanoid.visitor";
+    public static final String YOUTH = "meridian_humanoid.young";
+
+    public record Guest<T extends Mob>(EntityType<T> type, HumanoidTier tier) { }
 
     private HumanoidVisitors() { }
 
@@ -28,6 +32,13 @@ public final class HumanoidVisitors {
     /** 生成任一类人物种的来客，入世后照常认领身体；何时恢复行动由发起方决定。 */
     public static <T extends Mob> Optional<T> arrive(ServerLevel level, BlockPos feet, UUID visit, Component name,
                                                      EntityType<T> type) {
+        return arrive(level, feet, visit, name, new Guest<>(type, null));
+    }
+
+    /** 有指定出生档的访客在认领身体、生成随身背囊前就带上其档位。 */
+    public static <T extends Mob> Optional<T> arrive(ServerLevel level, BlockPos feet, UUID visit, Component name,
+                                                     Guest<T> form) {
+        var type = form.type();
         // 同一次赴约可以在重登后重新绑定已经在场的来客。
         var present = level.getEntity(visit);
         if (present != null && present.entityTags().contains(VISITOR) && type.tryCast(present) != null) {
@@ -48,6 +59,9 @@ public final class HumanoidVisitors {
             return Optional.empty();
         }
         guest.setCustomName(name);
+        if (form.tier() != null) {
+            guest.addTag(HumanoidTier.TAG_PREFIX + form.tier().id());
+        }
         guest.setPersistenceRequired();
         guest.setNoAi(true /* noAi */);
         guest.addTag(VISITOR);
@@ -100,6 +114,16 @@ public final class HumanoidVisitors {
             guest.setTarget(null);
             guest.setNoAi(true /* noAi */);
             guest.setPose(Pose.SITTING);
+        }
+    }
+
+    /** 访客沿撤退路径自行走远，保留随身实物直到实际退场。 */
+    public static void withdraw(Mob guest, UUID owner) {
+        if (guest.entityTags().contains(VISITOR)) {
+            guest.addTag(CrisisArrivals.RAIDER_TAG);
+            guest.setTarget(null);
+            guest.setNoAi(false /* noAi */);
+            CrisisRaiders.withdraw(guest, owner);
         }
     }
 }

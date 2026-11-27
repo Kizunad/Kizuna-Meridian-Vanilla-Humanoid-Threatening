@@ -64,6 +64,11 @@ public final class CrisisRaiders {
         return Map.copyOf(RETREATING);
     }
 
+    static void withdraw(Mob guest, UUID owner) {
+        int tick = guest.level().getServer().getTickCount();
+        RETREATING.put(guest.getUUID(), new Retreat(owner, tick));
+    }
+
     static void dismiss(UUID raider) {
         // 这一个不用再管了（死了、走远消失了、卸载了）。
         QUARRY.remove(raider);

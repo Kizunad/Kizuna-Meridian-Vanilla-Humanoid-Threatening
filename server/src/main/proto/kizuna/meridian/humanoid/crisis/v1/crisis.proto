@@ -37,6 +37,22 @@ message CrisisRecord {
   int32 road_count = 16;
   int64 road_settled_at = 17;
   int64 road_request = 18;
+  // 只收本人致死的成年生人，死者身份与当时的交手证据一起保存。
+  repeated SlainAdult slain_adults = 19;
+}
+
+message SlainAdult {
+  string victim = 1;
+  string killer = 2;
+  string name = 3;
+  string type_name = 4;
+  int64 died_at = 5;
+  enum FirstStrike {
+    UNKNOWN = 0;
+    VICTIM = 1;
+    PLAYER = 2;
+  }
+  FirstStrike first_strike = 6;
 }
 
 message RaidWatch {

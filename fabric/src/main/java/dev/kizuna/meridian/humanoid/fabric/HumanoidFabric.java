@@ -79,6 +79,7 @@ public final class HumanoidFabric implements ModInitializer {
         OriginTalents.initialize();
         HumanoidEvokerSpells.initialize();
         VanillaDamageFabric.registerDamageObserver(HumanoidThreats::damaged);
+        VanillaDamageFabric.registerDamageObserver(SlainAdults::hit);
         VanillaDamageFabric.registerMobBodyReader(HumanoidHealthHost::existingBody);
         TechniqueLeaps.addDirector(HumanoidBrain::hasOpponent);
         ServerLifecycleEvents.SERVER_STARTING.register(server -> initializeContent());
