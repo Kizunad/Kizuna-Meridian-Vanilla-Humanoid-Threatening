@@ -14,6 +14,7 @@ import dev.kizuna.meridian.humanoid.server.RegionInventory;
 import dev.kizuna.meridian.humanoid.server.SpeciesBodyRules;
 import dev.kizuna.meridian.humanoid.server.HumanoidTier;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
+import dev.kizuna.meridian.protocol.pb.ActivityMessages.LumenExport;
 import dev.kizuna.meridian.protocol.MeridianProtocol;
 import dev.kizuna.meridian.protocol.pb.ActivityMessages;
 import dev.kizuna.meridian.protocol.pb.BodyMessages;
@@ -35,6 +36,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
 
@@ -52,6 +54,9 @@ public final class HumanoidBodyState {
     private final BodyCommandHandler<String> commands;
     private final String bodyId;
     private final String regionSource;
+    private LumenExport lastExport;
+    private CompletableFuture<LumenExport> lastExportWrite;
+
     private long targetMillis;
     private double agingRate = AGING_RATE;
     private String dimensionId;
@@ -659,6 +664,22 @@ public final class HumanoidBodyState {
     BodySnapshot currentBody() {
         // 同宿主的只读属性投影直接使用已提交的不可变快照，避免逐 tick 编解码完整协议。
         return store.find(new BodyId(bodyId)).orElseThrow();
+    }
+
+    CompletableFuture<LumenExport> recordExport(LumenExport allocation, net.minecraft.world.entity.LivingEntity elder) {
+        // 查到相同凭据也要等原写入完成；写失败时保留身体内原操作号，重试只重新发起快照。
+        if (!bodyId.equals(allocation.getDonor())) {
+            throw new IllegalArgumentException("出资凭据不属于本具身体");
+        }
+        var record = store.recordExport(allocation);
+        if (record.equals(lastExport) && !lastExportWrite.isCompletedExceptionally()) {
+            return lastExportWrite;
+        }
+        var level = (net.minecraft.server.level.ServerLevel) elder.level();
+        var saved = DonationChunkSave.submit(level, elder).thenApply(ignored -> record);
+        lastExport = record;
+        lastExportWrite = saved;
+        return saved;
     }
 
     BodyMessages.BodySnapshot debugQi(DebugQi debugQi, BodyMessages.TimeCursor now) {

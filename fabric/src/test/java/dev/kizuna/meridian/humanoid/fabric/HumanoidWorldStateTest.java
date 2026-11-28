@@ -7,6 +7,9 @@ import dev.kizuna.meridian.core.QiInventory;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionQuery;
 import dev.kizuna.meridian.human.protocol.pb.EnvironmentHostMessages.RegionRelease;
 import dev.kizuna.meridian.protocol.BodyProtobuf;
+import dev.kizuna.meridian.protocol.pb.ActivityMessages.LumenExport;
+import dev.kizuna.meridian.protocol.pb.ActivityMessages.LumenShare;
+import dev.kizuna.meridian.server.BodyExports;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -21,6 +24,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.Assert.*;
 
@@ -128,6 +132,53 @@ public final class HumanoidWorldStateTest {
         assertFalse(state.isDirty());
         var saved = readData(file);
         assertEquals(saved, HumanoidWorldState.read(saved).save(new CompoundTag()));
+    }
+
+    @Test
+    public void failedDepartedRefundMustPersistBeforeRetryConfirmsIt() throws IOException {
+        // 用普通文件作为父目录使退款无法落盘，再恢复目标目录，重试原单只能排出一笔退款。
+        net.minecraft.SharedConstants.tryDetectVersion();
+        var elder = UUID.randomUUID();
+        var operation = UUID.randomUUID();
+        var body = new HumanoidWorldState().save(new CompoundTag());
+        var funding = archivedFunding(elder, operation);
+        var entry = new CompoundTag();
+        entry.putString("owner", elder.toString());
+        entry.putByteArray("position", release().getPosition().toByteArray());
+        entry.putByteArray("receipt", funding.toByteArray());
+        var donations = new ListTag();
+        donations.add(entry);
+        body.put("donations", donations);
+        var state = HumanoidWorldState.read(body);
+        state.bind(directory.newFile().toPath().resolve("state.dat"));
+        var refund = BodyExports.allocate(funding, 0);
+        assertThrows(java.util.concurrent.CompletionException.class, () -> state.settleDeparted(elder, refund).join());
+        assertThrows(java.util.concurrent.CompletionException.class, () -> state.settleDeparted(elder, refund).join());
+        var file = directory.getRoot().toPath().resolve("recovered.dat");
+        state.bind(file);
+        assertEquals(refund, state.settleDeparted(elder, refund).join());
+        var restored = HumanoidWorldState.load(file);
+        assertEquals(Optional.of(refund), restored.departedDonation(elder, operation));
+        var pending = restored.save(new CompoundTag()).getList("pending").orElseThrow();
+        assertEquals(1, pending.size());
+        var released = RegionRelease.parseFrom(((ByteArrayTag) pending.getFirst()).getAsByteArray());
+        assertEquals(funding.getShares(0).getDebited(), released.getReleasedQi());
+    }
+
+    private static LumenExport archivedFunding(UUID elder, UUID operation) {
+        // 已退场老人留下的单来源实扣，受方还没有领用。
+        var cargo = release().getReleasedQi();
+        var share = LumenShare.newBuilder()
+                .setSource("source")
+                .setDebited(cargo)
+                .setPending(cargo);
+        return LumenExport.newBuilder()
+                .setOperationId(operation.toString())
+                .setDonor(elder.toString())
+                .setRecipient("student")
+                .setTarget("target")
+                .addShares(share)
+                .build();
     }
 
     @Test

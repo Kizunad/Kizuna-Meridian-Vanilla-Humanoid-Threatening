@@ -116,7 +116,12 @@ public final class HumanoidFabric implements ModInitializer {
     private static void saveWorld(MinecraftServer server, boolean flush, boolean force) {
         // 跟随原版世界保存（含停服）；/save-off 后只在强制保存时写入，与原版主世界存档数据一致。
         if (server == activeServer && worldState != null && (force || !server.overworld().noSave())) {
-            worldState.save(stateFile(server).toFile());
+            Path file = stateFile(server);
+            if (flush) {
+                worldState.save(file.toFile());
+            } else {
+                worldState.saveInBackground(file);
+            }
         }
     }
 
@@ -177,6 +182,11 @@ public final class HumanoidFabric implements ModInitializer {
     static MinecraftServer server() {
         // 调用方先用 isReady 检查；空引用属于宿主装配错误。
         return activeServer;
+    }
+
+    static HumanoidWorldState worldState() {
+        // 永久退场后，持有原案的受方从世界存档取回老人留下的导出凭据。
+        return worldState;
     }
 
     static HumanoidConfig config() {
@@ -383,6 +393,7 @@ public final class HumanoidFabric implements ModInitializer {
         try {
             // 结算损耗和身体剩余库存合并成一条 RegionRelease，避免同一实体产生多笔释放。
             QiInventory settledLoss = settleRemovedBody(entity, body);
+            worldState.archiveDonations(entity, body.currentBody());
             QiInventory released = QiInventory.combine(List.of(settledLoss, body.releaseInventory()));
             enqueueRelease(entity, released);
         } catch (RuntimeException failure) {

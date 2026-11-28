@@ -47,7 +47,11 @@ dependencies {
     implementation 'dev.kizuna:kizuna-players-animation-mobs-addon'
 }
 
-test { useJUnit() }
+test {
+    useJUnit()
+    workingDir layout.buildDirectory.dir('test-runtime')
+    doFirst { workingDir.mkdirs() }
+}
 
 // 开发运行装入 Framework 统一装配清单列出的整套产物，与 Windows 候选共用一份清单。
 apply from: new File(kizunaWorkspace.directory('framework'), 'scripts/full-assembly.gradle')
@@ -92,6 +96,7 @@ dependencies {
     // GameTest 显式使用 server 运行依赖，发布产物仍通过 include 嵌套 server JAR。
     gametestRuntimeOnly project(':server')
     gametestImplementation testFixtures('dev.kizuna.meridian.technique:fabric')
+    gametestImplementation testFixtures('dev.kizuna.meridian.human:fabric')
     gametestImplementation 'dev.kizuna.meridian.origin:server'
 }
 

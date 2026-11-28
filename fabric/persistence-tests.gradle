@@ -21,7 +21,9 @@ def reproClasses = [
                'HumanoidFieldNotesGameTest', 'HumanoidCrisisGameTest',
                'HumanoidCrisisFeudGameTest', 'HumanoidOriginTalentGameTest', 'HumanoidCrisisRaidGameTest',
                'HumanoidCrisisOutcomeGameTest', 'HumanoidReceiptGameTest', 'RetiredRaidGameTest', 'HumanoidCrisisOmenGameTest',
-               'HumanoidVolumeSourcesGameTest'],
+               'HumanoidVolumeSourcesGameTest', 'InheritanceGameTest'],
+        'inheritance-save': ['InheritanceRestartGameTest'],
+        'inheritance-load': ['InheritanceRestartGameTest'],
         species: ['SpeciesHookGameTest'],
         pool: ['BirthVolumeGameTest'],
         equipment: ['BirthEquipmentGameTest'],
@@ -53,6 +55,9 @@ if (reproMode.startsWith('release-')) {
 }
 if (reproMode in ['equipment-save', 'equipment-load']) {
     reproRunDirectory = 'build/repro-equipment-restart'
+}
+if (reproMode.startsWith('inheritance-')) {
+    reproRunDirectory = 'build/repro-inheritance-restart'
 }
 def isolatedRunDirectory = providers.gradleProperty('gametestRunDir')
 if (isolatedRunDirectory.isPresent()) {
